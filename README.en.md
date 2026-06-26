@@ -10,6 +10,12 @@
   English · <a href="README.md">简体中文</a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/dengmengmian/ReviewGate/actions/workflows/ci.yml"><img src="https://github.com/dengmengmian/ReviewGate/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/dengmengmian/ReviewGate/releases/latest"><img src="https://img.shields.io/github/v/release/dengmengmian/ReviewGate" alt="Release"></a>
+  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT">
+</p>
+
 ReviewGate runs before PRs are merged and gives AI-generated, or AI-heavy, code a second review pass. It does not replace human review. It pre-filters the work for reviewers by promoting high-risk findings and folding low-confidence noise by default.
 
 ## Start In 30 Seconds

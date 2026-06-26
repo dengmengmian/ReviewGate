@@ -10,6 +10,12 @@
   <a href="README.en.md">English</a> · 简体中文
 </p>
 
+<p align="center">
+  <a href="https://github.com/dengmengmian/ReviewGate/actions/workflows/ci.yml"><img src="https://github.com/dengmengmian/ReviewGate/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/dengmengmian/ReviewGate/releases/latest"><img src="https://img.shields.io/github/v/release/dengmengmian/ReviewGate" alt="Release"></a>
+  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT">
+</p>
+
 ReviewGate 用在 PR 合并前，给 AI 生成或 AI 大量参与的代码做二次审查。它不替代人工 review，而是先帮 reviewer 过滤一遍：**高风险问题推到前面，低置信反馈默认折叠**。
 
 ## 30 秒跑起来
