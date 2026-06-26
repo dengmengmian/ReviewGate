@@ -40,7 +40,7 @@ if [ ! -w "$INSTALL_DIR" ] 2>/dev/null; then
   else
     INSTALL_DIR="$HOME/.local/bin"
     mkdir -p "$INSTALL_DIR"
-    echo "无写权限，改装到 $INSTALL_DIR（请确保它在 PATH 中）"
+    echo "无写权限，改装到 ${INSTALL_DIR}（请确保它在 PATH 中）"
   fi
 fi
 
