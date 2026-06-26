@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(
     name = "reviewgate",
-    about = "面向 AI Coding 时代的质量闸口：多 Agent 并行审查 + 分维度专家 + 置信度过滤",
+    about = "给 AI 生成的代码加一道合并前质检：优先暴露高风险问题，折叠低置信噪音",
     version = reviewgate_core::version(),
 )]
 struct Cli {

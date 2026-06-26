@@ -3,16 +3,26 @@
 </p>
 
 <p align="center">
-  给 AI 生成的代码加一道合并前质检：<b>自动复查改动，优先拦住高风险问题，减少无效 review 噪音</b>
+  合并前先让 AI 审一遍 AI 写的代码：<b>优先拦住高风险问题，少看低价值 review 噪音</b>
 </p>
 
 <p align="center">
   <a href="README.en.md">English</a> · 简体中文
 </p>
 
-ReviewGate 不是帮你多写几条 review 评论，而是在代码进入主干前，用多个 Agent 做一次质量判断，**优先展示高置信问题，低置信反馈默认折叠**。
+ReviewGate 用在 PR 合并前，给 AI 生成或 AI 大量参与的代码做二次审查。它不替代人工 review，而是先帮 reviewer 过滤一遍：**高风险问题推到前面，低置信反馈默认折叠**。
 
-## 它做什么
+## 适合解决什么
+
+| 场景 | ReviewGate 帮你做什么 |
+|---|---|
+| AI 一次改了很多文件 | 先按安全、性能、逻辑等维度扫一遍，减少人工漏看 |
+| review 评论太多太散 | 合并重复发现，默认折叠低置信反馈 |
+| 担心 AI 写出“看起来对、其实错”的代码 | 专门检查幻觉 API、假设漂移、复制后未适配 |
+| 团队有业务规则 | 把权限、金额、状态机等规则写进配置，每次审查自动带上 |
+| 想在 CI 里加一道闸口 | 高置信问题可阻断合并，未审完不会被当成干净通过 |
+
+## 工作方式
 
 启动多个并行 Agent，分维度审查你的改动：
 
@@ -90,7 +100,7 @@ rules = [
 
 > CI 中可用 `REVIEWGATE_API_KEY` 环境变量注入密钥，避免提交（同样支持 `REVIEWGATE_BASE_URL` / `REVIEWGATE_MODEL`）。
 
-## 用法
+## 接入方式
 
 ReviewGate 一个引擎，三种形态——**CLI 为主，Skill / Action 都是调 CLI 的薄壳**。
 
@@ -175,7 +185,7 @@ curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integr
 
 把 `integrations/github-action/example-workflow.yml` 放到 `.github/workflows/`，在仓库 Secrets 配置 `REVIEWGATE_API_KEY`。PR 上自动审查、发摘要评论、按置信度阻断合并。
 
-## 设计
+## 为什么可信
 
 - 自研 Agent 编排与 LLM 客户端，**零 SDK 依赖**（reqwest 直连，OpenAI/Anthropic 双协议）。
 - 工具集刻意**只读 + 结构化上报**（不照搬通用编码 Agent 的写/任意 shell）；
@@ -196,7 +206,7 @@ curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integr
 
 变更记录见 [`CHANGELOG.md`](CHANGELOG.md)，贡献指南见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
 
-## 评测（真实模型 + 真实代码验证）
+## 公开评测
 
 以下结果来自 `docs/evals/` 中留痕的公开样本，不是通用准确率承诺。当前样本主要用 `deepseek-v4-pro` 真实跑通（[`docs/evals/`](docs/evals/) · [总览](docs/evals/README.md)）：
 
@@ -206,9 +216,9 @@ curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integr
 - **大 PR / 未审完不静默放行**：diff 超上下文窗口、请求失败、上下文超限、超时、超大文件跳过等情况会降级 WARN，并可让 CI 非 0 退出，避免被当成干净 PASS。
 - **诚实局限**：细微多步算术/进位 off-by-one 是静态审查硬尾，见 [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md)，建议测试互补。
 
-## 状态
+## 当前状态
 
-Beta：核心链路完整（多维并行 + 证伪 Judge + 置信度闸口 + 业务规则 + 45 语言内置规则 + 重复检测 + 多采样 + `--fix` 锚点校验 + reachability 分级 + 大 diff 自适应单元/永不静默放行 + CLI/Skill/Action），
+Beta：核心链路完整（多维并行 + 证伪 Judge + 置信度闸口 + 业务规则 + 45 语言内置规则 + 重复检测 + 多采样 + `--fix` 锚点校验 + reachability 分级 + 大 diff 自适应单元/未审完不静默放行 + CLI/Skill/Action），
 含 CI（fmt/clippy -D warnings/test，Win+Ubuntu）、只读安全边界、缓存与超时兜底。
 变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。
 

@@ -1,6 +1,6 @@
 //! ReviewGate core engine.
 //!
-//! 面向 AI Coding 时代的质量闸口：多 Agent 并行审查 + 分维度专家 + 置信度过滤。
+//! 给 AI 生成的代码加一道合并前质检：优先暴露高风险问题，折叠低置信噪音。
 //!
 //! 所有智能都在这个 crate 里：LLM 客户端、Agent 循环、多维并行、行号重定位、
 //! 证伪 Judge、闸口逻辑。CLI / Claude Skill / GitHub Action 都是它的薄包装。

@@ -172,7 +172,8 @@ pub async fn run_agent_with_stats(
         }
         if tool_uses.is_empty() {
             // 没有工具调用：模型自然结束，收尾。
-            if resp.stop_reason == StopReason::EndTurn || resp.stop_reason == StopReason::MaxTokens {
+            if resp.stop_reason == StopReason::EndTurn || resp.stop_reason == StopReason::MaxTokens
+            {
                 exit_reason = AgentExitReason::Completed;
                 break;
             }
@@ -207,7 +208,9 @@ pub async fn run_agent_with_stats(
                     if *n >= LOOP_GUARD_LIMIT {
                         stats.loop_guarded += 1;
                         if cfg.verbose {
-                            eprintln!("  [{dim}] 循环熔断：{other} 已用相同参数调用 {n} 次，短路。");
+                            eprintln!(
+                                "  [{dim}] 循环熔断：{other} 已用相同参数调用 {n} 次，短路。"
+                            );
                         }
                         (
                             format!("You have called {other} with identical arguments {n} times. The result will not change. Conclude from existing information: report with report_finding or finish with task_done. Do not repeat this call."),
@@ -460,9 +463,15 @@ mod tests {
         let client = MockClient::new(vec![Ok(resp(vec![("task_done", json!({}))]))]);
         let mut c = cfg(5);
         c.max_input_tokens = Some(1); // 1 token 预算，必超
-        let run = run_agent_with_stats(&client, &registry(), &ctx(), &c, "审查一段较长的内容".into())
-            .await
-            .unwrap();
+        let run = run_agent_with_stats(
+            &client,
+            &registry(),
+            &ctx(),
+            &c,
+            "审查一段较长的内容".into(),
+        )
+        .await
+        .unwrap();
         assert_eq!(run.exit_reason, AgentExitReason::ContextOverflow);
         assert!(run.incomplete());
         assert_eq!(run.stats.llm_requests, 0, "预检拦截，不应发出请求");

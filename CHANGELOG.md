@@ -6,8 +6,9 @@
 
 ## [0.1.0] - 2026-06-26
 
-首个公开发布：面向 AI Coding 时代的质量闸口——多 Agent 并行审查 + 分维度专家 + 证伪 Judge +
-置信度闸口，45 语言内置规则、大 PR 永不静默放行、只读安全边界，全程真实模型验证留痕（`docs/evals/`）。
+首个公开发布：给 AI 生成或 AI 大量参与的代码加一道合并前质检。高置信问题优先暴露，低置信噪音默认折叠；
+包含多 Agent 分维度审查、证伪 Judge、45 语言内置规则、大 PR 未审完不静默放行、只读安全边界，
+并用真实模型评测留痕（`docs/evals/`）。
 
 ### Added
 - **45 语言内置起步规则**：常见+不常见 45 种语言（含仓颉/Zig/Nim/Crystal/OCaml/F#/Solidity/
@@ -15,7 +16,7 @@
   `[business] builtin_language_rules`（默认 true）可整体关，用户 `rules_dir/<lang>.md` 可覆盖/追加。
 - **大 diff 自适应审查单元**：`plan_units` 按 token 预算切单元（N 默认=1，正常 PR 零退化；
   放不下才按目录就近装箱以保跨文件推理）；`ProviderConfig.max_input_tokens`（默认 200k）。
-- **永不静默放行**：`GateConfig.fail_on_incomplete`（默认 true）+ `AgentExitReason` + 发送前 token 预检；
+- **未审完不静默放行**：`GateConfig.fail_on_incomplete`（默认 true）+ `AgentExitReason` + 发送前 token 预检；
   任何未审完（请求失败/上下文超限/超时/超大文件跳过）一律 PASS→WARN、CI 非 0 退出、输出醒目标注。
 - `--fix`：逐条确认后把 `suggestion_code` 应用到工作区，替换前用 `existing_code` 锚点校验（行号漂移则拒绝改错）。
 - `--exec-verify`：opt-in 弱隔离沙箱执行自包含 JS/Python 片段验证边界用例（默认关，仅可信环境用）。

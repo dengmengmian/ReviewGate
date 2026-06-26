@@ -3,16 +3,26 @@
 </p>
 
 <p align="center">
-  A pre-merge quality gate for AI-generated code: <b>review changes automatically, catch high-risk issues first, and reduce review noise</b>
+  Let AI review AI-written code before merge: <b>catch high-risk issues first and reduce low-value review noise</b>
 </p>
 
 <p align="center">
   English · <a href="README.md">简体中文</a>
 </p>
 
-ReviewGate is not another tool for generating more review comments. It runs several focused agents before code reaches the main branch, promotes high-confidence issues, and folds low-confidence findings by default.
+ReviewGate runs before PRs are merged and gives AI-generated, or AI-heavy, code a second review pass. It does not replace human review. It pre-filters the work for reviewers by promoting high-risk findings and folding low-confidence noise by default.
 
-## What It Does
+## When To Use It
+
+| Scenario | What ReviewGate does |
+|---|---|
+| AI changed many files at once | Reviews the diff by security, performance, logic, and other focused dimensions |
+| Review comments are noisy or scattered | Deduplicates overlapping findings and folds low-confidence feedback |
+| AI code looks plausible but may be wrong | Checks hallucinated APIs, assumption drift, and unadapted copy/paste |
+| Your team has business rules | Injects rules for permissions, money, state machines, and domain behavior on every review |
+| You want a CI gate | High-confidence issues can block merges, and incomplete reviews do not silently pass |
+
+## How It Works
 
 ReviewGate runs multiple agents in parallel, each focused on a review dimension:
 
@@ -100,7 +110,7 @@ Config discovery order:
 
 In CI, use `REVIEWGATE_API_KEY` to inject the key without committing it. `REVIEWGATE_BASE_URL` and `REVIEWGATE_MODEL` are also supported.
 
-## Usage
+## Ways To Use It
 
 ReviewGate has one core engine and three thin wrappers: CLI, Claude Code Skill, and GitHub Action.
 
@@ -190,7 +200,7 @@ ReviewGate also ships built-in language rules for 45 languages. Custom `<languag
 
 Copy `integrations/github-action/example-workflow.yml` into `.github/workflows/`, configure the `REVIEWGATE_API_KEY` repository secret, and ReviewGate can review PRs, post summary comments, and block by confidence threshold.
 
-## Design
+## Why It Is Trustworthy
 
 - Custom agent orchestration and LLM client, with no provider SDK dependency. ReviewGate uses `reqwest` directly and supports OpenAI-compatible and Anthropic protocols.
 - Read-only, structured tools instead of arbitrary shell or write access. `confine_path` keeps reads inside the repository.
@@ -208,7 +218,7 @@ Copy `integrations/github-action/example-workflow.yml` into `.github/workflows/`
 
 See [`CHANGELOG.md`](CHANGELOG.md) and [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-## Evaluations
+## Public Evaluations
 
 The results below come from public samples recorded under [`docs/evals/`](docs/evals/) and are not a general accuracy guarantee. The current samples were mainly run with `deepseek-v4-pro`.
 
@@ -218,7 +228,7 @@ The results below come from public samples recorded under [`docs/evals/`](docs/e
 - **Large PRs / incomplete review**: context overflow, request failure, timeout, and skipped oversized files degrade to WARN and can make CI exit non-zero instead of silently passing.
 - **Known limits**: subtle multi-step arithmetic and carry/rounding off-by-one bugs remain a hard tail for static LLM review. See [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md).
 
-## Status
+## Current Status
 
 Beta. The core path is complete: parallel dimensions, counter-evidence judge, confidence gate, business rules, built-in rules for 45 languages, duplicate detection, multi-sampling, `--fix` anchor validation, reachability grading, incomplete-review handling, CLI, Skill, and Action.
 
