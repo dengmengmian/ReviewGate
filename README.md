@@ -50,6 +50,8 @@ Windows 用户可以用 PowerShell 安装：
 irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex
 ```
 
+> **升级**：重新运行上面的安装命令即可——`install.sh` / `install.ps1` 总是拉取最新 release 并覆盖旧版本。
+
 ## 适合解决什么
 
 | 场景 | ReviewGate 帮你做什么 |
