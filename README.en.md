@@ -107,34 +107,7 @@ cargo install --path crates/cli
 
 Windows needs Visual Studio Build Tools to compile tree-sitter dependencies.
 
-## Start In 30 Seconds
-
-You need three things: a git repository, an LLM API key, and the `reviewgate` command.
-
-```bash
-# 1) Create a global config. It works across all repositories.
-mkdir -p ~/.reviewgate
-cat > ~/.reviewgate/config.toml <<'EOF'
-provider = "deepseek"
-
-[providers.deepseek]
-protocol = "openai"
-base_url = "https://api.deepseek.com/v1"
-model = "deepseek-v4-pro"
-EOF
-
-# 2) Keep the API key in the environment, not in the config file.
-export REVIEWGATE_API_KEY="your key"
-
-# 3) Check that the model is reachable.
-reviewgate llm test
-
-# 4) Enter any git repository with local changes and review them.
-cd /path/to/your/repo
-reviewgate review
-```
-
-`BLOCK` means a high-confidence issue should be handled before merge. `WARN` means there is risk or the review was incomplete. `PASS` means no finding reached the configured gate threshold.
+To upgrade later, just re-run the install command above—it always fetches the latest release and overwrites the old binary (or run `reviewgate upgrade`).
 
 ## Configuration
 

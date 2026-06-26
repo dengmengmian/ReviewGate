@@ -17,3 +17,5 @@ clap.workspace = true
 anyhow.workspace = true
 serde_json.workspace = true
 serde = { workspace = true, features = ["derive"] }
+reqwest.workspace = true
+self-replace = "1"

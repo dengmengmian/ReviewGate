@@ -39,6 +39,8 @@ enum Command {
         #[arg(long, default_value = "logic")]
         dimension: String,
     },
+    /// 自更新到最新 release（下载对应平台二进制并替换当前可执行文件）
+    Upgrade,
 }
 
 #[derive(Subcommand)]
@@ -145,7 +147,64 @@ async fn main() -> anyhow::Result<()> {
         Command::Diff(args) => diff_summary(&args).await?,
         Command::Tool { name, input } => tool_call(&name, &input).await?,
         Command::Agent { dimension } => agent_run(&dimension).await?,
+        Command::Upgrade => upgrade().await?,
     }
+    Ok(())
+}
+
+/// 当前平台对应的 release 资产名（与 `install.sh` 命名一致）。
+fn release_asset(os: &str, arch: &str) -> anyhow::Result<String> {
+    let o = match os {
+        "linux" => "linux",
+        "macos" => "darwin",
+        "windows" => "windows",
+        other => anyhow::bail!("不支持的系统：{other}"),
+    };
+    let a = match arch {
+        "x86_64" => "x64",
+        "aarch64" => "arm64",
+        other => anyhow::bail!("不支持的架构：{other}"),
+    };
+    let ext = if o == "windows" { ".exe" } else { "" };
+    Ok(format!("reviewgate-{o}-{a}{ext}"))
+}
+
+/// 自更新：下载最新 release 对应平台二进制，替换当前可执行文件。
+async fn upgrade() -> anyhow::Result<()> {
+    use anyhow::Context;
+    let asset = release_asset(std::env::consts::OS, std::env::consts::ARCH)?;
+    let url =
+        format!("https://github.com/dengmengmian/ReviewGate/releases/latest/download/{asset}");
+    eprintln!("下载最新版本：{asset} …");
+    let resp = reqwest::Client::new()
+        .get(&url)
+        .send()
+        .await
+        .with_context(|| format!("下载失败：{url}"))?;
+    if !resp.status().is_success() {
+        anyhow::bail!("下载失败：HTTP {}（{url}）", resp.status());
+    }
+    let bytes = resp.bytes().await?;
+
+    // 写临时文件 → 自替换当前可执行文件（self_replace 处理 Windows 运行中 exe 的替换）。
+    let tmp = std::env::temp_dir().join(format!("reviewgate-upgrade-{}", std::process::id()));
+    std::fs::write(&tmp, &bytes).context("写入临时文件失败")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))?;
+    }
+    self_replace::self_replace(&tmp).context("替换当前可执行文件失败")?;
+    let _ = std::fs::remove_file(&tmp);
+
+    // 用新二进制打印版本确认。
+    if let Ok(exe) = std::env::current_exe() {
+        if let Ok(out) = std::process::Command::new(&exe).arg("--version").output() {
+            eprint!("✓ 已升级到：{}", String::from_utf8_lossy(&out.stdout));
+            return Ok(());
+        }
+    }
+    eprintln!("✓ 已升级。");
     Ok(())
 }
 
@@ -350,4 +409,21 @@ async fn llm_test() -> anyhow::Result<()> {
     );
     println!("✅ LLM 连通正常");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::release_asset;
+
+    #[test]
+    fn release_asset_maps_platforms() {
+        assert_eq!(release_asset("macos", "aarch64").unwrap(), "reviewgate-darwin-arm64");
+        assert_eq!(release_asset("macos", "x86_64").unwrap(), "reviewgate-darwin-x64");
+        assert_eq!(release_asset("linux", "aarch64").unwrap(), "reviewgate-linux-arm64");
+        assert_eq!(release_asset("linux", "x86_64").unwrap(), "reviewgate-linux-x64");
+        assert_eq!(release_asset("windows", "x86_64").unwrap(), "reviewgate-windows-x64.exe");
+        // 命名须与 install.sh / release.yml 的资产名一致。
+        assert!(release_asset("freebsd", "x86_64").is_err());
+        assert!(release_asset("linux", "riscv64").is_err());
+    }
 }

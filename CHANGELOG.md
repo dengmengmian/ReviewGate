@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-06-26
+
+### Added
+- `reviewgate upgrade`：自更新到最新 release——按平台下载二进制并替换当前可执行文件（Windows 经 self-replace 处理运行中 exe）。
+
+### Fixed
+- `install.sh`：修复 macOS `sh`(bash 3.2) `set -u` 下 `$INSTALL_DIR` 紧跟中文全角括号导致的 `unbound variable` 安装崩溃（fallback 路径）。
+- GitHub Action：PR 事件按 `--from base --to head` 范围审（此前默认工作区 diff 为空、CI 上审不到任何东西）；新增 `--timeout` 防挂起。
+- Release workflow 加固：`fail-fast: false` + `CARGO_NET_RETRY`，单平台网络抖动不再毁掉整个发布。
+
 ## [0.1.0] - 2026-06-26
 
 首个公开发布：给 AI 生成或 AI 大量参与的代码加一道合并前质检。高置信问题优先暴露，低置信噪音默认折叠；
