@@ -1,0 +1,46 @@
+name: "ReviewGate"
+description: "面向 AI Coding 时代的质量闸口：多 Agent 并行审查 + 分维度专家 + 置信度过滤"
+branding:
+  icon: "shield"
+  color: "purple"
+
+inputs:
+  dimensions:
+    description: "审查维度：all 或逗号分隔 security,perf,logic,style,ai_smell"
+    required: false
+    default: "all"
+  fail-on:
+    description: "何种判定导致 CI 失败：block | warn | never"
+    required: false
+    default: "block"
+  comment:
+    description: "是否在 PR 上发布摘要评论"
+    required: false
+    default: "true"
+  config:
+    description: "reviewgate.toml 配置文件路径"
+    required: false
+    default: "reviewgate.toml"
+  version:
+    description: "ReviewGate 版本（默认 latest）"
+    required: false
+    default: "latest"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install ReviewGate
+      shell: bash
+      run: |
+        curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh \
+          | REVIEWGATE_VERSION="${{ inputs.version }}" sh
+
+    - name: Run ReviewGate
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        REVIEWGATE_CONFIG: ${{ inputs.config }}
+      run: |
+        ARGS="--dimensions ${{ inputs.dimensions }} --fail-on ${{ inputs.fail-on }}"
+        if [ "${{ inputs.comment }}" = "true" ]; then ARGS="$ARGS --comment"; fi
+        reviewgate review $ARGS

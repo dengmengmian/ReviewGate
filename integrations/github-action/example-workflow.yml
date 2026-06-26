@@ -1,0 +1,25 @@
+# 把此文件放到你的仓库 .github/workflows/reviewgate.yml
+name: ReviewGate
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write   # 发布 PR 评论所需
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 需要完整历史以计算 diff
+
+      - uses: dengmengmian/ReviewGate@main
+        env:
+          # 在仓库 Secrets 里配置 LLM 密钥，避免提交到代码
+          REVIEWGATE_API_KEY: ${{ secrets.REVIEWGATE_API_KEY }}
+        with:
+          dimensions: all
+          fail-on: block
+          comment: "true"

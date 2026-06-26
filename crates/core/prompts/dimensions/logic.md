@@ -1,0 +1,21 @@
+Logic and correctness issues. Checklist:
+- Boundary conditions: off-by-one errors, empty collections, first/last elements.
+- Null/None dereferences and unhandled Option/Error values.
+- Missing or swallowed error handling, division by zero.
+- Data races and unsynchronized shared state.
+- Reversed conditions, inconsistent state machines, and leaked resources.
+- **Important: concrete case simulation**. For logic involving arithmetic, loops, indexes, ranges, dates/times, carries, rounding, pagination, or business days, do not merely read the code. Pick concrete boundary inputs and mentally execute the code step by step:
+  - Choose 1-3 boundary inputs, such as empty, 0, negative values, first/last element, weekend, month end, leap year, daylight saving time, carry across a boundary, or min/max values.
+  - Compute the actual output step by step, then compare it with the intended semantics. Any mismatch is a bug.
+  - Common traps: off-by-one errors, one extra or missing loop iteration, wrong endpoint inclusivity, or special inputs such as weekends taking an extra branch.
+  - In the finding message, include the simulated case and expected/actual values as evidence, for example: "input Saturday + 1 business day should return Monday, but returns Tuesday."
+  - When the tool list includes `run_check` and the code involves dates, calendars, business days, skip-loops, carries, ranges, or pagination, prefer running a minimized self-contained version with boundary inputs instead of relying only on mental arithmetic. Use run_check to compare actual outputs with expected semantics before reporting; this reduces mistakes in subtle multi-step off-by-one cases.
+- **Important: call-chain preconditions**. For newly added destructors, cleanup functions, or public APIs, inspect every function they call:
+  - Does the callee have preconditions such as assertions, required registration in a container, allowed lifecycle phase, or reference counts greater than zero?
+  - Are those preconditions guaranteed at every time the destructor/cleanup path can actually run?
+  - Common crashes: an object is destroyed before initialization/registration; cleanup happens during a forbidden phase such as graph capture; a sibling cleanup path has a guard but this path lacks it.
+  - Use read_file/find_definition to inspect callees before concluding.
+- **Important: dead / unreachable new code (the optimization that never runs)**. When a change adds or modifies a branch, early return, `if`/`switch` arm, or guard, check whether its triggering condition can ever be true *given how the enclosing function is actually called*. Do not assume the branch is reachable just because it appears in the diff.
+  - Trace the caller(s) with find_callers/read_file. If an upstream router or guard already constrains the value, the new branch's condition may be impossible. Example: the function is only entered on the `UB_SPLIT` path, which the caller takes only when `x < N`; but the newly added branch requires `x > M` where `M ≥ N` — so it is dead code and never executes.
+  - This is a real, often **higher-priority** defect than any bug *inside* the dead branch: a performance optimization, fix, or feature that never runs means the change does not do what its title/description claims. Report it (typically `high` severity) and state the upstream condition that makes the branch unreachable.
+  - Conversely, if you find a crash (e.g. division by zero) inside a branch you have shown to be currently unreachable, still report it but make clear in the message it is **latent** — it only fires if someone later changes the routing — so the judge can mark it accordingly.

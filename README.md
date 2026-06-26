@@ -1,0 +1,217 @@
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="ReviewGate" width="420">
+</p>
+
+<p align="center">
+  给 AI 生成的代码加一道合并前质检：<b>自动复查改动，优先拦住高风险问题，减少无效 review 噪音</b>
+</p>
+
+<p align="center">
+  <a href="README.en.md">English</a> · 简体中文
+</p>
+
+ReviewGate 不是帮你多写几条 review 评论，而是在代码进入主干前，用多个 Agent 做一次质量判断，**优先展示高置信问题，低置信反馈默认折叠**。
+
+## 它做什么
+
+启动多个并行 Agent，分维度审查你的改动：
+
+| 维度 | 关注 |
+|---|---|
+| 🔒 security | 注入、越权、密钥泄露、不安全反序列化 |
+| ⚡ perf | N+1、无谓拷贝、热路径复杂度、阻塞调用 |
+| 🧠 logic | 边界条件、空值、错误处理、并发竞态 |
+| 📐 style | 命名、可读性、重复代码 |
+| 🤖 ai_smell | 幻觉 API、看似合理实则错误、假设漂移、复制未适配 |
+| 📋 business | 项目业务规则、权限边界、状态机、金额/订单/库存（配置 `[business].rules` 后自动启用） |
+
+然后：
+
+1. **行号直报 + 校验** —— LLM 直接抄标注行号，引擎用代码片段锚点校验/兜底，降低行号漂移。
+2. **跨维度去重 + 一致性加分** —— 同一处被多个维度标记时合并，并提升置信度。
+3. **证伪 Judge** —— 每条发现都被独立验证，带证据单次裁决，证不掉才保留。
+4. **置信度闸口** —— 高置信问题阻断合并，低置信"废话"默认折叠（仍可展开查看，透明）。
+
+只读安全边界、prompt 缓存复用、确定性重复函数检测、墙钟超时兜底见下文。
+
+## 安装
+
+```bash
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex
+```
+
+如果你不想直接执行远程脚本，可以先下载 `install.sh` / `install.ps1` 审阅，或从 GitHub Releases 手动下载对应平台的二进制。
+
+或从源码：`cargo install --path crates/cli`（Windows 需 VS Build Tools 以编译 tree-sitter）
+
+## 配置
+
+ReviewGate 自带 0 个模型——你只需准备**一个 OpenAI 兼容或 Anthropic 的 LLM 端点 + key**。当前公开评测主要用 DeepSeek 的 OpenAI 兼容端点跑通，其他兼容端点可按配置切换。
+
+复制 `reviewgate.toml.example` 为 `reviewgate.toml`（已被 `.gitignore`）：
+
+```toml
+provider = "deepseek"
+
+[providers.deepseek]
+protocol = "openai"          # OpenAI 兼容协议，覆盖 DeepSeek/Kimi/GLM/通义…
+base_url = "https://your-endpoint/api/v1"
+api_key = "sk-..."
+model = "deepseek-v4-pro"
+
+[gate]
+block_threshold = 0.8        # 置信度 ≥ 0.8 阻断
+warn_threshold = 0.5         # ≥ 0.5 警告，更低折叠
+
+# 可选：项目业务规则（配置后自动启用 business 维度）
+[business]
+rules = [
+  "金额字段必须使用整数分，禁止 float",
+  "用户级资源访问必须校验 owner_id",
+]
+# rules_dir = ".reviewgate/rules"   # <语言>.md 按改动语言注入；business.md 等始终注入
+# skills_dir = ".claude/skills"     # 读组织已写成 skill 的 review 规则（SKILL.md，自动剥 frontmatter）
+```
+
+> **组织已有的 review 规则 skill** 可直接复用：把 `skills_dir` 指向它们所在目录（支持 `<子目录>/SKILL.md` 与扁平 `*.md`），ReviewGate 会剥掉 frontmatter、把正文当规则注入每次审查。`rules_dir`（纯规则 md）与 `skills_dir`（skill 格式）可同时用。
+
+验证连通：`reviewgate llm test`
+
+**配置发现顺序**（找到即用）：
+1. `REVIEWGATE_CONFIG` 环境变量指定的路径
+2. 当前目录 `./reviewgate.toml`（项目级，可针对单仓库覆盖）
+3. `~/.reviewgate/config.toml`（**全局默认**——放这里后任意仓库都能直接跑，无需每个项目放一份）
+
+> CI 中可用 `REVIEWGATE_API_KEY` 环境变量注入密钥，避免提交（同样支持 `REVIEWGATE_BASE_URL` / `REVIEWGATE_MODEL`）。
+
+## 用法
+
+ReviewGate 一个引擎，三种形态——**CLI 为主，Skill / Action 都是调 CLI 的薄壳**。
+
+### 快速开始（3 步）
+
+```bash
+# 1) 配置密钥（推荐用环境变量，不落盘；或写进 reviewgate.toml 的 api_key）
+export REVIEWGATE_API_KEY=你的key
+# 2) 自检连通
+reviewgate llm test
+# 3) 在任意 git 仓库里审查当前改动
+reviewgate review -v
+```
+
+### 1. CLI（主形态）
+
+```bash
+reviewgate review                       # 审查当前改动，默认 5 维度；配置业务规则后自动加 business
+reviewgate review --dimensions security,logic
+reviewgate review --format json         # 机器可读
+reviewgate review --no-judge            # 更快，误报略多
+reviewgate review --show-filtered       # 展开被过滤的低置信项
+reviewgate review --fail-on block       # BLOCK → 退出码 1（CI 用）
+reviewgate review --timeout 120         # 单维度墙钟上限（秒），超时跳过该维度保留其余
+reviewgate review --samples 3           # 每维度多采样取并集，提升 flaky 漏报（如 SSRF）的召回稳定性
+reviewgate review --fix                 # 逐条 y/N 确认后把建议代码应用到工作区（锚点校验防改错）
+reviewgate review --judge-concurrency 4 # 限制 Judge 并发，避免候选多时触发限流
+reviewgate review --verbose             # 打印每维度轮数 + token/缓存命中率
+reviewgate review --commit <sha>        # 审查单个 commit；或 --from <base> --to <head>
+```
+
+`--exec-verify` 会让模型生成的自包含 JS/Python 片段在本机运行以验证边界用例。它默认关闭，且当前只是临时目录 + 清空环境 + 超时的**弱隔离**，不是 OS 级沙箱；只建议在可信或隔离的 CI 环境使用。
+
+ReviewGate 会按 `REVIEWGATE_OUTPUT_LANGUAGE` 或终端 locale（`LC_ALL` / `LC_MESSAGES` / `LANG`）要求模型输出 finding 文案；例如 `REVIEWGATE_OUTPUT_LANGUAGE="Chinese (Simplified)" reviewgate review`。
+
+输出示例：
+
+```
+闸口：BLOCK ✗ 阻断合并    1 文件改动 · 2 条可信发现 · 3 条已过滤
+
+handler.rs
+  ✗ [security · high · conf 1.00] L3
+    SQL 注入：用户输入 req.user_id 通过 format! 直接拼接到 DELETE 语句…
+    ↳ 建议：使用参数化查询。
+```
+
+**退出码（CI 闸口用）**：`BLOCK → 1`，否则 `0`；用 `--fail-on block|warn|never` 调整。
+
+```bash
+# CI 里（慢端点加超时兜底）
+REVIEWGATE_API_KEY=$SECRET reviewgate review --timeout 300 --fail-on block
+```
+
+**调试子命令**（开发用）：
+
+```bash
+reviewgate diff                                  # 看解析后的 diff 摘要
+reviewgate tool find_callers '{"symbol":"foo"}'  # 单独试某个工具（tree-sitter）
+reviewgate agent --dimension logic               # 只跑单维度看原始输出
+```
+
+### 2. Claude Code Skill
+
+**个人用**：把 `integrations/claude-skill/SKILL.md` 拷到 `~/.claude/skills/reviewgate/`，在 Claude Code 里说"审查我的改动"即可触发。
+
+**团队/组织接入（推荐）**：在你的项目根目录一键装入并提交，全队共享、且用你们自己的规则：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integrations/claude-skill/install-into-project.sh | sh
+```
+
+它会在你的仓库里生成（幂等，不覆盖已存在文件）：
+- `.claude/skills/reviewgate/SKILL.md` —— **团队共享 skill**（提交后全队 Claude Code 自动可用）。
+- `.reviewgate/rules/business.md` —— **组织业务规则**（每次审查都注入，改成你们的真实约定，用 `[B1]/[B2]` 编号便于追溯）。
+- `.reviewgate/rules/<语言>.md` —— 语言起步规则按改动语言注入。ReviewGate 内置 **45 种语言**规则（Python/Go/JS/TS/Rust/Java/C/C++/C#/Ruby/PHP/Swift/Kotlin/Scala/Dart/Objective-C/Lua/Perl/Haskell/Elixir/Erlang/Clojure/Groovy/Julia/R/OCaml/F#/Zig/Nim/Crystal/仓颉/Shell/PowerShell/HTML/CSS/Vue/Svelte/SQL/GraphQL/Solidity/Fortran/COBOL/Pascal/Dockerfile/Terraform），无需拷贝。
+  自建 `<语言>.md` 可覆盖或追加；也可用 `[business] builtin_language_rules=false` 整体关闭内置语言规则。
+- `reviewgate.toml` —— 配置模板（端点 + `[business].rules_dir`；密钥用 `REVIEWGATE_API_KEY` 环境变量注入）。
+
+> **skill 对所有组织相同（薄壳）；差异化在你们提交的 `.reviewgate/rules/`**——`business.md` 写组织专属规则，`<语言>.md` 可直接用起步库，也可替换成你们自己的语言约定。提交 `.claude/` + `.reviewgate/` 即完成团队接入。
+
+### 3. GitHub Action（PR 闸口）
+
+把 `integrations/github-action/example-workflow.yml` 放到 `.github/workflows/`，在仓库 Secrets 配置 `REVIEWGATE_API_KEY`。PR 上自动审查、发摘要评论、按置信度阻断合并。
+
+## 设计
+
+- 自研 Agent 编排与 LLM 客户端，**零 SDK 依赖**（reqwest 直连，OpenAI/Anthropic 双协议）。
+- 工具集刻意**只读 + 结构化上报**（不照搬通用编码 Agent 的写/任意 shell）；
+  路径限制（`confine_path`）确保不读仓库外文件。
+- 代码上下文检索：tree-sitter 精确符号检索 + 函数体提取（重复检测）。
+- prompt 缓存复用（system 通用化 + diff 大块缓存断点，跨维度/跨轮）。
+
+### 可插拔 / 可扩展
+
+每一层都是可替换或可叠加的，按需启用、缺了优雅降级：
+
+- **LLM 提供方**：`LlmClient` trait + 双协议（OpenAI 兼容 / Anthropic）。配置即切换 DeepSeek / Kimi / GLM / 通义 / Claude 等，无需改代码。
+- **代码检索后端**：`CodeIndex` trait —— `GrepIndex`（默认、即用）/ `TreeSitterIndex`（AST 精确）。`find_definition/callers/references` 的**工具签名不变**，换后端 Agent 那层不动；未支持语言自动回退按行匹配。
+- **规则分层可叠加**：45 种**内置语言规则**（`builtin_language_rules` 可整体关）＋ `rules_dir/<语言>.md`（覆盖/追加，优先级更高）＋ `skills_dir`（直接吃组织已有的 review skill）＋ `[business].rules` 内联业务规则。
+- **外部程序可选可插拔**：`git` 是唯一硬依赖；ripgrep / linter / 类型检查器等**检测到才用，缺了降级为纯 LLM**——绝不强制用户装一堆。
+- **执行验证 opt-in**：`--exec-verify` 的沙箱 `run_check` 默认关闭，保留只读信任边界。
+- **三形态薄壳**：CLI / Claude Skill / GitHub Action 都是同一 core 引擎的薄包装。
+
+变更记录见 [`CHANGELOG.md`](CHANGELOG.md)，贡献指南见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
+
+## 评测（真实模型 + 真实代码验证）
+
+以下结果来自 `docs/evals/` 中留痕的公开样本，不是通用准确率承诺。当前样本主要用 `deepseek-v4-pro` 真实跑通（[`docs/evals/`](docs/evals/) · [总览](docs/evals/README.md)）：
+
+- **精度**：在已记录的真实 PR、45 语言干净样例和真实合并 commit 样本中，未观察到误 BLOCK；疑似误报会在 eval 记录中保留核查过程。
+- **召回**：真实 CVE（revert 法）+ ~18 漏洞类型 + 真实用户 issue + 合成强触发；**真实 PR revert 金标准 4/4**（axios 原型污染 SSRF / requests Content-Type 解析 / gin ClientIP XFF / ripgrep gitignore 缓存）全部命中，发现精确还原原修复所针对的回归。
+- **语言**：**45 种内置默认开**（常见+不常见：含仓颉/Zig/Nim/Crystal/OCaml/F#/Solidity/COBOL/Fortran/Dockerfile/Terraform…），按改动语言注入、可关、可覆盖。
+- **大 PR / 未审完不静默放行**：diff 超上下文窗口、请求失败、上下文超限、超时、超大文件跳过等情况会降级 WARN，并可让 CI 非 0 退出，避免被当成干净 PASS。
+- **诚实局限**：细微多步算术/进位 off-by-one 是静态审查硬尾，见 [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md)，建议测试互补。
+
+## 状态
+
+Beta：核心链路完整（多维并行 + 证伪 Judge + 置信度闸口 + 业务规则 + 45 语言内置规则 + 重复检测 + 多采样 + `--fix` 锚点校验 + reachability 分级 + 大 diff 自适应单元/永不静默放行 + CLI/Skill/Action），
+含 CI（fmt/clippy -D warnings/test，Win+Ubuntu）、只读安全边界、缓存与超时兜底。
+变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。
+
+## License
+
+[MIT](LICENSE)

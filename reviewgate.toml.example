@@ -1,0 +1,37 @@
+# ReviewGate 配置示例。复制为 reviewgate.toml 并填入密钥（该文件已被 .gitignore）。
+
+# 默认 LLM 提供方
+provider = "deepseek"
+
+[providers.deepseek]
+protocol = "openai"          # OpenAI 兼容协议
+base_url = "https://api.deepseek.com/v1"   # 换成你的端点（OpenAI 兼容）
+api_key = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+model = "deepseek-v4-pro"    # 1M context
+# max_input_tokens = 200000  # 输入上下文窗口预算（token）。大 diff 会按此切成多个审查单元，
+                             # 并在发送前预检避免撞上限。缺省 200000；小窗 provider（如 64k/128k）请调小。
+
+# 也可配 Anthropic 协议的提供方：
+# [providers.anthropic]
+# protocol = "anthropic"
+# base_url = "https://api.anthropic.com"
+# api_key = "sk-ant-xxx"
+# model = "claude-opus-4-8"
+
+# 闸口阈值
+# [gate]
+# block_threshold = 0.8        # 置信度 ≥ 此值 → 阻断（CI 非 0 退出）
+# warn_threshold = 0.5         # ≥ 此值 → 警告；低于则默认折叠
+# fail_on_incomplete = true    # 审查未完成（单元请求失败/超上下文/被跳过）时永不 PASS、CI 非 0 退出
+
+# 业务/项目规则。配置后自动启用 business 维度，并把规则注入到共享 prompt 块。
+# [business]
+# rules = [
+#   "金额字段必须使用整数分，禁止 float",
+#   "用户级资源访问必须校验 owner_id（租户隔离）",
+#   "订单状态只能按 CREATED -> PAID -> SHIPPED -> DONE 流转",
+#   "后台管理接口必须校验 admin role",
+# ]
+# 规则目录：<语言>.md（如 rust.md）仅在该语言被改动时注入；business.md / security.md 始终注入。
+# 可从 crates/core/prompts/languages/ 复制起步语言规则，再按组织约定调整。
+# rules_dir = ".reviewgate/rules"

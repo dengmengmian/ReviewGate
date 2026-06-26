@@ -1,0 +1,26 @@
+# Rust
+/target
+**/*.rs.bk
+# 注：这是应用(二进制)，按惯例提交 Cargo.lock
+
+# ReviewGate 本地配置（含密钥，勿提交）
+/reviewgate.toml
+/.reviewgate/
+
+# 编辑器
+.DS_Store
+.idea/
+.vscode/
+docs/evals/_run_*.log
+docs/evals/_sweep_*.md
+docs/evals/2026-06-25__lang-sweep.md
+docs/evals/_round2_*.md
+docs/evals/_ssrf_validate.md
+docs/evals/_uncommon_*.md
+docs/evals/_samples_val.md
+docs/evals/_precision.md
+docs/evals/_precbatch_*.md
+docs/evals/_biz_*.md
+docs/evals/_logicprec.md
+docs/evals/_real-ssrf*
+docs/evals/_execverify_*.md
