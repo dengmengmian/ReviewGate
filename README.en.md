@@ -12,6 +12,44 @@
 
 ReviewGate runs before PRs are merged and gives AI-generated, or AI-heavy, code a second review pass. It does not replace human review. It pre-filters the work for reviewers by promoting high-risk findings and folding low-confidence noise by default.
 
+## Start In 30 Seconds
+
+You need three things: a git repository, an LLM API key, and the `reviewgate` command.
+
+```bash
+# 1) Install
+curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh
+
+# 2) Create a global config. It works across all repositories.
+mkdir -p ~/.reviewgate
+cat > ~/.reviewgate/config.toml <<'EOF'
+provider = "deepseek"
+
+[providers.deepseek]
+protocol = "openai"
+base_url = "https://api.deepseek.com/v1"
+model = "deepseek-v4-pro"
+EOF
+
+# 3) Keep the API key in the environment, not in the config file.
+export REVIEWGATE_API_KEY="your key"
+
+# 4) Check that the model is reachable.
+reviewgate llm test
+
+# 5) Enter any git repository with local changes and review them.
+cd /path/to/your/repo
+reviewgate review
+```
+
+`BLOCK` means a high-confidence issue should be handled before merge. `WARN` means there is risk or the review was incomplete. `PASS` means no finding reached the configured gate threshold.
+
+Windows users can install with PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex
+```
+
 ## When To Use It
 
 | Scenario | What ReviewGate does |
@@ -22,7 +60,8 @@ ReviewGate runs before PRs are merged and gives AI-generated, or AI-heavy, code 
 | Your team has business rules | Injects rules for permissions, money, state machines, and domain behavior on every review |
 | You want a CI gate | High-confidence issues can block merges, and incomplete reviews do not silently pass |
 
-## How It Works
+<details>
+<summary><b>How does it review code?</b></summary>
 
 ReviewGate runs multiple agents in parallel, each focused on a review dimension:
 
@@ -44,7 +83,9 @@ Then it applies:
 
 Read-only tool boundaries, prompt-cache reuse, deterministic duplicate-function detection, and wall-clock timeout fallbacks are covered below.
 
-## Install
+</details>
+
+## Install Options
 
 ```bash
 # Linux / macOS
@@ -66,66 +107,64 @@ cargo install --path crates/cli
 
 Windows needs Visual Studio Build Tools to compile tree-sitter dependencies.
 
+## Quick Start
+
+ReviewGate ships with no built-in model—first get an **OpenAI-compatible or Anthropic LLM endpoint + key** (DeepSeek recommended), then 3 steps:
+
+```bash
+# 1) Copy the example config and fill in base_url / api_key / model
+cp reviewgate.toml.example reviewgate.toml
+
+# 2) Test connectivity
+reviewgate llm test
+
+# 3) Review the current changes in any git repository
+reviewgate review
+```
+
+> Put the config in `~/.reviewgate/config.toml` to make it **global**—every repo uses it, no per-project copy needed.
+
 ## Configuration
 
-ReviewGate ships with no built-in model. You provide one OpenAI-compatible or Anthropic LLM endpoint and an API key. The public evals were mainly run with DeepSeek through its OpenAI-compatible endpoint; other compatible providers can be configured.
-
-Copy `reviewgate.toml.example` to `reviewgate.toml`:
+**Minimal config** needs just one provider (everything else has defaults):
 
 ```toml
 provider = "deepseek"
 
 [providers.deepseek]
-protocol = "openai"
-base_url = "https://your-endpoint/api/v1"
-api_key = "sk-..."
-model = "deepseek-v4-pro"
+protocol = "openai"          # OpenAI-compatible (DeepSeek/Kimi/GLM/Qwen…); use "anthropic" for Anthropic
+base_url = "https://api.deepseek.com/v1"
+api_key  = "sk-..."          # or leave empty and inject via REVIEWGATE_API_KEY (recommended in CI)
+model    = "deepseek-v4-pro"
+```
 
+<details>
+<summary><b>Optional: gate thresholds · business rules · org skills · config location</b></summary>
+
+```toml
 [gate]
-block_threshold = 0.8
-warn_threshold = 0.5
+block_threshold = 0.8        # confidence ≥ 0.8 blocks the merge
+warn_threshold  = 0.5        # ≥ 0.5 warns; lower is folded by default
 
+# Project business rules: enables the `business` dimension; findings tagged [B1].. for traceability
 [business]
 rules = [
   "Money fields must use integer cents, not float",
   "User-owned resources must check owner_id",
 ]
-# rules_dir = ".reviewgate/rules"
-# skills_dir = ".claude/skills"
+# rules_dir  = ".reviewgate/rules"  # <lang>.md injected per changed language; business.md etc. always injected
+# skills_dir = ".claude/skills"     # reuse existing org review skills (frontmatter stripped)
 ```
 
-Existing organization review skills can be reused through `skills_dir`. ReviewGate supports both nested `<dir>/SKILL.md` files and flat `*.md` files, strips frontmatter, and injects the body as review rules. `rules_dir` and `skills_dir` can be used together.
+- **Config discovery order** (first match wins): `REVIEWGATE_CONFIG` path → `./reviewgate.toml` (project override) → `~/.reviewgate/config.toml` (global default).
+- **CI key injection**: use `REVIEWGATE_API_KEY` to avoid committing secrets (`REVIEWGATE_BASE_URL` / `REVIEWGATE_MODEL` also supported).
+- **Reuse org skills**: `skills_dir` supports nested `<dir>/SKILL.md` and flat `*.md`; can combine with `rules_dir` (plain rule md).
 
-Test connectivity:
-
-```bash
-reviewgate llm test
-```
-
-Config discovery order:
-
-1. Path from `REVIEWGATE_CONFIG`
-2. `./reviewgate.toml`
-3. `~/.reviewgate/config.toml`
-
-In CI, use `REVIEWGATE_API_KEY` to inject the key without committing it. `REVIEWGATE_BASE_URL` and `REVIEWGATE_MODEL` are also supported.
+</details>
 
 ## Ways To Use It
 
 ReviewGate has one core engine and three thin wrappers: CLI, Claude Code Skill, and GitHub Action.
-
-### Quick Start
-
-```bash
-# 1) Configure the key
-export REVIEWGATE_API_KEY=your-key
-
-# 2) Test the LLM connection
-reviewgate llm test
-
-# 3) Review the current changes in any git repository
-reviewgate review -v
-```
 
 ### CLI
 
