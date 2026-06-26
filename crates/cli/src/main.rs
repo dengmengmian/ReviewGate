@@ -417,11 +417,26 @@ mod tests {
 
     #[test]
     fn release_asset_maps_platforms() {
-        assert_eq!(release_asset("macos", "aarch64").unwrap(), "reviewgate-darwin-arm64");
-        assert_eq!(release_asset("macos", "x86_64").unwrap(), "reviewgate-darwin-x64");
-        assert_eq!(release_asset("linux", "aarch64").unwrap(), "reviewgate-linux-arm64");
-        assert_eq!(release_asset("linux", "x86_64").unwrap(), "reviewgate-linux-x64");
-        assert_eq!(release_asset("windows", "x86_64").unwrap(), "reviewgate-windows-x64.exe");
+        assert_eq!(
+            release_asset("macos", "aarch64").unwrap(),
+            "reviewgate-darwin-arm64"
+        );
+        assert_eq!(
+            release_asset("macos", "x86_64").unwrap(),
+            "reviewgate-darwin-x64"
+        );
+        assert_eq!(
+            release_asset("linux", "aarch64").unwrap(),
+            "reviewgate-linux-arm64"
+        );
+        assert_eq!(
+            release_asset("linux", "x86_64").unwrap(),
+            "reviewgate-linux-x64"
+        );
+        assert_eq!(
+            release_asset("windows", "x86_64").unwrap(),
+            "reviewgate-windows-x64.exe"
+        );
         // 命名须与 install.sh / release.yml 的资产名一致。
         assert!(release_asset("freebsd", "x86_64").is_err());
         assert!(release_asset("linux", "riscv64").is_err());

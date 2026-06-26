@@ -55,7 +55,7 @@ pub fn apply_fixes(findings: &[Finding], repo_root: &Path) -> anyhow::Result<()>
             continue;
         };
         // 自底向上应用：先改下面的行，上面的行号不受影响。
-        items.sort_by(|a, b| b.start_line.cmp(&a.start_line));
+        items.sort_by_key(|f| std::cmp::Reverse(f.start_line));
 
         let mut file_changed = false;
         for f in items {
