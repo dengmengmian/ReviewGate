@@ -12,6 +12,44 @@
 
 ReviewGate 用在 PR 合并前，给 AI 生成或 AI 大量参与的代码做二次审查。它不替代人工 review，而是先帮 reviewer 过滤一遍：**高风险问题推到前面，低置信反馈默认折叠**。
 
+## 30 秒跑起来
+
+你只需要三样东西：一个 git 仓库、一个 LLM API key、`reviewgate` 命令。
+
+```bash
+# 1) 安装
+curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh
+
+# 2) 写一份全局配置，之后所有仓库都能用
+mkdir -p ~/.reviewgate
+cat > ~/.reviewgate/config.toml <<'EOF'
+provider = "deepseek"
+
+[providers.deepseek]
+protocol = "openai"
+base_url = "https://api.deepseek.com/v1"
+model = "deepseek-v4-pro"
+EOF
+
+# 3) 用环境变量放 key，不写进配置文件
+export REVIEWGATE_API_KEY="你的 key"
+
+# 4) 确认模型能连上
+reviewgate llm test
+
+# 5) 进入任意有改动的 git 仓库，开始审查
+cd /path/to/your/repo
+reviewgate review
+```
+
+看到 `BLOCK` 表示有高置信问题建议先处理；看到 `WARN` 表示有风险或审查未完整完成；`PASS` 表示没有发现达到闸口阈值的问题。
+
+Windows 用户可以用 PowerShell 安装：
+
+```powershell
+irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex
+```
+
 ## 适合解决什么
 
 | 场景 | ReviewGate 帮你做什么 |
@@ -22,7 +60,8 @@ ReviewGate 用在 PR 合并前，给 AI 生成或 AI 大量参与的代码做二
 | 团队有业务规则 | 把权限、金额、状态机等规则写进配置，每次审查自动带上 |
 | 想在 CI 里加一道闸口 | 高置信问题可阻断合并，未审完不会被当成干净通过 |
 
-## 工作方式
+<details>
+<summary><b>它是怎么审的？</b></summary>
 
 启动多个并行 Agent，分维度审查你的改动：
 
@@ -44,7 +83,9 @@ ReviewGate 用在 PR 合并前，给 AI 生成或 AI 大量参与的代码做二
 
 只读安全边界、prompt 缓存复用、确定性重复函数检测、墙钟超时兜底见下文。
 
-## 安装
+</details>
+
+## 安装方式
 
 ```bash
 # Linux / macOS
@@ -60,26 +101,13 @@ irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 |
 
 或从源码：`cargo install --path crates/cli`（Windows 需 VS Build Tools 以编译 tree-sitter）
 
-## 快速开始
-
-ReviewGate 自带 0 个模型——先准备一个 **OpenAI 兼容或 Anthropic 的 LLM 端点 + key**（推荐 DeepSeek），然后 3 步：
-
-```bash
-# 1) 复制示例配置，填入 base_url / api_key / model
-cp reviewgate.toml.example reviewgate.toml
-
-# 2) 自检连通
-reviewgate llm test
-
-# 3) 进任意 git 仓库，审查当前改动
-reviewgate review
-```
-
-> 把配置放到 `~/.reviewgate/config.toml` 就**全局生效**，所有仓库直接用，不必每个项目放一份。
-
 ## 配置
 
-**最小配置**只要一个 provider（其余都有默认值）：
+ReviewGate 自带 0 个模型。你需要提供一个 OpenAI 兼容或 Anthropic 的 LLM 端点。
+
+建议把通用配置放到 `~/.reviewgate/config.toml`，这样所有仓库都能直接用；只有项目需要覆盖规则时，再在项目根目录放 `reviewgate.toml`。
+
+**最小配置**只要一个 provider：
 
 ```toml
 provider = "deepseek"
@@ -87,8 +115,13 @@ provider = "deepseek"
 [providers.deepseek]
 protocol = "openai"          # OpenAI 兼容（DeepSeek/Kimi/GLM/通义…）；用 Anthropic 则填 "anthropic"
 base_url = "https://api.deepseek.com/v1"
-api_key  = "sk-..."          # CI 里可留空，改用环境变量 REVIEWGATE_API_KEY 注入
 model    = "deepseek-v4-pro"
+```
+
+API key 推荐用环境变量：
+
+```bash
+export REVIEWGATE_API_KEY="sk-..."
 ```
 
 <details>

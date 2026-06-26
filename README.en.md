@@ -107,22 +107,34 @@ cargo install --path crates/cli
 
 Windows needs Visual Studio Build Tools to compile tree-sitter dependencies.
 
-## Quick Start
+## Start In 30 Seconds
 
-ReviewGate ships with no built-in model—first get an **OpenAI-compatible or Anthropic LLM endpoint + key** (DeepSeek recommended), then 3 steps:
+You need three things: a git repository, an LLM API key, and the `reviewgate` command.
 
 ```bash
-# 1) Copy the example config and fill in base_url / api_key / model
-cp reviewgate.toml.example reviewgate.toml
+# 1) Create a global config. It works across all repositories.
+mkdir -p ~/.reviewgate
+cat > ~/.reviewgate/config.toml <<'EOF'
+provider = "deepseek"
 
-# 2) Test connectivity
+[providers.deepseek]
+protocol = "openai"
+base_url = "https://api.deepseek.com/v1"
+model = "deepseek-v4-pro"
+EOF
+
+# 2) Keep the API key in the environment, not in the config file.
+export REVIEWGATE_API_KEY="your key"
+
+# 3) Check that the model is reachable.
 reviewgate llm test
 
-# 3) Review the current changes in any git repository
+# 4) Enter any git repository with local changes and review them.
+cd /path/to/your/repo
 reviewgate review
 ```
 
-> Put the config in `~/.reviewgate/config.toml` to make it **global**—every repo uses it, no per-project copy needed.
+`BLOCK` means a high-confidence issue should be handled before merge. `WARN` means there is risk or the review was incomplete. `PASS` means no finding reached the configured gate threshold.
 
 ## Configuration
 
