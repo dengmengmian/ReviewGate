@@ -41,6 +41,7 @@ cp integrations/claude-skill/SKILL.md ~/.claude/skills/reviewgate/SKILL.md
    - `filtered=true`：被闸口过滤的低置信项，**默认忽略**，除非用户要看全部。
    - `agreed_dimensions ≥ 2`：多个维度独立指向同一处 → **更可信**，优先汇报。
    - 排序：先 `severity`（high 优先）再 `confidence`。
+   - **未审完检查（重要）**：顶层 `incomplete=true` 或 `warnings` 非空 → 有维度/单元因超时、上下文超限或请求失败**没审完**。此时**绝不能报告"无问题/通过"**，必须明确告知用户"审查不完整"，并建议重跑（如调大 `--timeout`）或人工补审。
 4. **汇报**：用简洁中文列出可信问题（`path:start_line` + 维度 + 一句话 + 建议），并说明闸口判定。
    退出码：`BLOCK→1`，否则 `0`（`--fail-on block|warn|never` 可调）。
 5. **修复**（用户要求时）：逐条按 `suggestion` 改，改完再次 `reviewgate review` 复核。
