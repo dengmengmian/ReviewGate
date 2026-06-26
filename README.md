@@ -60,60 +60,64 @@ irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 |
 
 或从源码：`cargo install --path crates/cli`（Windows 需 VS Build Tools 以编译 tree-sitter）
 
+## 快速开始
+
+ReviewGate 自带 0 个模型——先准备一个 **OpenAI 兼容或 Anthropic 的 LLM 端点 + key**（推荐 DeepSeek），然后 3 步：
+
+```bash
+# 1) 复制示例配置，填入 base_url / api_key / model
+cp reviewgate.toml.example reviewgate.toml
+
+# 2) 自检连通
+reviewgate llm test
+
+# 3) 进任意 git 仓库，审查当前改动
+reviewgate review
+```
+
+> 把配置放到 `~/.reviewgate/config.toml` 就**全局生效**，所有仓库直接用，不必每个项目放一份。
+
 ## 配置
 
-ReviewGate 自带 0 个模型——你只需准备**一个 OpenAI 兼容或 Anthropic 的 LLM 端点 + key**。当前公开评测主要用 DeepSeek 的 OpenAI 兼容端点跑通，其他兼容端点可按配置切换。
-
-复制 `reviewgate.toml.example` 为 `reviewgate.toml`（已被 `.gitignore`）：
+**最小配置**只要一个 provider（其余都有默认值）：
 
 ```toml
 provider = "deepseek"
 
 [providers.deepseek]
-protocol = "openai"          # OpenAI 兼容协议，覆盖 DeepSeek/Kimi/GLM/通义…
-base_url = "https://your-endpoint/api/v1"
-api_key = "sk-..."
-model = "deepseek-v4-pro"
+protocol = "openai"          # OpenAI 兼容（DeepSeek/Kimi/GLM/通义…）；用 Anthropic 则填 "anthropic"
+base_url = "https://api.deepseek.com/v1"
+api_key  = "sk-..."          # CI 里可留空，改用环境变量 REVIEWGATE_API_KEY 注入
+model    = "deepseek-v4-pro"
+```
 
+<details>
+<summary><b>可选：闸口阈值 · 业务规则 · 组织 skill · 配置位置</b>（点开）</summary>
+
+```toml
 [gate]
-block_threshold = 0.8        # 置信度 ≥ 0.8 阻断
-warn_threshold = 0.5         # ≥ 0.5 警告，更低折叠
+block_threshold = 0.8        # 置信度 ≥ 0.8 阻断合并
+warn_threshold  = 0.5        # ≥ 0.5 警告，更低默认折叠
 
-# 可选：项目业务规则（配置后自动启用 business 维度）
+# 项目业务规则：配置后自动启用 business 维度，规则编号 [B1].. 可追溯
 [business]
 rules = [
   "金额字段必须使用整数分，禁止 float",
   "用户级资源访问必须校验 owner_id",
 ]
-# rules_dir = ".reviewgate/rules"   # <语言>.md 按改动语言注入；business.md 等始终注入
-# skills_dir = ".claude/skills"     # 读组织已写成 skill 的 review 规则（SKILL.md，自动剥 frontmatter）
+# rules_dir  = ".reviewgate/rules"  # <语言>.md 按改动语言注入；business.md 等始终注入
+# skills_dir = ".claude/skills"     # 复用组织已写成 skill 的 review 规则（自动剥 frontmatter）
 ```
 
-> **组织已有的 review 规则 skill** 可直接复用：把 `skills_dir` 指向它们所在目录（支持 `<子目录>/SKILL.md` 与扁平 `*.md`），ReviewGate 会剥掉 frontmatter、把正文当规则注入每次审查。`rules_dir`（纯规则 md）与 `skills_dir`（skill 格式）可同时用。
+- **配置发现顺序**（找到即用）：`REVIEWGATE_CONFIG` 指定路径 → 当前目录 `./reviewgate.toml`（项目级覆盖）→ `~/.reviewgate/config.toml`（全局默认）。
+- **CI 注入密钥**：用 `REVIEWGATE_API_KEY` 避免提交明文（同样支持 `REVIEWGATE_BASE_URL` / `REVIEWGATE_MODEL`）。
+- **组织 skill 复用**：`skills_dir` 支持 `<子目录>/SKILL.md` 与扁平 `*.md`；与 `rules_dir`（纯规则 md）可同时用。
 
-验证连通：`reviewgate llm test`
-
-**配置发现顺序**（找到即用）：
-1. `REVIEWGATE_CONFIG` 环境变量指定的路径
-2. 当前目录 `./reviewgate.toml`（项目级，可针对单仓库覆盖）
-3. `~/.reviewgate/config.toml`（**全局默认**——放这里后任意仓库都能直接跑，无需每个项目放一份）
-
-> CI 中可用 `REVIEWGATE_API_KEY` 环境变量注入密钥，避免提交（同样支持 `REVIEWGATE_BASE_URL` / `REVIEWGATE_MODEL`）。
+</details>
 
 ## 接入方式
 
 ReviewGate 一个引擎，三种形态——**CLI 为主，Skill / Action 都是调 CLI 的薄壳**。
-
-### 快速开始（3 步）
-
-```bash
-# 1) 配置密钥（推荐用环境变量，不落盘；或写进 reviewgate.toml 的 api_key）
-export REVIEWGATE_API_KEY=你的key
-# 2) 自检连通
-reviewgate llm test
-# 3) 在任意 git 仓库里审查当前改动
-reviewgate review -v
-```
 
 ### 1. CLI（主形态）
 
