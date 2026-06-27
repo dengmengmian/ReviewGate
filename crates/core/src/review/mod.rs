@@ -266,7 +266,29 @@ pub async fn run_review_with_client(
             }
         }
     }
-    let results = futures::future::join_all(tasks).await;
+    // 意图评审与 fan-out **并发**执行：意图 Agent 不依赖维度结果，故无需等 fan-out 完成再跑，
+    // 否则总墙钟 ≈ fan-out + intent（翻倍）。并发后总耗时 ≈ max(fan-out, intent)。
+    let intent_text = opts.intent.as_deref().filter(|s| !s.trim().is_empty());
+    let intent_fut = async {
+        match intent_text {
+            Some(it) => Some(
+                intent::run_intent_review(
+                    client,
+                    &reg,
+                    &ctx,
+                    &diff,
+                    it,
+                    budget,
+                    opts.verbose,
+                    opts.timeout,
+                    opts.progress.clone(),
+                )
+                .await,
+            ),
+            None => None,
+        }
+    };
+    let (results, intent_outcome) = tokio::join!(futures::future::join_all(tasks), intent_fut);
 
     // 每(单元×维度)容错：单个失败只记告警，不影响其它返回部分结果；未审完则标记 incomplete。
     let mut findings = Vec::new();
@@ -348,41 +370,26 @@ pub async fn run_review_with_client(
     relocate_all(&mut findings, Path::new(&root), &new_ref, &diff).await;
     findings = dedupe(findings);
 
-    // 意图 / 技术评审：若提供了意图，整体跑一次独立 Agent（不进 per-unit fan-out，从 diff 出发跨文件探索）。
-    // 「问题类」verdict（missing/deviation/breaking/suggestion）并入主结果过 Judge / 闸口；
-    // 「已满足(met)」verdict 是信息项——不判伪、不计入闸口，仅用于验收清单展示（闸口后再并入）。
+    // 意图 / 技术评审结果（已与 fan-out 并发跑完，见上）并入主结果：
+    // 「问题类」verdict（missing/deviation/breaking/suggestion）过 Judge / 闸口；
+    // 「已满足(met)」/「未核对(unknown)」是信息项——不判伪、不计入闸口，仅用于验收清单展示（闸口后再并入）。
     let mut intent_met: Vec<Finding> = Vec::new();
-    if let Some(intent_text) = opts.intent.as_deref() {
-        if !intent_text.trim().is_empty() {
-            let ir = intent::run_intent_review(
-                client,
-                &reg,
-                &ctx,
-                &diff,
-                intent_text,
-                budget,
-                opts.verbose,
-                opts.timeout,
-                opts.progress.clone(),
-            )
-            .await;
-            if ir.incomplete {
-                incomplete = true;
-                warnings.push(ReviewWarning {
-                    dimension: Dimension::Intent.as_str().to_string(),
-                    kind: "incomplete",
-                    message: "intent review did not finish (timeout/context overflow); the result may be partial".into(),
-                });
-            }
-            for mut f in ir.findings {
-                use crate::model::IntentStatus::{Met, Unknown};
-                // met / unknown(未核对) 是信息项：不判伪、不计闸口，仅进验收清单。
-                if matches!(f.intent_status, Some(Met) | Some(Unknown)) {
-                    f.filtered = true;
-                    intent_met.push(f);
-                } else {
-                    findings.push(f);
-                }
+    if let Some(ir) = intent_outcome {
+        if ir.incomplete {
+            incomplete = true;
+            warnings.push(ReviewWarning {
+                dimension: Dimension::Intent.as_str().to_string(),
+                kind: "incomplete",
+                message: "intent review did not finish (timeout/context overflow); the result may be partial".into(),
+            });
+        }
+        for mut f in ir.findings {
+            use crate::model::IntentStatus::{Met, Unknown};
+            if matches!(f.intent_status, Some(Met) | Some(Unknown)) {
+                f.filtered = true;
+                intent_met.push(f);
+            } else {
+                findings.push(f);
             }
         }
     }

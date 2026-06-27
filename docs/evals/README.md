@@ -66,7 +66,7 @@
 |---|---|---|
 | [`intent-mvp-ab`](2026-06-27__intent-mvp-ab.md) | axios URL 对象特性，受控 A/B（删 dispatch 处理造缺口） | 不完整实现命中缺口（跨文件追到拦截器链）、完整实现 0 误报 |
 | [`intent-structured-enforcement`](2026-06-27__intent-structured-enforcement.md) | gin 提交信息意图 / axios 详细 spec | gin **4/4 ✓ met**；axios C1 met + 其余诚实标 `? not assessed` → **WARN** |
-| [`intent-batch10`](2026-06-27__intent-batch10.md) | 10 个真实 commit（JS/Go/Python/Rust/C），`--intent-from-commit` | 9/10 跑通：全 PASS、每条标准均覆盖且 ✓ met（真实正确修复→met 正确，**0 误报 missing**）；1 例双超时已记 |
+| [`intent-batch10`](2026-06-27__intent-batch10.md) | 10 个真实 commit（JS/Go/Python/Rust/C），`--intent-from-commit` | 10/10 全 PASS、每条标准覆盖且 ✓ met（真实正确修复→met 正确，**0 误报 missing**）；#10 暴露的「意图串行致耗时翻倍」已改为并发 |
 
 **结构化强制**：意图解析成 N 条标准（C1..CN）注入评审，未被逐条 verdict 的标准兜底标 `? not assessed`，保证清单**覆盖每条**（杜绝修复前真实测出的空清单），有未核对标准则降级 WARN，绝不伪装 PASS。完整性的模型局限见 [`../LIMITATIONS.md`](../LIMITATIONS.md) §6。
 

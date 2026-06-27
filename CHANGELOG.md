@@ -14,6 +14,7 @@
 - **`api_key` 改为可选配置**：此前是必填字段，省略它的配置文件会以 `missing field api_key` 解析失败——令「密钥只放环境变量、不写进配置」的推荐用法无法工作。现可省略，由 `REVIEWGATE_API_KEY` 注入；解析后仍为空则给出清晰错误而非困惑的解析失败。
 
 ### Changed
+- **意图评审与维度 fan-out 并发执行**：意图 Agent 不依赖维度结果，改用 `tokio::join!` 与 fan-out 同时跑，总墙钟从 ≈`fan-out + intent`（翻倍）降到 ≈`max(fan-out, intent)`。10 个真实 commit 批量实测暴露的成本点。
 - **CLI 文案统一为英文**：状态/进度/章节标题/报错/`--verbose` 日志/GitHub PR 评论一律英文（与已英文的提示词、章节标题、双语 README 的开源定位一致）；**finding 内容仍按 `REVIEWGATE_OUTPUT_LANGUAGE`/locale 本地化**（中文用户照样看中文发现）。
 - 大 diff（多审查单元）下**采样固定为 1**：避免 `单元×维度×样本` 的成本放大；`--samples` 多采样只在单单元（正常 PR）上生效。
 
