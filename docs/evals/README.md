@@ -42,7 +42,20 @@
 | logic「具体用例执行推演」 | 真实业务 bug 漏报 | DST/parseISO/负零 WARN/漏→BLOCK，精度不退 |
 | 行号越界保护 | 短 diff 行号外推 | 单测覆盖 |
 
-## 五、诚实的局限
+## 五、大 PR / 大 diff 健壮性（2026-06-27）
+
+针对「AI 一次改很多文件」场景，用真实 PR / 多提交范围压测大 diff 的单元切分与「绝不静默通过」保证。机制与完整结论见 [`../BIG_PR_HANDLING.md`](../BIG_PR_HANDLING.md)。
+
+| 记录 | 语言 | 规模 | 单元 | 首轮超预算 | 发现 | 判定 |
+|---|---|---|---|---|---|---|
+| [`bigpr-axios-4k`](2026-06-27__bigpr-axios-4k.md) | JS | 9 文件 | 8 | 0 | 13 | WARN+incomplete |
+| [`bigpr-requests-6k`](2026-06-27__bigpr-requests-6k.md) | Python | 19 文件 | 2 | 0 | 2 | WARN+incomplete |
+| [`bigpr-axios-range-16k`](2026-06-27__bigpr-axios-range-16k.md) | JS | **55 文件 / ~5000 行** | 8 | 0 | 12 | WARN+incomplete |
+| [`bigpr-ripgrep-range-12k`](2026-06-27__bigpr-ripgrep-range-12k.md) | Rust | 28 文件 | 4 | 0 | 6（含 1 处 AI 幻觉 API）| WARN+incomplete |
+
+**eval 驱动的修复**：实测发现切分单元时未预留「系统提示词 + focus」固定开销，导致小/中预算下单元首轮**全部超预算、审不到内容**（但仍安全 WARN+incomplete，未静默通过）。修复后首轮超预算归零；55 文件/5000 行真实大 PR 切 8 单元正常审、出 12 条发现。「绝不静默通过」不变量全程成立。
+
+## 六、诚实的局限
 
 见 [`../LIMITATIONS.md`](../LIMITATIONS.md)。核心：**细微多步算术/逐位进位 off-by-one**（addBusinessDays、big.js 进位）
 是静态 LLM 审查的硬尾，建议与单元测试互补。命中与否大致取决于"需要心算的步数"。
