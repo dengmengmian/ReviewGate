@@ -38,9 +38,15 @@ pub fn shared_system_prompt() -> String {
 
 /// Dimension-specific focus block. It is placed after the shared user block.
 pub fn dimension_focus_block(d: Dimension) -> String {
+    // 意图维度用需求锚定的上报工具；其余维度用行锚的 report_finding。
+    let report_tool = if matches!(d, Dimension::Intent) {
+        "report_intent_finding (one verdict per acceptance criterion)"
+    } else {
+        "report_finding"
+    };
     format!(
         "## Review dimension\n\nYou are responsible for **only the `{dim}` dimension** in this run.\n\nFocus:\n{focus}\n\n\
-Review only this dimension. Report confirmed issues with report_finding. Call task_done when finished.\n\n\
+Review only this dimension. Report findings with {report_tool}. Call task_done when finished.\n\n\
 Output language: {lang}",
         dim = d.as_str(),
         focus = dimension_focus(d),

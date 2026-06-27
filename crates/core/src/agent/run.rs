@@ -2,12 +2,15 @@
 //!
 //! `report_finding` / `task_done` 是控制工具，由循环内部拦截处理（前者收集 Finding，后者终止）。
 
-use super::control_tools::{parse_finding, report_finding_def, task_done_def};
+use super::control_tools::{
+    parse_finding, parse_intent_finding, report_finding_def, report_intent_finding_def,
+    task_done_def,
+};
 use super::{
     dimension_focus_block, AgentConfig, AgentExitReason, AgentRun, AgentStats, LOOP_GUARD_LIMIT,
 };
 use crate::llm::LlmClient;
-use crate::model::{ContentBlock, Finding, Message, Role, StopReason, ToolResult};
+use crate::model::{ContentBlock, Dimension, Finding, Message, Role, StopReason, ToolResult};
 use crate::tool::{ToolContext, ToolRegistry};
 use anyhow::Result;
 use std::collections::HashMap;
@@ -35,11 +38,20 @@ pub async fn run_agent_with_stats(
     cfg: &AgentConfig,
     user_prompt: String,
 ) -> Result<AgentRun> {
+    // 意图维度用需求锚定的 report_intent_finding，其余维度用行锚的 report_finding。
+    let intent_dim = cfg.dimension == Dimension::Intent;
+    let report_def = || {
+        if intent_dim {
+            report_intent_finding_def()
+        } else {
+            report_finding_def()
+        }
+    };
     let mut tools = registry.defs();
-    tools.push(report_finding_def());
+    tools.push(report_def());
     tools.push(task_done_def());
     // 最后一轮只给上报/结束工具，逼模型基于已有信息收口。
-    let final_tools = vec![report_finding_def(), task_done_def()];
+    let final_tools = vec![report_def(), task_done_def()];
 
     // 首条 user 消息分两块：
     //   块 0 = 共享大块（diff + 文件全文，维度无关）→ 由客户端挂缓存断点，跨维度/跨轮复用；
@@ -195,6 +207,16 @@ pub async fn run_agent_with_stats(
                         ("Finding recorded.".to_string(), false)
                     }
                     Err(e) => (format!("Invalid report_finding arguments: {e}"), true),
+                },
+                "report_intent_finding" => match parse_intent_finding(&tu.input) {
+                    Ok(f) => {
+                        findings.push(f);
+                        ("Verdict recorded.".to_string(), false)
+                    }
+                    Err(e) => (
+                        format!("Invalid report_intent_finding arguments: {e}"),
+                        true,
+                    ),
                 },
                 "task_done" => {
                     done = true;

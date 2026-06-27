@@ -341,8 +341,10 @@ pub async fn run_review_with_client(
     relocate_all(&mut findings, Path::new(&root), &new_ref, &diff).await;
     findings = dedupe(findings);
 
-    // 意图 / 技术评审：若提供了意图，整体跑一次独立 Agent（不进 per-unit fan-out，从 diff 出发跨文件探索），
-    // 其发现并入主结果一起过 Judge / 闸口（缺失类发现不走 relocate，保留其需求锚定）。
+    // 意图 / 技术评审：若提供了意图，整体跑一次独立 Agent（不进 per-unit fan-out，从 diff 出发跨文件探索）。
+    // 「问题类」verdict（missing/deviation/breaking/suggestion）并入主结果过 Judge / 闸口；
+    // 「已满足(met)」verdict 是信息项——不判伪、不计入闸口，仅用于验收清单展示（闸口后再并入）。
+    let mut intent_met: Vec<Finding> = Vec::new();
     if let Some(intent_text) = opts.intent.as_deref() {
         if !intent_text.trim().is_empty() {
             let ir = intent::run_intent_review(
@@ -364,7 +366,14 @@ pub async fn run_review_with_client(
                     message: "意图评审未审完（超时/上下文超预算），结果可能不完整".into(),
                 });
             }
-            findings.extend(ir.findings);
+            for mut f in ir.findings {
+                if f.intent_status == Some(crate::model::IntentStatus::Met) {
+                    f.filtered = true; // 信息项：不进闸口、清单里折叠展示
+                    intent_met.push(f);
+                } else {
+                    findings.push(f);
+                }
+            }
         }
     }
 
@@ -409,6 +418,8 @@ pub async fn run_review_with_client(
     if incomplete && opts.gate.fail_on_incomplete && decision == GateDecision::Pass {
         decision = GateDecision::Warn;
     }
+    // 已满足(met)的验收项在闸口之后并入：它们是信息项，只供验收清单展示，不影响判定。
+    findings.append(&mut intent_met);
     sort_findings(&mut findings);
 
     let mut usage = agent_stats.usage.clone();

@@ -24,6 +24,34 @@ pub enum Dimension {
     Intent,
 }
 
+/// 意图评审里一条发现相对某条验收标准的判定（需求锚定，不依赖 diff 行号）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IntentStatus {
+    /// 该验收项已满足（信息项，进验收清单、不计入闸口）。
+    Met,
+    /// 缺失：需求点/分支/调用方适配未实现。
+    Missing,
+    /// 与意图不符：实现做错或误解需求。
+    Deviation,
+    /// 破坏既有行为/契约（意图未要求）。
+    Breaking,
+    /// 方案风险或更优解（建议级）。
+    Suggestion,
+}
+
+impl IntentStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IntentStatus::Met => "met",
+            IntentStatus::Missing => "missing",
+            IntentStatus::Deviation => "deviation",
+            IntentStatus::Breaking => "breaking",
+            IntentStatus::Suggestion => "suggestion",
+        }
+    }
+}
+
 impl Dimension {
     /// 全部维度，顺序即并行编排顺序。
     pub const ALL: [Dimension; 5] = [
@@ -148,6 +176,12 @@ pub struct Finding {
     /// 是较强的「真问题」信号；用于证伪后的置信度加分。1/0 视为单维度。
     #[serde(default)]
     pub agreed_dimensions: u8,
+    /// 意图评审专用：该发现映射到的验收标准/意图点（需求锚定）。其它维度为 None。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub criterion: Option<String>,
+    /// 意图评审专用：相对验收标准的判定（met/missing/deviation/breaking/suggestion）。其它维度为 None。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent_status: Option<IntentStatus>,
 }
 
 impl Finding {

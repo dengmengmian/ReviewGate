@@ -1,7 +1,7 @@
 //! 审查结果渲染：JSON 信封 + 人类可读文本。
 
 use reviewgate_core::gate::GateDecision;
-use reviewgate_core::model::{Finding, Severity};
+use reviewgate_core::model::{Dimension, Finding, IntentStatus, Severity};
 use reviewgate_core::review::{ReviewOutcome, ReviewWarning};
 use serde::Serialize;
 use std::io::IsTerminal;
@@ -33,6 +33,12 @@ struct FindingView<'a> {
     suggestion_code: &'a str,
     filtered: bool,
     agreed_dimensions: u8,
+    /// 意图评审：映射的验收标准（其它维度为 None，JSON 跳过）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    criterion: Option<&'a str>,
+    /// 意图评审：相对验收标准的判定（met/missing/deviation/breaking/suggestion）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    intent_status: Option<&'a str>,
     #[serde(skip_serializing_if = "str::is_empty")]
     existing_code: &'a str,
     #[serde(skip_serializing_if = "str::is_empty")]
@@ -53,6 +59,8 @@ impl<'a> From<&'a Finding> for FindingView<'a> {
             suggestion_code: &f.suggestion_code,
             filtered: f.filtered,
             agreed_dimensions: f.agreed_dimensions,
+            criterion: f.criterion.as_deref(),
+            intent_status: f.intent_status.map(|s| s.as_str()),
             existing_code: &f.existing_code,
             evidence: &f.evidence,
         }
@@ -196,8 +204,22 @@ pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
         return "没有检测到改动。\n".into();
     }
 
-    let mut kept: Vec<&Finding> = outcome.findings.iter().filter(|f| !f.filtered).collect();
-    let mut filtered: Vec<&Finding> = outcome.findings.iter().filter(|f| f.filtered).collect();
+    // 意图评审发现单独走「验收清单」区，不混进常规缺陷区（避免重复）。
+    let intent: Vec<&Finding> = outcome
+        .findings
+        .iter()
+        .filter(|f| f.dimension == Dimension::Intent)
+        .collect();
+    let mut kept: Vec<&Finding> = outcome
+        .findings
+        .iter()
+        .filter(|f| !f.filtered && f.dimension != Dimension::Intent)
+        .collect();
+    let mut filtered: Vec<&Finding> = outcome
+        .findings
+        .iter()
+        .filter(|f| f.filtered && f.dimension != Dimension::Intent)
+        .collect();
     kept.sort_by(|a, b| {
         b.severity
             .cmp(&a.severity)
@@ -249,6 +271,10 @@ pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
         }
         out.push_str("\nResult may be incomplete. Re-run with:\n");
         out.push_str("  reviewgate review --timeout 300 -v\n\n");
+    }
+
+    if !intent.is_empty() {
+        out.push_str(&render_intent_checklist(&p, &intent));
     }
 
     if kept.is_empty() {
@@ -317,6 +343,53 @@ pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
     out.push_str("To debug slow reviews:\n");
     out.push_str("  reviewgate review -v --no-judge --dimensions logic\n");
 
+    out
+}
+
+/// 意图/技术评审的「验收清单」：按验收标准分组，逐条显示满足/缺失/不符/破坏/建议。
+fn render_intent_checklist(p: &Palette, intent: &[&Finding]) -> String {
+    use std::collections::BTreeMap;
+    let mut out = String::new();
+    out.push_str(&p.bold("Intent / Acceptance Checklist"));
+    out.push_str("\n\n");
+
+    let mut by_crit: BTreeMap<&str, Vec<&Finding>> = BTreeMap::new();
+    for f in intent {
+        let c = f.criterion.as_deref().unwrap_or("(unspecified)");
+        by_crit.entry(c).or_default().push(f);
+    }
+    for (crit, items) in &by_crit {
+        out.push_str(&format!("• {}\n", sanitize(crit)));
+        for f in items {
+            let (label, color) = match f.intent_status {
+                Some(IntentStatus::Met) => ("✓ met", "32"),
+                Some(IntentStatus::Missing) => ("✗ missing", "1;31"),
+                Some(IntentStatus::Breaking) => ("✗ breaking", "1;31"),
+                Some(IntentStatus::Deviation) => ("⚠ deviation", "33"),
+                Some(IntentStatus::Suggestion) => ("• suggestion", "36"),
+                None => ("·", "0"),
+            };
+            out.push_str(&format!(
+                "    {} {}",
+                p.paint(color, label),
+                p.dim(&format!("({:.0}%)", f.confidence * 100.0))
+            ));
+            if !f.path.is_empty() {
+                let loc = if f.start_line > 0 {
+                    format!("{}:{}", f.path, f.start_line)
+                } else {
+                    f.path.clone()
+                };
+                out.push_str(&p.dim(&format!(" [{loc}]")));
+            }
+            out.push('\n');
+            out.push_str(&format!("      {}\n", sanitize(&f.message)));
+            if let Some(s) = &f.suggestion {
+                out.push_str(&p.dim(&format!("      → {}\n", sanitize(s))));
+            }
+        }
+        out.push('\n');
+    }
     out
 }
 
@@ -456,6 +529,8 @@ mod tests {
             reachability: reviewgate_core::model::Reachability::default(),
             filtered,
             agreed_dimensions: 1,
+            criterion: None,
+            intent_status: None,
         }
     }
 

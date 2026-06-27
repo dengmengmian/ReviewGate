@@ -48,6 +48,8 @@ mod tests {
             reachability: Reachability::default(),
             filtered: false,
             agreed_dimensions: agreed,
+            criterion: None,
+            intent_status: None,
         }
     }
 

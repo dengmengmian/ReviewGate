@@ -4,7 +4,7 @@ mod finding;
 mod llm;
 mod message;
 
-pub use finding::{Dimension, Finding, Reachability, Severity};
+pub use finding::{Dimension, Finding, IntentStatus, Reachability, Severity};
 pub use llm::{LlmResponse, StopReason, ToolDef, Usage};
 pub use message::{ContentBlock, Message, Role, ToolResult, ToolUse};
 
@@ -39,6 +39,8 @@ mod tests {
             reachability: Reachability::default(),
             filtered: false,
             agreed_dimensions: 1,
+            criterion: None,
+            intent_status: None,
         };
         let json = serde_json::to_string(&f).unwrap();
         // suggestion=None 被跳过；但 suggestion_code 始终存在（空串）。

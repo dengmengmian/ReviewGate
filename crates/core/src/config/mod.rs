@@ -25,6 +25,8 @@ pub struct ProviderConfig {
     #[serde(default)]
     pub protocol: Protocol,
     pub base_url: String,
+    /// API 密钥。可留空/省略，改用 `REVIEWGATE_API_KEY` 环境变量注入（推荐，避免提交明文）。
+    #[serde(default)]
     pub api_key: String,
     pub model: String,
     /// 模型输入上下文窗口（token）预算。用于把大 diff 按预算切成多个审查单元，
@@ -171,6 +173,11 @@ impl Config {
             if !m.is_empty() {
                 p.model = m;
             }
+        }
+        if p.api_key.trim().is_empty() {
+            anyhow::bail!(
+                "未配置 API key：在配置文件的 [providers.*] 里设 api_key，或设置环境变量 REVIEWGATE_API_KEY"
+            );
         }
         Ok(p)
     }

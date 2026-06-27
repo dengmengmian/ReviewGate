@@ -394,6 +394,8 @@ mod tests {
             reachability: crate::model::Reachability::default(),
             filtered: false,
             agreed_dimensions: 1,
+            criterion: None,
+            intent_status: None,
         }
     }
 
