@@ -143,17 +143,22 @@ pub async fn run_review_with_client(
     if has_business_rules && !dims.contains(&Dimension::Business) {
         dims.push(Dimension::Business);
     }
-    let samples = opts.samples.max(1);
-
     // 输入预算 → 把 diff 切成审查单元（正常 PR = 1 个单元，零退化）。
     let budget = cfg
         .active_provider()
         .map(|p| p.max_input_tokens())
         .unwrap_or(DEFAULT_MAX_INPUT_TOKENS) as usize;
     let units = plan_units(&diff, budget);
+    // 多单元（大 PR）本就庞大：不再叠采样，避免 单元×维度×样本 的成本放大。
+    // 多采样只在单单元（正常 PR）上用于提升 flaky 漏报（如 SSRF）的召回稳定性。
+    let samples = if units.len() > 1 {
+        1
+    } else {
+        opts.samples.max(1)
+    };
     if opts.verbose && units.len() > 1 {
         eprintln!(
-            "  [units] diff 超输入预算（{budget} tok），切成 {} 个审查单元",
+            "  [units] diff 超输入预算（{budget} tok），切成 {} 个审查单元；多单元下采样固定为 1（控成本）",
             units.len()
         );
     }

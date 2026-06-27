@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+### Changed
+- 大 diff（多审查单元）下**采样固定为 1**：避免 `单元×维度×样本` 的成本放大；`--samples` 多采样只在单单元（正常 PR）上生效。
+
+### Tests
+- 新增 `diff_modes` 集成测试：真实 git 仓库覆盖 Workspace / Commit / Range 三种采集模式 + 未跟踪文件。
+
 ## [0.1.1] - 2026-06-26
 
 ### Added
