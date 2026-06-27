@@ -4,6 +4,8 @@
 方法学贯穿：**用真实世界代码做 ground truth**——干净 PR 应 PASS（测精度）、已知 bug 应 BLOCK（测召回）。
 对真实 bug 用 **revert 法**：把已合并的修复 `git revert` 回去重新引入 bug，再审查能否命中（公告/issue 即 ground truth）。
 
+> 📌 **一页汇总**：[`生产/开源就绪验证：≥30 PR × 5 维 + 意图`](2026-06-27__production-readiness-30pr.md) —— 把下面各节汇成一张「能力 × 证据」矩阵，含 perf/style 维度补齐与就绪评估。
+
 ## 一、精度（干净代码不误报）
 
 | 来源 | 结果 |
@@ -67,6 +69,7 @@
 | [`intent-mvp-ab`](2026-06-27__intent-mvp-ab.md) | axios URL 对象特性，受控 A/B（删 dispatch 处理造缺口） | 不完整实现命中缺口（跨文件追到拦截器链）、完整实现 0 误报 |
 | [`intent-structured-enforcement`](2026-06-27__intent-structured-enforcement.md) | gin 提交信息意图 / axios 详细 spec | gin **4/4 ✓ met**；axios C1 met + 其余诚实标 `? not assessed` → **WARN** |
 | [`intent-batch10`](2026-06-27__intent-batch10.md) | 10 个真实 commit（JS/Go/Python/Rust/C），`--intent-from-commit` | 10/10 全 PASS、每条标准覆盖且 ✓ met（真实正确修复→met 正确，**0 误报 missing**）；#10 暴露的「意图串行致耗时翻倍」已改为并发 |
+| [`intent-cobra-pr2356`](2026-06-27__intent-cobra-pr2356.md) | **Go**（cobra）微妙切片别名 bug（污染 os.Args）受控 A/B；含诚实局限 | 缺口：**C1 ⚠ deviation**（调用链推理已核验 `Traverse` 子切片）+ logic Warning → WARN；正确：未误报缺口，但需全链路确证→诚实 **`? not assessed`** + WARN+incomplete（绝不伪 PASS）|
 
 **结构化强制**：意图解析成 N 条标准（C1..CN）注入评审，未被逐条 verdict 的标准兜底标 `? not assessed`，保证清单**覆盖每条**（杜绝修复前真实测出的空清单），有未核对标准则降级 WARN，绝不伪装 PASS。完整性的模型局限见 [`../LIMITATIONS.md`](../LIMITATIONS.md) §6。
 
