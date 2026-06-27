@@ -16,9 +16,9 @@
 
 ## 二、召回（真实漏洞要 BLOCK）
 
-- **真实 CVE（revert 法，5 语言）** [`recall-cve-reverts`](2026-06-26__recall-cve-reverts.md)：
+- **真实 CVE（revert 法，5 语言）** [`recall-cve-reverts`](2026-06-25__recall-cve-reverts.md)：
   axios 原型污染 / gradio 路径穿越 / echo 目录穿越 / smallvec 缓冲区溢出 / cJSON 堆越界(删除式)——**全 BLOCK**。
-- **植入式漏洞** [`recall-planted-bugs`](2026-06-26__recall-planted-bugs.md) + 多轮类型扩展：
+- **植入式漏洞** [`recall-planted-bugs`](2026-06-25__recall-planted-bugs.md) + 多轮类型扩展：
   SQLi / 越权 / 命令注入 / XSS / XXE / SSTI / 反序列化 / 弱加密 / 弱随机 / ReDoS / 开放重定向 / 整数溢出 等 ~18 类，全 BLOCK。
 - **真实用户 issue（business review）** [`business-real-issues`](2026-06-26__business-real-issues.md)：
   **16 个真实用户报告的 bug → 13 BLOCK / 2 部分(WARN) / 1 漏**，覆盖 **13 个领域**：
@@ -28,7 +28,7 @@
 
 ## 三、语言覆盖
 
-[`language-coverage`](2026-06-26__language-coverage.md) + [`uncommon-languages`](2026-06-26__uncommon-languages.md)：
+[`language-coverage`](2026-06-25__language-coverage.md) + [`uncommon-languages`](2026-06-25__uncommon-languages.md)：
 **30+ 语言**（含 Go/Java/JS/TS/Python/PHP/C/C++/C#/Rust/Ruby/Kotlin/Swift/Dart/Scala/ObjC/Shell/SQL/HTML/CSS/Vue/Svelte +
 仓颉/Nim/Haskell/OCaml/Julia/Crystal/R…）。仅 6 种有 tree-sitter 精确工具，其余走 grep 兜底，LLM 审查照常命中——**语言无关**。
 
@@ -66,6 +66,7 @@
 |---|---|---|
 | [`intent-mvp-ab`](2026-06-27__intent-mvp-ab.md) | axios URL 对象特性，受控 A/B（删 dispatch 处理造缺口） | 不完整实现命中缺口（跨文件追到拦截器链）、完整实现 0 误报 |
 | [`intent-structured-enforcement`](2026-06-27__intent-structured-enforcement.md) | gin 提交信息意图 / axios 详细 spec | gin **4/4 ✓ met**；axios C1 met + 其余诚实标 `? not assessed` → **WARN** |
+| [`intent-batch10`](2026-06-27__intent-batch10.md) | 10 个真实 commit（JS/Go/Python/Rust/C），`--intent-from-commit` | 9/10 跑通：全 PASS、每条标准均覆盖且 ✓ met（真实正确修复→met 正确，**0 误报 missing**）；1 例双超时已记 |
 
 **结构化强制**：意图解析成 N 条标准（C1..CN）注入评审，未被逐条 verdict 的标准兜底标 `? not assessed`，保证清单**覆盖每条**（杜绝修复前真实测出的空清单），有未核对标准则降级 WARN，绝不伪装 PASS。完整性的模型局限见 [`../LIMITATIONS.md`](../LIMITATIONS.md) §6。
 
