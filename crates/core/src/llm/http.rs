@@ -16,7 +16,7 @@ pub fn build_http_client() -> Result<reqwest::Client> {
         .connect_timeout(Duration::from_secs(30))
         .pool_idle_timeout(Duration::from_secs(30)) // 防网关 LB 关闭空闲连接
         .build()
-        .context("构造 HTTP 客户端失败")
+        .context("failed to build HTTP client")
 }
 
 /// POST JSON，对超时/连接失败/5xx 自动重试（最多 3 次，退避带抖动）；4xx 不重试。
@@ -41,18 +41,18 @@ pub async fn post_json_with_retry(
                     return Ok(text);
                 }
                 if status.is_server_error() {
-                    last_err = Some(anyhow::anyhow!("LLM 返回 {status}：{text}"));
+                    last_err = Some(anyhow::anyhow!("LLM returned {status}: {text}"));
                 } else {
-                    anyhow::bail!("LLM 返回 {status}：{text}"); // 4xx：不重试
+                    anyhow::bail!("LLM returned {status}: {text}"); // 4xx：不重试
                 }
             }
-            Err(e) => last_err = Some(anyhow::anyhow!("LLM 请求发送失败：{e}")),
+            Err(e) => last_err = Some(anyhow::anyhow!("failed to send LLM request: {e}")),
         }
         if attempt + 1 < MAX_ATTEMPTS {
             tokio::time::sleep(backoff_with_jitter(attempt)).await;
         }
     }
-    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("LLM 请求失败")))
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("LLM request failed")))
 }
 
 /// 退避：基础 `2*(attempt+1)` 秒，叠加 **±25% 抖动**（去同步并发重试）。

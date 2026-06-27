@@ -86,8 +86,8 @@ impl LlmClient for AnthropicClient {
         let text =
             super::http::post_json_with_retry(&self.http, &self.endpoint, &headers, &body).await?;
 
-        let parsed: MessagesResponse =
-            serde_json::from_str(&text).with_context(|| format!("解析 LLM 响应失败：{text}"))?;
+        let parsed: MessagesResponse = serde_json::from_str(&text)
+            .with_context(|| format!("failed to parse LLM response: {text}"))?;
 
         let mut content = Vec::new();
         for block in parsed.content {

@@ -46,9 +46,9 @@ pub(super) async fn run_intent_review(
         .join("\n");
 
     let user_prompt = format!(
-        "## 本次改动的意图 / 需求 / 验收标准\n\n{intent}\n\n## 本次改动 (diff)\n\n{diff_body}\n\n\
-请评审「实现 vs 意图」：从 diff 出发，按需用工具深入其它文件、调用方、契约与测试，\
-判断是否完整、正确地实现了上述意图。",
+        "## Intent / requirements / acceptance criteria for this change\n\n{intent}\n\n## The change (diff)\n\n{diff_body}\n\n\
+Review implementation-vs-intent: starting from the diff, use tools as needed to dig into other files, callers, contracts, and tests, \
+and judge whether the intent above is fully and correctly implemented.",
         intent = intent.trim(),
     );
 
@@ -56,7 +56,7 @@ pub(super) async fn run_intent_review(
         Ok(run) => {
             if verbose {
                 eprintln!(
-                    "  [intent] 意图评审：LLM {} 次 · 工具 {} 次 · 发现 {} 条",
+                    "  [intent] intent review: {} LLM calls, {} tool calls, {} findings",
                     run.stats.llm_requests,
                     run.stats.tool_calls,
                     run.findings.len()
@@ -73,7 +73,7 @@ pub(super) async fn run_intent_review(
             }
         }
         Err(e) => {
-            eprintln!("⚠ 意图评审失败（已跳过）：{e}");
+            eprintln!("! intent review failed (skipped): {e}");
             IntentReview {
                 findings: Vec::new(),
                 incomplete: true,

@@ -88,7 +88,7 @@ pub async fn run_agent_with_stats(
                 exit_reason = AgentExitReason::TimedOut;
                 if cfg.verbose {
                     eprintln!(
-                        "  [{dim}] 超时 {}s，提前收尾（保留已收集 {} 条）",
+                        "  [{dim}] timed out after {}s; wrapping up early (kept {} findings)",
                         t.as_secs(),
                         findings.len()
                     );
@@ -103,7 +103,7 @@ pub async fn run_agent_with_stats(
                 exit_reason = AgentExitReason::ContextOverflow;
                 if cfg.verbose {
                     eprintln!(
-                        "  [{dim}] 第 {} 轮预检超预算（估算 {est} > {budget} tok），提前收尾（保留 {} 条）",
+                        "  [{dim}] round {} pre-check over budget (est {est} > {budget} tok); wrapping up early (kept {} findings)",
                         round + 1,
                         findings.len()
                     );
@@ -121,9 +121,9 @@ pub async fn run_agent_with_stats(
         }
         if cfg.verbose {
             eprintln!(
-                "  [{dim}] 第 {} 轮：请求 LLM…{}",
+                "  [{dim}] round {}: calling LLM...{}",
                 round + 1,
-                if is_final { "（强制收口）" } else { "" }
+                if is_final { " (forced wrap-up)" } else { "" }
             );
         }
         stats.llm_requests += 1;
@@ -140,7 +140,7 @@ pub async fn run_agent_with_stats(
                     exit_reason = AgentExitReason::TimedOut;
                     if cfg.verbose {
                         eprintln!(
-                            "  [{dim}] 第 {} 轮请求超时，提前收尾（保留已收集的 {} 条）",
+                            "  [{dim}] round {} request timed out; wrapping up early (kept {} findings)",
                             round + 1,
                             findings.len()
                         );
@@ -160,12 +160,12 @@ pub async fn run_agent_with_stats(
                 exit_reason = AgentExitReason::RequestFailed;
                 if cfg.verbose {
                     eprintln!(
-                        "  [{dim}] 第 {} 轮请求失败，提前收尾（保留已收集的 {} 条）：{e}",
+                        "  [{dim}] round {} request failed; wrapping up early (kept {} findings): {e}",
                         round + 1,
                         findings.len()
                     );
                     eprintln!(
-                        "  [{dim}] 统计：LLM {} 次 · 工具 {} 次（{}）",
+                        "  [{dim}] stats: {} LLM calls, {} tool calls ({})",
                         stats.llm_requests,
                         stats.tool_calls,
                         stats.tool_summary()
@@ -181,7 +181,7 @@ pub async fn run_agent_with_stats(
         if cfg.verbose && !tool_uses.is_empty() {
             let names: Vec<&str> = tool_uses.iter().map(|t| t.name.as_str()).collect();
             eprintln!(
-                "  [{dim}] 第 {} 轮：调用 {} 个工具：{}",
+                "  [{dim}] round {}: {} tool call(s): {}",
                 round + 1,
                 tool_uses.len(),
                 names.join(", ")
@@ -239,7 +239,7 @@ pub async fn run_agent_with_stats(
                         stats.loop_guarded += 1;
                         if cfg.verbose {
                             eprintln!(
-                                "  [{dim}] 循环熔断：{other} 已用相同参数调用 {n} 次，短路。"
+                                "  [{dim}] loop guard: {other} called {n}x with identical args; short-circuiting."
                             );
                         }
                         (
@@ -265,7 +265,7 @@ pub async fn run_agent_with_stats(
             exit_reason = AgentExitReason::Completed;
             if cfg.verbose {
                 eprintln!(
-                    "  [{dim}] 完成，{} 条发现；LLM {} 次 · 工具 {} 次（{}）；{}",
+                    "  [{dim}] done, {} findings; {} LLM calls, {} tool calls ({}); {}",
                     findings.len(),
                     stats.llm_requests,
                     stats.tool_calls,

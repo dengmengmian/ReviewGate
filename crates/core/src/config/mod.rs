@@ -133,17 +133,18 @@ pub struct Config {
 impl Config {
     /// 按发现顺序加载配置。
     pub fn load() -> Result<Config> {
-        let path = Self::discover()
-            .ok_or_else(|| anyhow!("未找到 reviewgate.toml（可设 REVIEWGATE_CONFIG 指定路径）"))?;
+        let path = Self::discover().ok_or_else(|| {
+            anyhow!("reviewgate.toml not found (set REVIEWGATE_CONFIG to point to it)")
+        })?;
         Self::from_path(&path)
     }
 
     /// 从指定路径加载。
     pub fn from_path(path: &Path) -> Result<Config> {
         let text = std::fs::read_to_string(path)
-            .with_context(|| format!("读取配置失败：{}", path.display()))?;
-        let cfg: Config =
-            toml::from_str(&text).with_context(|| format!("解析配置失败：{}", path.display()))?;
+            .with_context(|| format!("failed to read config: {}", path.display()))?;
+        let cfg: Config = toml::from_str(&text)
+            .with_context(|| format!("failed to parse config: {}", path.display()))?;
         Ok(cfg)
     }
 
@@ -151,7 +152,7 @@ impl Config {
     pub fn active_provider(&self) -> Result<&ProviderConfig> {
         self.providers
             .get(&self.provider)
-            .ok_or_else(|| anyhow!("配置里没有名为 `{}` 的提供方", self.provider))
+            .ok_or_else(|| anyhow!("no provider named `{}` in the config", self.provider))
     }
 
     /// 取默认提供方并应用环境变量覆盖（用于 CI 注入密钥等）。
@@ -176,7 +177,7 @@ impl Config {
         }
         if p.api_key.trim().is_empty() {
             anyhow::bail!(
-                "未配置 API key：在配置文件的 [providers.*] 里设 api_key，或设置环境变量 REVIEWGATE_API_KEY"
+                "no API key configured: set api_key under [providers.*] in the config, or set the REVIEWGATE_API_KEY environment variable"
             );
         }
         Ok(p)

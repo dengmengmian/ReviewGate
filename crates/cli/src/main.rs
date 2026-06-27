@@ -9,7 +9,7 @@ use std::io::IsTerminal;
 #[derive(Parser)]
 #[command(
     name = "reviewgate",
-    about = "给 AI 生成的代码加一道合并前质检：优先暴露高风险问题，折叠低置信噪音",
+    about = "A pre-merge quality gate for AI-generated code: surface high-risk issues first, fold low-confidence noise",
     version = reviewgate_core::version(),
 )]
 struct Cli {
@@ -78,7 +78,7 @@ fn resolve_mode(
             to: t.clone(),
         },
         (_, Some(_), None) | (_, None, Some(_)) => {
-            anyhow::bail!("--from 与 --to 必须同时提供")
+            anyhow::bail!("--from and --to must be provided together")
         }
         _ => DiffMode::Workspace,
     })
@@ -102,23 +102,24 @@ fn resolve_intent(args: &ReviewArgs) -> anyhow::Result<Option<String>> {
             let mut buf = String::new();
             std::io::stdin()
                 .read_to_string(&mut buf)
-                .context("读取 stdin 意图失败")?;
+                .context("failed to read intent from stdin")?;
             buf
         } else {
-            std::fs::read_to_string(src).with_context(|| format!("读取意图文件失败：{src}"))?
+            std::fs::read_to_string(src)
+                .with_context(|| format!("failed to read intent file: {src}"))?
         };
         return Ok(normalize(text));
     }
     if args.intent_from_commit {
         let Some(sha) = &args.commit else {
-            anyhow::bail!("--intent-from-commit 需配合 --commit 使用");
+            anyhow::bail!("--intent-from-commit requires --commit");
         };
         let out = std::process::Command::new("git")
             .args(["log", "-1", "--format=%B", sha])
             .output()
-            .context("执行 git 读取提交信息失败")?;
+            .context("failed to run git to read the commit message")?;
         if !out.status.success() {
-            anyhow::bail!("读取 commit {sha} 提交信息失败");
+            anyhow::bail!("failed to read commit message for {sha}");
         }
         return Ok(normalize(String::from_utf8_lossy(&out.stdout).to_string()));
     }
@@ -206,12 +207,12 @@ fn release_asset(os: &str, arch: &str) -> anyhow::Result<String> {
         "linux" => "linux",
         "macos" => "darwin",
         "windows" => "windows",
-        other => anyhow::bail!("不支持的系统：{other}"),
+        other => anyhow::bail!("unsupported OS: {other}"),
     };
     let a = match arch {
         "x86_64" => "x64",
         "aarch64" => "arm64",
-        other => anyhow::bail!("不支持的架构：{other}"),
+        other => anyhow::bail!("unsupported arch: {other}"),
     };
     let ext = if o == "windows" { ".exe" } else { "" };
     Ok(format!("reviewgate-{o}-{a}{ext}"))
@@ -223,36 +224,36 @@ async fn upgrade() -> anyhow::Result<()> {
     let asset = release_asset(std::env::consts::OS, std::env::consts::ARCH)?;
     let url =
         format!("https://github.com/dengmengmian/ReviewGate/releases/latest/download/{asset}");
-    eprintln!("下载最新版本：{asset} …");
+    eprintln!("Downloading latest release: {asset} ...");
     let resp = reqwest::Client::new()
         .get(&url)
         .send()
         .await
-        .with_context(|| format!("下载失败：{url}"))?;
+        .with_context(|| format!("download failed: {url}"))?;
     if !resp.status().is_success() {
-        anyhow::bail!("下载失败：HTTP {}（{url}）", resp.status());
+        anyhow::bail!("download failed: HTTP {} ({url})", resp.status());
     }
     let bytes = resp.bytes().await?;
 
     // 写临时文件 → 自替换当前可执行文件（self_replace 处理 Windows 运行中 exe 的替换）。
     let tmp = std::env::temp_dir().join(format!("reviewgate-upgrade-{}", std::process::id()));
-    std::fs::write(&tmp, &bytes).context("写入临时文件失败")?;
+    std::fs::write(&tmp, &bytes).context("failed to write temp file")?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))?;
     }
-    self_replace::self_replace(&tmp).context("替换当前可执行文件失败")?;
+    self_replace::self_replace(&tmp).context("failed to replace the current executable")?;
     let _ = std::fs::remove_file(&tmp);
 
     // 用新二进制打印版本确认。
     if let Ok(exe) = std::env::current_exe() {
         if let Ok(out) = std::process::Command::new(&exe).arg("--version").output() {
-            eprint!("✓ 已升级到：{}", String::from_utf8_lossy(&out.stdout));
+            eprint!("OK Upgraded to: {}", String::from_utf8_lossy(&out.stdout));
             return Ok(());
         }
     }
-    eprintln!("✓ 已升级。");
+    eprintln!("OK Upgraded.");
     Ok(())
 }
 
@@ -265,7 +266,7 @@ fn parse_dimension(s: &str) -> anyhow::Result<reviewgate_core::model::Dimension>
         "style" => Style,
         "ai_smell" => AiSmell,
         "business" => Business,
-        other => anyhow::bail!("未知维度：{other}"),
+        other => anyhow::bail!("unknown dimension: {other}"),
     })
 }
 
@@ -292,7 +293,7 @@ async fn agent_run(dimension: &str) -> anyhow::Result<()> {
     let root = diff::git::repo_root().await?;
     let d = Arc::new(diff::collect(&DiffMode::Workspace).await?);
     if d.files.is_empty() {
-        eprintln!("没有检测到改动。");
+        eprintln!("No changes detected.");
         return Ok(());
     }
     // 只传共享大块；维度聚焦块由 run_agent 注入（见 review 路径说明）。
@@ -305,7 +306,11 @@ async fn agent_run(dimension: &str) -> anyhow::Result<()> {
     }
 
     let agent_cfg = AgentConfig::for_dimension(dim);
-    eprintln!("跑维度 [{}]，模型 {} …", dim, client.model());
+    eprintln!(
+        "Running dimension [{}] with model {} ...",
+        dim,
+        client.model()
+    );
     let mut findings = run_agent(&*client, &reg, &ctx, &agent_cfg, user_prompt).await?;
 
     // M1.9 行号重定位。
@@ -313,7 +318,7 @@ async fn agent_run(dimension: &str) -> anyhow::Result<()> {
         .await;
 
     println!("{}", serde_json::to_string_pretty(&findings)?);
-    eprintln!("共 {} 条发现。", findings.len());
+    eprintln!("{} findings.", findings.len());
     Ok(())
 }
 
@@ -354,11 +359,11 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
 
     let mode = resolve_mode(&args.commit, &args.from, &args.to)?;
     eprintln!(
-        "ReviewGate 审查中（基础维度 {} 个：{}{}；samples={}；实际 Agent {} 个）…",
+        "ReviewGate reviewing ({} base dimensions: {}{}; samples={}; {} agents)...",
         dims.len(),
         names.join(", "),
         if auto_business {
-            "；自动加入 business"
+            "; +business (auto)"
         } else {
             ""
         },
@@ -378,7 +383,7 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     opts.exec_verify = args.exec_verify;
     opts.intent = resolve_intent(args)?;
     if opts.intent.is_some() {
-        eprintln!("  + 意图/技术评审：已加载意图，运行独立的「实现 vs 意图」评审。");
+        eprintln!("  + Intent review: intent loaded; running the implementation-vs-intent pass.");
     }
 
     // 实时进度：仅在终端、非 JSON、非 --verbose 时开。单行就地刷新，结束清行并给紧凑摘要；
@@ -397,7 +402,7 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
                 let last: String = last.chars().take(60).collect();
                 let s = start.elapsed().as_secs();
                 eprint!(
-                    "\r\x1b[2K{} 审查中 · {n} 次工具调用 · {last} · {}:{:02}",
+                    "\r\x1b[2K{} Reviewing - {n} tool calls - {last} - {}:{:02}",
                     FRAMES[i % FRAMES.len()],
                     s / 60,
                     s % 60
@@ -418,7 +423,7 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
         // 清掉进度行，留一行紧凑完成摘要（细节收起）。
         eprint!("\r\x1b[2K");
         eprintln!(
-            "✓ 审查完成 · {n} 次工具调用 · 耗时 {}:{:02}",
+            "OK Review complete - {n} tool calls - {}:{:02}",
             s / 60,
             s % 60
         );
@@ -432,10 +437,10 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     // 可选：在 GitHub PR 上发摘要评论 + 行内 suggestion（作者一键应用，人把关）。
     if args.comment {
         if let Err(e) = reviewgate_core::github::post_summary(&outcome).await {
-            eprintln!("发布摘要评论失败：{e}");
+            eprintln!("failed to post summary comment: {e}");
         }
         if let Err(e) = reviewgate_core::github::post_inline_suggestions(&outcome).await {
-            eprintln!("发布行内评论失败：{e}");
+            eprintln!("failed to post inline comments: {e}");
         }
     }
 
@@ -463,7 +468,7 @@ async fn diff_summary(args: &DiffArgs) -> anyhow::Result<()> {
 
     let mode = resolve_mode(&args.commit, &args.from, &args.to)?;
     let d = diff::collect(&mode).await?;
-    println!("改动文件数：{}", d.files.len());
+    println!("Files changed: {}", d.files.len());
     for f in &d.files {
         println!(
             "  [{:?}{}] {}  (+{} -{}, {} hunks)",
@@ -486,22 +491,26 @@ async fn llm_test() -> anyhow::Result<()> {
     let cfg = Config::load()?;
     let provider = cfg.active_provider_resolved()?;
     println!(
-        "提供方：{}（{:?}）  模型：{}  端点：{}",
+        "Provider: {} ({:?})  Model: {}  Endpoint: {}",
         cfg.provider, provider.protocol, provider.model, provider.base_url
     );
 
     let client = build_client(&provider)?;
-    let messages = vec![Message::user("用一句话回复：连接正常。")];
+    let messages = vec![Message::user("Reply in one sentence: connection OK.")];
     let resp = client
-        .complete("你是连通性自检助手，请简短回复。", &messages, &[])
+        .complete(
+            "You are a connectivity self-check assistant. Reply briefly.",
+            &messages,
+            &[],
+        )
         .await?;
 
-    println!("---\n回复：{}", resp.text().trim());
+    println!("---\nReply: {}", resp.text().trim());
     println!(
-        "停止原因：{:?}  用量：in={} out={}",
+        "Stop reason: {:?}  Usage: in={} out={}",
         resp.stop_reason, resp.usage.input_tokens, resp.usage.output_tokens
     );
-    println!("✅ LLM 连通正常");
+    println!("LLM connectivity OK");
     Ok(())
 }
 

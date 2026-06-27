@@ -179,7 +179,7 @@ pub async fn run_review_with_client(
     };
     if opts.verbose && units.len() > 1 {
         eprintln!(
-            "  [units] diff 超输入预算（{budget} tok），切成 {} 个审查单元；多单元下采样固定为 1（控成本）",
+            "  [units] diff exceeds input budget ({budget} tok); split into {} review units; samples forced to 1 (cost control)",
             units.len()
         );
     }
@@ -228,14 +228,14 @@ pub async fn run_review_with_client(
             .map(|&i| diff.files[i].path().to_string())
             .unwrap_or_else(|| format!("unit{ui}"));
         eprintln!(
-            "⚠ 文件 [{label}] diff 超输入预算（约 {} tok），已跳过未审",
+            "! file [{label}] diff exceeds input budget (~{} tok); skipped (not reviewed)",
             unit.est_tokens
         );
         warnings.push(ReviewWarning {
             dimension: format!("unit:{label}"),
             kind: "oversized",
             message: format!(
-                "该文件 diff 超出输入预算（约 {} tok > {budget}），已跳过未审；请拆分改动或调大 max_input_tokens",
+                "this file's diff exceeds the input budget (~{} tok > {budget}); skipped (not reviewed); split the change or raise max_input_tokens",
                 unit.est_tokens
             ),
         });
@@ -289,7 +289,7 @@ pub async fn run_review_with_client(
                         warnings.push(ReviewWarning {
                             dimension: dim.as_str().to_string(),
                             kind: "timed_out",
-                            message: "墙钟超时，该维度未审完（已保留其部分发现）".into(),
+                            message: "wall-clock timeout; this dimension did not finish (its partial findings are kept)".into(),
                         });
                     }
                     AgentExitReason::RequestFailed => {
@@ -297,7 +297,7 @@ pub async fn run_review_with_client(
                         warnings.push(ReviewWarning {
                             dimension: dim.as_str().to_string(),
                             kind: "incomplete",
-                            message: "LLM 请求失败（可能上下文超限），该维度未审完".into(),
+                            message: "LLM request failed (possibly context overflow); this dimension did not finish".into(),
                         });
                     }
                     AgentExitReason::ContextOverflow => {
@@ -305,7 +305,7 @@ pub async fn run_review_with_client(
                         warnings.push(ReviewWarning {
                             dimension: dim.as_str().to_string(),
                             kind: "incomplete",
-                            message: "上下文超输入预算，发送前预检提前收尾，该维度未审完".into(),
+                            message: "context exceeded the input budget; pre-send check wrapped up early; this dimension did not finish".into(),
                         });
                     }
                     AgentExitReason::Completed | AgentExitReason::MaxRounds => {}
@@ -319,20 +319,23 @@ pub async fn run_review_with_client(
                     kind: "failed",
                     message: e.to_string(),
                 });
-                eprintln!("⚠ 维度 [{}] 审查失败（已跳过）：{e}", dim.as_str());
+                eprintln!(
+                    "! dimension [{}] review failed (skipped): {e}",
+                    dim.as_str()
+                );
             }
         }
     }
     // 质量闸口不能把"未审完"误读成"通过"：未审完的维度/单元已保留其部分发现，但仍要醒目提示。
     if incomplete {
         eprintln!(
-            "⚠ 本次审查未完整（超时/请求失败/上下文超限/超大文件跳过）：结果可能不完整。\
-             如需完整结论请放宽 --timeout、调大 max_input_tokens 或拆分改动后重跑。"
+            "! this review is incomplete (timeout/request failure/context overflow/oversized file skipped): the result may be partial. \
+             For a complete conclusion, raise --timeout, increase max_input_tokens, or split the change and re-run."
         );
     }
     if opts.verbose {
         eprintln!(
-            "  [agents] 汇总：LLM {} 次 · 工具 {} 次（{}）· 循环熔断 {} 次；{}",
+            "  [agents] summary: {} LLM calls, {} tool calls ({}), {} loop-guards; {}",
             agent_stats.llm_requests,
             agent_stats.tool_calls,
             agent_stats.tool_summary(),
@@ -368,7 +371,7 @@ pub async fn run_review_with_client(
                 warnings.push(ReviewWarning {
                     dimension: Dimension::Intent.as_str().to_string(),
                     kind: "incomplete",
-                    message: "意图评审未审完（超时/上下文超预算），结果可能不完整".into(),
+                    message: "intent review did not finish (timeout/context overflow); the result may be partial".into(),
                 });
             }
             for mut f in ir.findings {
@@ -397,14 +400,14 @@ pub async fn run_review_with_client(
         findings = judged.0;
         judge_stats = judged.1;
     } else if opts.verbose && !opts.judge {
-        eprintln!("  [judge] 已跳过（--no-judge）");
+        eprintln!("  [judge] skipped (--no-judge)");
     }
 
     if opts.verbose {
         let mut total_usage = agent_stats.usage.clone();
         total_usage.add(&judge_stats.usage);
         eprintln!(
-            "  [review] 总计：LLM {} 次 · 工具 {} 次（Agent: {} / Judge: {}）；{}",
+            "  [review] total: {} LLM calls, {} tool calls (agent: {} / judge: {}); {}",
             agent_stats.llm_requests + judge_stats.llm_requests,
             agent_stats.tool_calls + judge_stats.tool_calls,
             agent_stats.tool_calls,

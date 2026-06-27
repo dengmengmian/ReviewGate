@@ -57,7 +57,7 @@ Windows 用户可以用 PowerShell 安装：
 irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex
 ```
 
-> **升级**：重新运行上面的安装命令即可——`install.sh` / `install.ps1` 总是拉取最新 release 并覆盖旧版本。
+> **升级**：重新运行上面的安装命令即可——`install.sh` / `install.ps1` 总是拉取最新 release 并覆盖旧版本；或直接 `reviewgate upgrade` 自更新到最新版。
 
 ## 适合解决什么
 
@@ -184,7 +184,7 @@ reviewgate review --commit <sha> --intent-from-commit  # 用该 commit 的提交
 
 ### 意图 / 技术评审（`--intent`）
 
-缺陷评审不需要知道「本该做什么」；**技术评审需要**。传入本次改动的意图（需求/设计/验收标准，文件或 `-` 读 stdin），ReviewGate 会**额外**起一个**独立的整体性 Agent**——从 diff 出发主动跨文件追调用方、契约、测试，判断实现是否完整、正确地满足意图，输出一份**验收清单**（每条标准 ✓满足 / ✗缺失 / ⚠不符 / 建议）。它与常驻的 `business.rules` 正交：规则是不变量，`--intent` 是每次不同的「这次该做什么」。不传 `--intent` 时零开销。
+缺陷评审不需要知道「本该做什么」；**技术评审需要**。传入本次改动的意图（需求/设计/验收标准，文件或 `-` 读 stdin），ReviewGate 会**额外**起一个**独立的整体性 Agent**——从 diff 出发主动跨文件追调用方、契约、测试，判断实现是否完整、正确地满足意图，输出一份**验收清单**（每条标准 ✓满足 / ✗缺失 / ✗破坏 / ⚠不符 / •建议）。它与常驻的 `business.rules` 正交：规则是不变量，`--intent` 是每次不同的「这次该做什么」。不传 `--intent` 时零开销。
 
 ```bash
 reviewgate review --from main --to HEAD --intent docs/requirement.md
@@ -289,7 +289,7 @@ curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integr
 
 ## 当前状态
 
-Beta：核心链路完整（多维并行 + 证伪 Judge + 置信度闸口 + 业务规则 + 45 语言内置规则 + 重复检测 + 多采样 + `--fix` 锚点校验 + reachability 分级 + 大 diff 自适应单元/未审完不静默放行 + CLI/Skill/Action），
+Beta：核心链路完整（多维并行 + 证伪 Judge + 置信度闸口 + 业务规则 + 意图/技术评审 + 45 语言内置规则 + 重复检测 + 多采样 + `--fix` 锚点校验 + reachability 分级 + 大 diff 自适应单元/未审完不静默放行 + CLI/Skill/Action），
 含 CI（fmt/clippy -D warnings/test，Win+Ubuntu）、只读安全边界、缓存与超时兜底。
 变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。
 

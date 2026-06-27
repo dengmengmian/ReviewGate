@@ -201,7 +201,7 @@ pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
     let mut out = String::new();
 
     if outcome.files_changed == 0 {
-        return "没有检测到改动。\n".into();
+        return "No changes detected.\n".into();
     }
 
     // 意图评审发现单独走「验收清单」区，不混进常规缺陷区（避免重复）。
@@ -239,7 +239,7 @@ pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
     if outcome.incomplete {
         out.push_str(&p.paint(
             "1;31",
-            "⚠ 未审完：部分维度/单元因超时、请求失败、上下文超限或超大文件跳过而未审完——结论不代表“无问题”。",
+            "Incomplete: some dimensions/units did not finish (timeout, request failure, context overflow, or oversized file skipped) - this result does not mean \"no issues\".",
         ));
         out.push('\n');
     }

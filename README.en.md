@@ -35,9 +35,10 @@ provider = "deepseek"
 protocol = "openai"
 base_url = "https://api.deepseek.com/v1"
 model = "deepseek-v4-pro"
+# api_key = "sk-..."   # may go here; the env var below is preferred (keeps secrets out of the repo)
 EOF
 
-# 3) Keep the API key in the environment, not in the config file.
+# 3) Keep the API key in the environment (overrides the config's api_key), not in the config file.
 export REVIEWGATE_API_KEY="your key"
 
 # 4) Check that the model is reachable.
@@ -64,6 +65,7 @@ irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 |
 | Review comments are noisy or scattered | Deduplicates overlapping findings and folds low-confidence feedback |
 | AI code looks plausible but may be wrong | Checks hallucinated APIs, assumption drift, and unadapted copy/paste |
 | Your team has business rules | Injects rules for permissions, money, state machines, and domain behavior on every review |
+| You want to confirm the implementation matches the requirement/design | Pass this change's intent (`--intent`); an independent agent reviews "implementation vs intent" across files and emits an acceptance checklist |
 | You want a CI gate | High-confidence issues can block merges, and incomplete reviews do not silently pass |
 
 <details>
@@ -172,6 +174,16 @@ reviewgate review --fix                 # apply suggested code after per-finding
 reviewgate review --judge-concurrency 4 # limit judge concurrency to avoid provider rate limits
 reviewgate review --verbose             # print per-dimension rounds and token/cache stats
 reviewgate review --commit <sha>        # review one commit; or use --from <base> --to <head>
+reviewgate review --intent spec.md      # also run "implementation vs intent" technical review (pass requirement/design/acceptance criteria)
+reviewgate review --commit <sha> --intent-from-commit  # use that commit's message as the intent
+```
+
+### Intent / Technical Review (`--intent`)
+
+Defect review does not need to know "what this change was supposed to do"; **technical review does**. Pass this change's intent (requirement/design/acceptance criteria, as a file or `-` to read stdin) and ReviewGate runs an **additional, independent holistic agent**: starting from the diff, it actively follows callers, contracts, and tests across files to judge whether the implementation completely and correctly satisfies the intent, then emits an **acceptance checklist** (each criterion marked ✓ met / ✗ missing / ✗ breaking / ⚠ deviation / • suggestion). It is orthogonal to the always-on `business.rules`: rules are invariants, while `--intent` is the per-change "what should this one do". Zero overhead when `--intent` is not passed.
+
+```bash
+reviewgate review --from main --to HEAD --intent docs/requirement.md
 ```
 
 `--exec-verify` lets the model generate self-contained JS/Python snippets and run them locally to verify edge cases. It is off by default. The current isolation is weak: a temporary directory, empty environment, and timeout, not an OS-level sandbox. Use it only in trusted or isolated CI environments.
@@ -185,12 +197,25 @@ REVIEWGATE_OUTPUT_LANGUAGE="English" reviewgate review
 Example output:
 
 ```text
-Gate: BLOCK x blocking merge    1 file changed · 2 trusted findings · 3 filtered
+ReviewGate: BLOCK
 
-handler.rs
-  x [security · high · conf 1.00] L3
-    SQL injection: req.user_id is interpolated directly into a DELETE statement...
-    -> Suggestion: use parameterized queries.
+1 files changed · 1 must fix · 0 warnings · 3 filtered
+LLM: 120k in (88% cache hit) · 2.1k out
+
+Must Fix
+
+1. handler.rs:3
+   security / high / confidence 1.00
+
+   SQL injection: req.user_id is interpolated directly into a DELETE statement...
+
+   Current:
+     -   let q = format!("DELETE FROM users WHERE id = {}", req.user_id);
+   Suggested patch:
+     +   let q = "DELETE FROM users WHERE id = $1";
+
+Not Shown
+  3 low-confidence findings hidden. Run with --show-filtered to inspect them.
 ```
 
 Exit codes for CI: `BLOCK -> 1`, otherwise `0`. Adjust with `--fail-on block|warn|never`.
@@ -255,12 +280,12 @@ The results below come from public samples recorded under [`docs/evals/`](docs/e
 - **Precision**: no false BLOCK was observed in the recorded real PRs, clean 45-language samples, and real merged commit samples. Suspected false positives are kept with investigation notes in the eval logs.
 - **Recall**: real CVE reverts, about 18 vulnerability classes, real user issues, and synthetic strong triggers are covered. The real PR revert gold set is 4/4: axios prototype-pollution SSRF, requests Content-Type parsing, gin ClientIP XFF, and ripgrep gitignore cache.
 - **Languages**: 45 built-in language rules are enabled by default and can be disabled or overridden.
-- **Large PRs / incomplete review**: context overflow, request failure, timeout, and skipped oversized files degrade to WARN and can make CI exit non-zero instead of silently passing.
+- **Large PRs / incomplete review**: context overflow, request failure, timeout, and skipped oversized files degrade to WARN and can make CI exit non-zero instead of silently passing. Mechanism and real big-PR results (up to 55 files / 5000 lines) in [`docs/BIG_PR_HANDLING.md`](docs/BIG_PR_HANDLING.md).
 - **Known limits**: subtle multi-step arithmetic and carry/rounding off-by-one bugs remain a hard tail for static LLM review. See [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md).
 
 ## Current Status
 
-Beta. The core path is complete: parallel dimensions, counter-evidence judge, confidence gate, business rules, built-in rules for 45 languages, duplicate detection, multi-sampling, `--fix` anchor validation, reachability grading, incomplete-review handling, CLI, Skill, and Action.
+Beta. The core path is complete: parallel dimensions, counter-evidence judge, confidence gate, business rules, intent/technical review, built-in rules for 45 languages, duplicate detection, multi-sampling, `--fix` anchor validation, reachability grading, incomplete-review handling, CLI, Skill, and Action.
 
 CI covers fmt, clippy with `-D warnings`, tests, Windows, and Ubuntu.
 
