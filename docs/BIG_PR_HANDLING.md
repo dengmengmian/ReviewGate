@@ -28,13 +28,16 @@ ReviewGate 面向「AI 一次改很多文件」的场景，因此对超出模型
 | requests `f8bec2f` | Python | 19 文件 | 6k | 2 | **0** | 2 | WARN+incomplete |
 | axios `HEAD~30..HEAD` | JS | **55 文件 / ~5000 行** | 16k | 8 | **0** | 12 | WARN+incomplete |
 | ripgrep `HEAD~40..HEAD` | Rust | 28 文件 | 12k | 4 | **0** | 6\* | WARN+incomplete |
+| gin `HEAD~80..HEAD` | Go | 46 文件 / ~2500 行 | 16k | 6 | **0** | 13\*\* | **BLOCK**+incomplete |
 
 \* 含一处真实 **AI 幻觉 API** 捕获（`[u8]` 上不存在 `as_bytes_mut()`）。
+\*\* 含真实 **Slowloris DoS**（`#nosec G112` 抑制告警却未设超时）+ **复制粘贴残留**（错误信息引用不存在的 `maskHeaders()`）——大 PR 上同样能给出 BLOCK。
 
 结论：
 
-- 在 **55 文件 / ~5000 行** 的真实大 PR 上，切 8 个单元全部首轮正常发送（超预算归零），产出 12 条真实发现。
-- 「绝不静默通过」不变量全程成立：凡有单元跳过 / 提前收尾，一律 WARN + `incomplete`。
+- 跨 **4 种语言（JS / Python / Rust / Go）** 验证，最大 **55 文件 / ~5000 行**：切单元后**首轮超预算全部归零**，均产出真实发现（含 AI 幻觉、复制粘贴残留、Slowloris DoS 等）。
+- 大 PR 既能 WARN（未审完）也能 **BLOCK**（命中高置信问题）——切分不削弱召回。
+- 「绝不静默通过」不变量全程成立：凡有单元跳过 / 提前收尾，一律降级且 `incomplete = true`。
 - 残留的 round≥2 超预算均为 Agent 取上下文后的**优雅收尾**（保留已得发现），属预期安全行为。
 
 详细单次记录见 [`docs/evals/`](evals/)（文件名 `2026-06-27__bigpr-*.md`）。

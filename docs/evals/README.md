@@ -52,6 +52,7 @@
 | [`bigpr-requests-6k`](2026-06-27__bigpr-requests-6k.md) | Python | 19 文件 | 2 | 0 | 2 | WARN+incomplete |
 | [`bigpr-axios-range-16k`](2026-06-27__bigpr-axios-range-16k.md) | JS | **55 文件 / ~5000 行** | 8 | 0 | 12 | WARN+incomplete |
 | [`bigpr-ripgrep-range-12k`](2026-06-27__bigpr-ripgrep-range-12k.md) | Rust | 28 文件 | 4 | 0 | 6（含 1 处 AI 幻觉 API）| WARN+incomplete |
+| [`bigpr-gin-range-16k`](2026-06-27__bigpr-gin-range-16k.md) | Go | 46 文件 / ~2500 行 | 6 | 0 | 13（Slowloris DoS + 复制粘贴残留）| **BLOCK**+incomplete |
 
 **eval 驱动的修复**：实测发现切分单元时未预留「系统提示词 + focus」固定开销，导致小/中预算下单元首轮**全部超预算、审不到内容**（但仍安全 WARN+incomplete，未静默通过）。修复后首轮超预算归零；55 文件/5000 行真实大 PR 切 8 单元正常审、出 12 条发现。「绝不静默通过」不变量全程成立。
 
