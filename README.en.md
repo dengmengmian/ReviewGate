@@ -281,6 +281,7 @@ The results below come from public samples recorded under [`docs/evals/`](docs/e
 - **Recall**: real CVE reverts, about 18 vulnerability classes, real user issues, and synthetic strong triggers are covered. The real PR revert gold set is 4/4: axios prototype-pollution SSRF, requests Content-Type parsing, gin ClientIP XFF, and ripgrep gitignore cache.
 - **Languages**: 45 built-in language rules are enabled by default and can be disabled or overridden.
 - **Large PRs / incomplete review**: context overflow, request failure, timeout, and skipped oversized files degrade to WARN and can make CI exit non-zero instead of silently passing. Mechanism and real big-PR results (up to 55 files / 5000 lines) in [`docs/BIG_PR_HANDLING.md`](docs/BIG_PR_HANDLING.md).
+- **Intent review (`--intent`)**: validated on a real PR (axios#10750 prototype-pollution fix) by reviewing the same intent against the correct fix vs the reverted/vulnerable code — the acceptance checklist gives opposite verdicts, and on the correct fix it even surfaced a hand-verified weak test assertion. See [`docs/evals/2026-06-27__intent-review__axios-pr10750.md`](docs/evals/2026-06-27__intent-review__axios-pr10750.md).
 - **Known limits**: subtle multi-step arithmetic and carry/rounding off-by-one bugs remain a hard tail for static LLM review. See [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md).
 
 ## Current Status

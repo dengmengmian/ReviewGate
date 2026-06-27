@@ -58,7 +58,18 @@
 
 **eval 驱动的修复**：实测发现切分单元时未预留「系统提示词 + focus」固定开销，导致小/中预算下单元首轮**全部超预算、审不到内容**（但仍安全 WARN+incomplete，未静默通过）。修复后首轮超预算归零；55 文件/5000 行真实大 PR 切 8 单元正常审、出 12 条发现。「绝不静默通过」不变量全程成立。
 
-## 六、诚实的局限
+## 六、意图 / 技术评审（`--intent`，2026-06-27）
+
+缺陷评审不知道「本该做什么」，意图评审知道。在**真实代码 + 真实意图**上验证：① 受控 A/B 能否区分完整 vs 不完整实现；② 结构化强制能否保证验收清单覆盖每条标准。
+
+| 记录 | 方法 | 结果 |
+|---|---|---|
+| [`intent-mvp-ab`](2026-06-27__intent-mvp-ab.md) | axios URL 对象特性，受控 A/B（删 dispatch 处理造缺口） | 不完整实现命中缺口（跨文件追到拦截器链）、完整实现 0 误报 |
+| [`intent-structured-enforcement`](2026-06-27__intent-structured-enforcement.md) | gin 提交信息意图 / axios 详细 spec | gin **4/4 ✓ met**；axios C1 met + 其余诚实标 `? not assessed` → **WARN** |
+
+**结构化强制**：意图解析成 N 条标准（C1..CN）注入评审，未被逐条 verdict 的标准兜底标 `? not assessed`，保证清单**覆盖每条**（杜绝修复前真实测出的空清单），有未核对标准则降级 WARN，绝不伪装 PASS。完整性的模型局限见 [`../LIMITATIONS.md`](../LIMITATIONS.md) §6。
+
+## 七、诚实的局限
 
 见 [`../LIMITATIONS.md`](../LIMITATIONS.md)。核心：**细微多步算术/逐位进位 off-by-one**（addBusinessDays、big.js 进位）
 是静态 LLM 审查的硬尾，建议与单元测试互补。命中与否大致取决于"需要心算的步数"。

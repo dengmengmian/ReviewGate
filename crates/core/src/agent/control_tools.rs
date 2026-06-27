@@ -147,7 +147,7 @@ pub(super) fn parse_intent_finding(input: &Value) -> Result<Finding> {
     let severity = match status {
         IntentStatus::Missing | IntentStatus::Breaking => Severity::High,
         IntentStatus::Deviation => Severity::Med,
-        IntentStatus::Suggestion | IntentStatus::Met => Severity::Low,
+        IntentStatus::Suggestion | IntentStatus::Met | IntentStatus::Unknown => Severity::Low,
     };
     let confidence = input
         .get("confidence")

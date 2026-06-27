@@ -6,7 +6,8 @@
 
 ### Added
 - **意图 / 技术评审**：`reviewgate review --intent <文件|->`（或 `--intent-from-commit` 取提交信息）传入本次改动的需求/设计/验收标准，由一个**独立的整体性 Agent**（专用探索向系统提示）审「实现 vs 意图」——从 diff 出发主动跨文件探索(调用方/契约/测试),报告：缺失需求、与意图不符、破坏既有行为、方案风险。与常驻的 `business.rules` 正交(规则=不变量，intent=本次该做什么)。发现并入主结果过证伪 Judge / 闸口；未提供 `--intent` 时零退化。受控 A/B 实测(axios URL 对象特性)：不完整实现命中缺口、完整实现 0 误报。
-- **需求锚定上报 + 验收清单视图**：意图 Agent 用专用工具 `report_intent_finding`（按验收标准上报 verdict：met/missing/deviation/breaking/suggestion，位置可选），文本渲染为 **Intent / Acceptance Checklist**（按标准分组、状态标签），JSON 也输出 `criterion`/`intent_status`。清单完整性的模型局限见 [LIMITATIONS](docs/LIMITATIONS.md#6)。
+- **需求锚定上报 + 验收清单视图**：意图 Agent 用专用工具 `report_intent_finding`（按验收标准上报 verdict：met/missing/deviation/breaking/suggestion，位置可选），文本渲染为 **Intent / Acceptance Checklist**（按标准分组、状态标签），JSON 也输出 `criterion`/`intent_status`。
+- **验收清单结构化强制**：意图被解析成 N 条标准（C1..CN）注入评审；跑完后**未被逐条 verdict 的标准兜底标 `? not assessed`**，保证清单**覆盖每一条**（杜绝真实数据上常见的空清单）；有未核对标准则**降级 WARN**，绝不伪装 PASS。真实数据实测：gin 提交信息 → 4/4 met；axios 详细 spec → C1 met + 其余诚实标"未核对"。
 - **审查实时进度**：终端下默认显示单行就地刷新的进度（spinner + 当前在调的工具/文件 + 工具计数 + 耗时），让长时审查（尤其意图评审）不再"静默看不出在跑没在跑"；结束清行并留一行紧凑完成摘要（细节收起）。仅 TTY 生效；`--format json` / 管道 / CI / `--verbose` 下不渲染（后者保留完整逐轮日志）。
 
 ### Fixed

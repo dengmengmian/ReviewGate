@@ -19,47 +19,47 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// 审查当前 git diff
+    /// Review the current git diff
     Review(ReviewArgs),
-    /// LLM 连通性自检
+    /// LLM connectivity self-check
     Llm {
         #[command(subcommand)]
         cmd: LlmCmd,
     },
-    /// 打印解析后的 diff 摘要（调试用）。支持 --commit / --from --to，缺省为工作区。
+    /// Print the parsed diff summary (debug). Supports --commit / --from --to; defaults to the working tree.
     Diff(DiffArgs),
-    /// 调用单个工具（调试用）：reviewgate tool <name> '<json>'
+    /// Invoke a single tool (debug): reviewgate tool <name> '<json>'
     Tool {
         name: String,
         #[arg(default_value = "{}")]
         input: String,
     },
-    /// 跑单维度 Agent（调试用）：reviewgate agent --dimension logic
+    /// Run a single-dimension agent (debug): reviewgate agent --dimension logic
     Agent {
-        /// 维度：security | perf | logic | style | ai_smell
+        /// Dimension: security | perf | logic | style | ai_smell
         #[arg(long, default_value = "logic")]
         dimension: String,
     },
-    /// 自更新到最新 release（下载对应平台二进制并替换当前可执行文件）
+    /// Self-update to the latest release (download the platform binary and replace the current executable)
     Upgrade,
 }
 
 #[derive(Subcommand)]
 enum LlmCmd {
-    /// 向默认提供方发一次最小请求，验证连通性
+    /// Send one minimal request to the default provider to verify connectivity
     Test,
 }
 
 /// diff 范围选择（review 与 diff 共用）。
 #[derive(Parser)]
 struct DiffArgs {
-    /// 审查单个 commit 引入的改动
+    /// Review the changes introduced by a single commit
     #[arg(long)]
     commit: Option<String>,
-    /// 范围起点（与 --to 配合，自 merge-base 起）
+    /// Range start (used with --to, from the merge-base)
     #[arg(long)]
     from: Option<String>,
-    /// 范围终点（与 --from 配合）
+    /// Range end (used with --from)
     #[arg(long)]
     to: Option<String>,
 }
@@ -128,56 +128,56 @@ fn resolve_intent(args: &ReviewArgs) -> anyhow::Result<Option<String>> {
 
 #[derive(Parser)]
 struct ReviewArgs {
-    /// 输出格式：text | json
+    /// Output format: text | json
     #[arg(long, default_value = "text")]
     format: String,
-    /// 审查维度：all 或逗号分隔 security,perf,logic,style,ai_smell
+    /// Review dimensions: all, or a comma-separated list of security,perf,logic,style,ai_smell
     #[arg(long, default_value = "all")]
     dimensions: String,
-    /// 审查单个 commit 引入的改动
+    /// Review the changes introduced by a single commit
     #[arg(long)]
     commit: Option<String>,
-    /// 范围审查起点（与 --to 配合，自 merge-base 起）
+    /// Range review start (used with --to, from the merge-base)
     #[arg(long)]
     from: Option<String>,
-    /// 范围审查终点（与 --from 配合）
+    /// Range review end (used with --from)
     #[arg(long)]
     to: Option<String>,
-    /// 跳过证伪 Judge（更快，但误报更多）
+    /// Skip the counter-evidence judge (faster, but more false positives)
     #[arg(long)]
     no_judge: bool,
-    /// 展开被过滤的低置信项
+    /// Show filtered low-confidence findings
     #[arg(long)]
     show_filtered: bool,
-    /// 何种判定导致非 0 退出码：block | warn | never
+    /// Which verdict triggers a non-zero exit code: block | warn | never
     #[arg(long, default_value = "block")]
     fail_on: String,
-    /// 在 GitHub PR 上发布摘要评论（用于 GitHub Action）
+    /// Post a summary comment on the GitHub PR (for GitHub Action)
     #[arg(long)]
     comment: bool,
-    /// 打印每个维度每轮的进度到 stderr
+    /// Print per-dimension, per-round progress to stderr
     #[arg(long, short)]
     verbose: bool,
-    /// 单维度墙钟超时（秒，0=不限）。超时跳过该维度、保留其余，适合 CI 兜底。
+    /// Per-dimension wall-clock timeout (seconds, 0=unlimited). On timeout, skip that dimension and keep the rest; useful as a CI fallback.
     #[arg(long, default_value = "0")]
     timeout: u64,
-    /// 每维度采样次数（默认 1）。>1 取并集提升对 flaky 漏报（如 SSRF）的召回稳定性，成本 ×N。
+    /// Samples per dimension (default 1). >1 unions the results to stabilize recall of flaky misses (e.g. SSRF), at N× cost.
     #[arg(long, default_value = "1")]
     samples: usize,
-    /// Judge 并发上限，避免候选过多时触发 provider 限流。
+    /// Judge concurrency limit, to avoid provider rate limits when there are many candidates.
     #[arg(long, default_value = "4")]
     judge_concurrency: usize,
-    /// 逐条 y/N 确认后，把 suggestion_code 应用到工作区文件（非终端不应用）。
+    /// After per-finding y/N confirmation, apply suggestion_code to working-tree files (not applied when non-interactive).
     #[arg(long)]
     fix: bool,
-    /// 开启 run_check 沙箱执行（logic 维度可真正运行边界用例验证细微算法）。
-    /// 会执行模型生成的自包含 JS/Python 片段——仅在可信/CI 沙箱环境使用。默认关闭。
+    /// Enable run_check sandboxed execution (lets the logic dimension actually run edge cases to verify subtle algorithms).
+    /// Runs model-generated self-contained JS/Python snippets — use only in trusted/CI sandbox environments. Off by default.
     #[arg(long)]
     exec_verify: bool,
-    /// 意图/参考文档路径（需求/设计/验收标准）；`-` 读 stdin。提供后运行独立的「实现 vs 意图」技术评审。
+    /// Path to an intent/reference doc (requirement/design/acceptance criteria); `-` reads stdin. When set, runs a separate "implementation vs intent" technical review.
     #[arg(long)]
     intent: Option<String>,
-    /// 用本次 commit 的提交信息作为意图（仅 --commit 模式；同时给了 --intent 时以 --intent 为准）。
+    /// Use this commit's message as the intent (only in --commit mode; --intent takes precedence if both are given).
     #[arg(long)]
     intent_from_commit: bool,
 }

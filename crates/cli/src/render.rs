@@ -367,6 +367,7 @@ fn render_intent_checklist(p: &Palette, intent: &[&Finding]) -> String {
                 Some(IntentStatus::Breaking) => ("✗ breaking", "1;31"),
                 Some(IntentStatus::Deviation) => ("⚠ deviation", "33"),
                 Some(IntentStatus::Suggestion) => ("• suggestion", "36"),
+                Some(IntentStatus::Unknown) => ("? not assessed", "2"),
                 None => ("·", "0"),
             };
             out.push_str(&format!(

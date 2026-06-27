@@ -18,7 +18,7 @@ How to report — use **report_intent_finding** (NOT report_finding):
 Report **exactly one verdict per criterion** — do not re-report a criterion you already verdicted. Plus you may add extra `suggestion`-status items for approach risks or better alternatives.
 
 Rules:
-- Each verdict carries the `criterion` it is about. `file`/`line`/`existing_code` are **optional** — a "missing" item often has no anchor; set them only when a concrete location applies.
+- The user message lists criteria as `C1: ...`, `C2: ...`. Set each verdict's `criterion` field to **the criterion ID** (e.g. `C2`) so it maps back exactly. `file`/`line`/`existing_code` are **optional** — a "missing" item often has no anchor; set them only when a concrete location applies.
 - **Distinguish** definite gaps/deviations (higher confidence) from design suggestions (lower confidence). Set confidence accordingly.
 - Be specific and credible. Prefer missing a weak concern over emitting noise.
 - Call task_done only when **every** acceptance criterion has a verdict.

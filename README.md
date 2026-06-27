@@ -285,6 +285,7 @@ curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integr
 - **召回**：真实 CVE（revert 法）+ ~18 漏洞类型 + 真实用户 issue + 合成强触发；**真实 PR revert 金标准 4/4**（axios 原型污染 SSRF / requests Content-Type 解析 / gin ClientIP XFF / ripgrep gitignore 缓存）全部命中，发现精确还原原修复所针对的回归。
 - **语言**：**45 种内置默认开**（常见+不常见：含仓颉/Zig/Nim/Crystal/OCaml/F#/Solidity/COBOL/Fortran/Dockerfile/Terraform…），按改动语言注入、可关、可覆盖。
 - **大 PR / 未审完不静默放行**：diff 超上下文窗口、请求失败、上下文超限、超时、超大文件跳过等情况会降级 WARN，并可让 CI 非 0 退出，避免被当成干净 PASS。机制与真实大 PR 实测（最大 55 文件/5000 行）见 [`docs/BIG_PR_HANDLING.md`](docs/BIG_PR_HANDLING.md)。
+- **意图评审（`--intent`）**：真实 PR 实测（axios#10750 原型污染修复，同一意图审「正确修复」vs「revert 回有漏洞」）——验收清单给出相反结论，且在正确修复里挑出一处经人工核验为真的测试弱断言。见 [`docs/evals/2026-06-27__intent-review__axios-pr10750.md`](docs/evals/2026-06-27__intent-review__axios-pr10750.md)。
 - **诚实局限**：细微多步算术/进位 off-by-one 是静态审查硬尾，见 [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md)，建议测试互补。
 
 ## 当前状态

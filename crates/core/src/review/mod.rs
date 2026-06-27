@@ -375,8 +375,10 @@ pub async fn run_review_with_client(
                 });
             }
             for mut f in ir.findings {
-                if f.intent_status == Some(crate::model::IntentStatus::Met) {
-                    f.filtered = true; // 信息项：不进闸口、清单里折叠展示
+                use crate::model::IntentStatus::{Met, Unknown};
+                // met / unknown(未核对) 是信息项：不判伪、不计闸口，仅进验收清单。
+                if matches!(f.intent_status, Some(Met) | Some(Unknown)) {
+                    f.filtered = true;
                     intent_met.push(f);
                 } else {
                     findings.push(f);

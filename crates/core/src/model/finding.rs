@@ -38,6 +38,8 @@ pub enum IntentStatus {
     Breaking,
     /// 方案风险或更优解（建议级）。
     Suggestion,
+    /// 未核对：该验收标准没有被评审给出明确判定（结构化兜底填充，保证清单覆盖每条标准）。
+    Unknown,
 }
 
 impl IntentStatus {
@@ -48,6 +50,7 @@ impl IntentStatus {
             IntentStatus::Deviation => "deviation",
             IntentStatus::Breaking => "breaking",
             IntentStatus::Suggestion => "suggestion",
+            IntentStatus::Unknown => "unknown",
         }
     }
 }
