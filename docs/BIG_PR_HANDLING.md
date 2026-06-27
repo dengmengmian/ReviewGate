@@ -43,6 +43,12 @@ ReviewGate 面向「AI 一次改很多文件」的场景，因此对超出模型
 - 「绝不静默通过」不变量全程成立：凡有单元跳过 / 提前收尾，一律降级且 `incomplete = true`。
 - 残留的 round≥2 超预算均为 Agent 取上下文后的**优雅收尾**（保留已得发现），属预期安全行为。
 
+### 单文件超预算（oversized）路径
+
+当**单个文件的 diff 本身就超预算**（无法再切），它会被单独标 `oversized` 跳过，而不是崩溃或静默放行。
+
+实测 axios `de1a8100`（含 2467 行 `package-lock.json`）@8k：3 个 lockfile（diff 各约 **53k / 11k / 11k tok**，远超 8k）被逐个跳过并**点名到具体文件**（`unit:package-lock.json` …），同 commit 的小文件正常审（无误报），`decision = WARN`、`incomplete = true`。即「AI 改了超大生成文件」时——**不崩溃、不静默放行**，明确告知哪些文件未审 + 建议拆分改动或调大 `max_input_tokens`。记录见 [`bigpr-oversized-axios`](evals/2026-06-27__bigpr-oversized-axios.md)。
+
 详细单次记录见 [`docs/evals/`](evals/)（文件名 `2026-06-27__bigpr-*.md`）。
 
 ## 调参
