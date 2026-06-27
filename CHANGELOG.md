@@ -7,6 +7,9 @@
 ### Changed
 - 大 diff（多审查单元）下**采样固定为 1**：避免 `单元×维度×样本` 的成本放大；`--samples` 多采样只在单单元（正常 PR）上生效。
 
+### Fixed
+- 大 diff 切分预留**系统提示词 + 维度 focus 的固定开销**：此前 `plan_units` 只按 diff 计 token，小/中 `max_input_tokens` 下切出的单元会在 Agent 发送前预检**全部超预算**（审不到任何东西）。修复后单元在首轮一定可发送（真实 PR 实测：axios 847d89b @4k 由"全部超预算 / 0 发现"变为"8 单元正常审 / 13 发现"，首轮超预算归零）。默认 200k 预算下为无感知 no-op。
+
 ### Tests
 - 新增 `diff_modes` 集成测试：真实 git 仓库覆盖 Workspace / Commit / Range 三种采集模式 + 未跟踪文件。
 

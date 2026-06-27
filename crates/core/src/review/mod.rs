@@ -16,7 +16,10 @@ pub use units::{plan_units, ReviewUnit};
 use aggregate::{boost_cross_dimension_agreement, sort_findings};
 use context::{build_unit_prompt, new_ref_for};
 
-use crate::agent::{run_agent_with_stats, AgentConfig, AgentExitReason, AgentStats};
+use crate::agent::{
+    dimension_focus_block, run_agent_with_stats, shared_system_prompt, AgentConfig,
+    AgentExitReason, AgentStats,
+};
 use crate::config::{Config, GateConfig, DEFAULT_MAX_INPUT_TOKENS};
 use crate::diff::{self, Diff, DiffMode};
 use crate::gate::{apply_gate, GateDecision};
@@ -148,7 +151,17 @@ pub async fn run_review_with_client(
         .active_provider()
         .map(|p| p.max_input_tokens())
         .unwrap_or(DEFAULT_MAX_INPUT_TOKENS) as usize;
-    let units = plan_units(&diff, budget);
+    // 预留系统提示词 + 维度 focus 的固定开销：plan_units 只按 diff 计 token，但 Agent 预检会
+    // 算上 system+focus。小/中预算下若不预留，切出的单元会在预检全部超预算（审不到任何东西）。
+    let overhead = estimate_tokens(&shared_system_prompt())
+        + dims
+            .iter()
+            .map(|d| estimate_tokens(&dimension_focus_block(*d)))
+            .max()
+            .unwrap_or(0)
+        + 256;
+    let plan_budget = budget.saturating_sub(overhead).max(512);
+    let units = plan_units(&diff, plan_budget);
     // 多单元（大 PR）本就庞大：不再叠采样，避免 单元×维度×样本 的成本放大。
     // 多采样只在单单元（正常 PR）上用于提升 flaky 漏报（如 SSRF）的召回稳定性。
     let samples = if units.len() > 1 {
@@ -182,7 +195,7 @@ pub async fn run_review_with_client(
             &rules_body,
         )
         .await;
-        if estimate_tokens(&full) <= budget {
+        if estimate_tokens(&full) + overhead <= budget {
             unit_prompts.push(Some(full));
             continue;
         }
@@ -195,7 +208,7 @@ pub async fn run_review_with_client(
             &rules_body,
         )
         .await;
-        if estimate_tokens(&diff_only) <= budget {
+        if estimate_tokens(&diff_only) + overhead <= budget {
             unit_prompts.push(Some(diff_only));
             continue;
         }
