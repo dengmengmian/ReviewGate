@@ -57,6 +57,8 @@ pub struct ReviewOptions {
     /// 意图 / 参考文档（需求 / 设计 / 验收标准）。提供后由独立的整体性 Agent 做「实现 vs 意图」评审。
     /// None / 空 = 不做意图评审（零退化）。
     pub intent: Option<String>,
+    /// 实时进度沉淀（CLI 据此单行渲染"在跑+干到哪了"）。None = 不记录。
+    pub progress: Option<std::sync::Arc<crate::progress::Progress>>,
 }
 
 impl ReviewOptions {
@@ -72,6 +74,7 @@ impl ReviewOptions {
             exec_verify: false,
             judge_concurrency: 4,
             intent: None,
+            progress: None,
         }
     }
 
@@ -248,6 +251,7 @@ pub async fn run_review_with_client(
             for _ in 0..samples {
                 let mut agent_cfg = AgentConfig::for_dimension(*d);
                 agent_cfg.verbose = opts.verbose;
+                agent_cfg.progress = opts.progress.clone();
                 // 超时交给 Agent 内部"每轮检查、优雅收尾"，而非硬 cancel——保住已上报的发现。
                 agent_cfg.timeout = opts.timeout;
                 // 发送前预检预算：确定性避免撞 provider 的 context-length 上限。
@@ -356,6 +360,7 @@ pub async fn run_review_with_client(
                 budget,
                 opts.verbose,
                 opts.timeout,
+                opts.progress.clone(),
             )
             .await;
             if ir.incomplete {

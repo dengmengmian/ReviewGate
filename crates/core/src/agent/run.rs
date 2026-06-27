@@ -205,6 +205,9 @@ pub async fn run_agent_with_stats(
         let mut done = false;
         for tu in &tool_uses {
             stats.record_tool(&tu.name);
+            if let Some(p) = &cfg.progress {
+                p.record_tool(dim, &tu.name, &tool_target(&tu.input));
+            }
             let (content, is_error) = match tu.name.as_str() {
                 "report_finding" => match parse_finding(&tu.input, cfg.dimension) {
                     Ok(f) => {
@@ -298,6 +301,27 @@ fn estimate_request_tokens(system: &str, messages: &[Message]) -> usize {
         }
     }
     total
+}
+
+/// 从工具入参里取一个简短「目标」用于进度展示（路径/查询/符号名…），截断到 48 字符。
+fn tool_target(input: &serde_json::Value) -> String {
+    for k in [
+        "path",
+        "file",
+        "query",
+        "pattern",
+        "symbol",
+        "name",
+        "criterion",
+    ] {
+        if let Some(s) = input.get(k).and_then(|v| v.as_str()) {
+            let s = s.trim();
+            if !s.is_empty() {
+                return s.chars().take(48).collect();
+            }
+        }
+    }
+    String::new()
 }
 
 #[cfg(test)]

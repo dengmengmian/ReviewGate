@@ -16,6 +16,7 @@ pub mod judge;
 pub(crate) mod language;
 pub mod llm;
 pub mod model;
+pub mod progress;
 pub mod relocate;
 pub mod review;
 pub mod tool;

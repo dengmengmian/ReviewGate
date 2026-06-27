@@ -4,6 +4,7 @@ mod fix;
 mod render;
 
 use clap::{Parser, Subcommand};
+use std::io::IsTerminal;
 
 #[derive(Parser)]
 #[command(
@@ -379,7 +380,49 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     if opts.intent.is_some() {
         eprintln!("  + 意图/技术评审：已加载意图，运行独立的「实现 vs 意图」评审。");
     }
+
+    // 实时进度：仅在终端、非 JSON、非 --verbose 时开。单行就地刷新，结束清行并给紧凑摘要；
+    // JSON/管道/CI/verbose 下不渲染（避免污染输出/与详细日志打架）。
+    let live = std::io::stderr().is_terminal() && args.format != "json" && !args.verbose;
+    let progress = live.then(|| std::sync::Arc::new(reviewgate_core::progress::Progress::new()));
+    opts.progress = progress.clone();
+    let render = progress.clone().map(|p| {
+        tokio::spawn(async move {
+            const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+            let start = std::time::Instant::now();
+            let mut i = 0usize;
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+                let (n, last) = p.snapshot();
+                let last: String = last.chars().take(60).collect();
+                let s = start.elapsed().as_secs();
+                eprint!(
+                    "\r\x1b[2K{} 审查中 · {n} 次工具调用 · {last} · {}:{:02}",
+                    FRAMES[i % FRAMES.len()],
+                    s / 60,
+                    s % 60
+                );
+                let _ = std::io::Write::flush(&mut std::io::stderr());
+                i += 1;
+            }
+        })
+    });
+
+    let started = std::time::Instant::now();
     let outcome = run_review(&cfg, &opts).await?;
+
+    if let Some(h) = render {
+        h.abort();
+        let (n, _) = progress.as_ref().unwrap().snapshot();
+        let s = started.elapsed().as_secs();
+        // 清掉进度行，留一行紧凑完成摘要（细节收起）。
+        eprint!("\r\x1b[2K");
+        eprintln!(
+            "✓ 审查完成 · {n} 次工具调用 · 耗时 {}:{:02}",
+            s / 60,
+            s % 60
+        );
+    }
 
     match args.format.as_str() {
         "json" => println!("{}", render::render_json(&outcome)?),

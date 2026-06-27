@@ -7,7 +7,9 @@ use crate::agent::{intent_system_prompt, run_agent_with_stats, AgentConfig, Agen
 use crate::diff::Diff;
 use crate::llm::LlmClient;
 use crate::model::{Dimension, Finding};
+use crate::progress::Progress;
 use crate::tool::{ToolContext, ToolRegistry};
+use std::sync::Arc;
 use std::time::Duration;
 
 pub(super) struct IntentReview {
@@ -26,11 +28,13 @@ pub(super) async fn run_intent_review(
     budget: usize,
     verbose: bool,
     timeout: Option<Duration>,
+    progress: Option<Arc<Progress>>,
 ) -> IntentReview {
     let mut cfg = AgentConfig::for_dimension(Dimension::Intent);
     cfg.system_prompt = intent_system_prompt(); // 探索向系统提示，覆盖默认 shared（缺陷向）
     cfg.verbose = verbose;
     cfg.timeout = timeout;
+    cfg.progress = progress;
     cfg.max_input_tokens = Some(budget);
     cfg.max_rounds = 16; // 更深的开放式探索
 

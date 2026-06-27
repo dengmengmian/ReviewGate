@@ -31,6 +31,8 @@ pub struct AgentConfig {
     /// 输入 token 预算（取 provider 的 `max_input_tokens`）。每轮发送前预检，
     /// 估算超预算则**确定性地**提前收尾并标记上下文溢出，避免撞 provider 的 400。None = 不检查。
     pub max_input_tokens: Option<usize>,
+    /// 实时进度沉淀（跨并行 Agent 共享）。每次工具调用更新；CLI 据此单行实时渲染。None = 不记录。
+    pub progress: Option<std::sync::Arc<crate::progress::Progress>>,
 }
 
 /// Agent 退出原因。区分**正常收尾**与**未审完**，供上层闸口"未审完不放行"。
@@ -138,6 +140,7 @@ impl AgentConfig {
             verbose: false,
             timeout: None,
             max_input_tokens: None,
+            progress: None,
         }
     }
 }
