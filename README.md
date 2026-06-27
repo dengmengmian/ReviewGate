@@ -285,7 +285,7 @@ curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integr
 - **召回**：真实 CVE（revert 法）+ ~18 漏洞类型 + 真实用户 issue + 合成强触发；**真实 PR revert 金标准 4/4**（axios 原型污染 SSRF / requests Content-Type 解析 / gin ClientIP XFF / ripgrep gitignore 缓存）全部命中，发现精确还原原修复所针对的回归。
 - **语言**：**45 种内置默认开**（常见+不常见：含仓颉/Zig/Nim/Crystal/OCaml/F#/Solidity/COBOL/Fortran/Dockerfile/Terraform…），按改动语言注入、可关、可覆盖。
 - **大 PR / 未审完不静默放行**：diff 超上下文窗口、请求失败、上下文超限、超时、超大文件跳过等情况会降级 WARN，并可让 CI 非 0 退出，避免被当成干净 PASS。机制与真实大 PR 实测（最大 55 文件/5000 行）见 [`docs/BIG_PR_HANDLING.md`](docs/BIG_PR_HANDLING.md)。
-- **意图评审（`--intent`）**：真实代码 + 真实意图实测。结构化强制把意图拆成 N 条验收标准逐条核对；受控 A/B 能区分完整 vs 不完整实现，跨仓库/语言复现（axios URL-对象特性、Flask#5917 `provide_automatic_options`：故意制造缺口→精确命中、完整版→0 误报且 PASS），未逐条核对的标准兜底标「未核对」并降级 WARN，绝不空清单或伪 PASS。见 [`docs/evals/`](docs/evals/) 第六节（[结构化强制](docs/evals/2026-06-27__intent-structured-enforcement.md) · [受控 A/B](docs/evals/2026-06-27__intent-mvp-ab.md) · [Flask A/B](docs/evals/2026-06-27__intent-flask-pr5917.md)）。
+- **意图评审（`--intent`）**：真实代码 + 真实意图实测。结构化强制把意图拆成 N 条验收标准逐条核对；受控 A/B 能区分完整 vs 不完整实现（axios、cobra Go 切片别名 bug：故意制造缺口→精确命中、完整版→0 误报），10 个真实正确修复 commit 跨 5 语言 **10/10 met 且 0 误报**；未逐条核对的标准兜底标「未核对」并降级 WARN，绝不空清单或伪 PASS。见 [`docs/evals/`](docs/evals/) 第六节（[结构化强制](docs/evals/2026-06-27__intent-structured-enforcement.md) · [受控 A/B](docs/evals/2026-06-27__intent-mvp-ab.md) · [10 commit 批量](docs/evals/2026-06-27__intent-batch10.md) · [Go A/B](docs/evals/2026-06-27__intent-cobra-pr2356.md)）。
 - **诚实局限**：细微多步算术/进位 off-by-one 是静态审查硬尾，见 [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md)，建议测试互补。
 
 ## 当前状态

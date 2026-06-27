@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-06-27
+
 ### Added
 - **意图 / 技术评审**：`reviewgate review --intent <文件|->`（或 `--intent-from-commit` 取提交信息）传入本次改动的需求/设计/验收标准，由一个**独立的整体性 Agent**（专用探索向系统提示）审「实现 vs 意图」——从 diff 出发主动跨文件探索(调用方/契约/测试),报告：缺失需求、与意图不符、破坏既有行为、方案风险。与常驻的 `business.rules` 正交(规则=不变量，intent=本次该做什么)。发现并入主结果过证伪 Judge / 闸口；未提供 `--intent` 时零退化。受控 A/B 实测(axios URL 对象特性)：不完整实现命中缺口、完整实现 0 误报。
 - **需求锚定上报 + 验收清单视图**：意图 Agent 用专用工具 `report_intent_finding`（按验收标准上报 verdict：met/missing/deviation/breaking/suggestion，位置可选），文本渲染为 **Intent / Acceptance Checklist**（按标准分组、状态标签），JSON 也输出 `criterion`/`intent_status`。
