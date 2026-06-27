@@ -35,9 +35,10 @@ provider = "deepseek"
 protocol = "openai"
 base_url = "https://api.deepseek.com/v1"
 model = "deepseek-v4-pro"
+# api_key = "sk-..."   # 可写在这里；更推荐用下方环境变量，避免把密钥提交进仓库
 EOF
 
-# 3) 用环境变量放 key，不写进配置文件
+# 3) 用环境变量放 key（优先级高于配置文件里的 api_key），不写进配置文件
 export REVIEWGATE_API_KEY="你的 key"
 
 # 4) 确认模型能连上
@@ -66,6 +67,7 @@ irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 |
 | review 评论太多太散 | 合并重复发现，默认折叠低置信反馈 |
 | 担心 AI 写出“看起来对、其实错”的代码 | 专门检查幻觉 API、假设漂移、复制后未适配 |
 | 团队有业务规则 | 把权限、金额、状态机等规则写进配置，每次审查自动带上 |
+| 想确认实现是否真的符合需求/设计 | 传入本次意图（`--intent`），独立 Agent 跨文件审「实现 vs 意图」，输出验收清单 |
 | 想在 CI 里加一道闸口 | 高置信问题可阻断合并，未审完不会被当成干净通过 |
 
 <details>
@@ -124,9 +126,10 @@ provider = "deepseek"
 protocol = "openai"          # OpenAI 兼容（DeepSeek/Kimi/GLM/通义…）；用 Anthropic 则填 "anthropic"
 base_url = "https://api.deepseek.com/v1"
 model    = "deepseek-v4-pro"
+api_key  = "sk-..."          # 可写在这里；CI/共享环境更推荐用环境变量（见下，优先级更高）
 ```
 
-API key 推荐用环境变量：
+API key 推荐用环境变量（覆盖配置文件里的 `api_key`）：
 
 ```bash
 export REVIEWGATE_API_KEY="sk-..."
@@ -175,6 +178,16 @@ reviewgate review --fix                 # 逐条 y/N 确认后把建议代码应
 reviewgate review --judge-concurrency 4 # 限制 Judge 并发，避免候选多时触发限流
 reviewgate review --verbose             # 打印每维度轮数 + token/缓存命中率
 reviewgate review --commit <sha>        # 审查单个 commit；或 --from <base> --to <head>
+reviewgate review --intent spec.md      # 额外做「实现 vs 意图」技术评审（传入需求/设计/验收标准）
+reviewgate review --commit <sha> --intent-from-commit  # 用该 commit 的提交信息作为意图
+```
+
+### 意图 / 技术评审（`--intent`）
+
+缺陷评审不需要知道「本该做什么」；**技术评审需要**。传入本次改动的意图（需求/设计/验收标准，文件或 `-` 读 stdin），ReviewGate 会**额外**起一个**独立的整体性 Agent**——从 diff 出发主动跨文件追调用方、契约、测试，判断实现是否完整、正确地满足意图，输出一份**验收清单**（每条标准 ✓满足 / ✗缺失 / ⚠不符 / 建议）。它与常驻的 `business.rules` 正交：规则是不变量，`--intent` 是每次不同的「这次该做什么」。不传 `--intent` 时零开销。
+
+```bash
+reviewgate review --from main --to HEAD --intent docs/requirement.md
 ```
 
 `--exec-verify` 会让模型生成的自包含 JS/Python 片段在本机运行以验证边界用例。它默认关闭，且当前只是临时目录 + 清空环境 + 超时的**弱隔离**，不是 OS 级沙箱；只建议在可信或隔离的 CI 环境使用。
@@ -184,12 +197,25 @@ ReviewGate 会按 `REVIEWGATE_OUTPUT_LANGUAGE` 或终端 locale（`LC_ALL` / `LC
 输出示例：
 
 ```
-闸口：BLOCK ✗ 阻断合并    1 文件改动 · 2 条可信发现 · 3 条已过滤
+ReviewGate: BLOCK
 
-handler.rs
-  ✗ [security · high · conf 1.00] L3
-    SQL 注入：用户输入 req.user_id 通过 format! 直接拼接到 DELETE 语句…
-    ↳ 建议：使用参数化查询。
+1 files changed · 1 must fix · 0 warnings · 3 filtered
+LLM: 输入 120k tok（缓存命中 88%）· 输出 2.1k tok
+
+Must Fix
+
+1. handler.rs:3
+   security / high / confidence 1.00
+
+   SQL 注入：用户输入 req.user_id 通过 format! 直接拼接到 DELETE 语句…
+
+   Current:
+     -   let q = format!("DELETE FROM users WHERE id = {}", req.user_id);
+   Suggested patch:
+     +   let q = "DELETE FROM users WHERE id = $1";
+
+Not Shown
+  3 low-confidence findings hidden. Run with --show-filtered to inspect them.
 ```
 
 **退出码（CI 闸口用）**：`BLOCK → 1`，否则 `0`；用 `--fail-on block|warn|never` 调整。

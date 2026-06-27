@@ -568,4 +568,57 @@ mod tests {
         assert!(text.contains("Suggested patch"));
         assert!(text.contains("Next Steps"));
     }
+
+    fn intent_finding(criterion: &str, status: IntentStatus, msg: &str) -> Finding {
+        let mut f = finding(Severity::Low, false);
+        f.dimension = Dimension::Intent;
+        f.severity = match status {
+            IntentStatus::Missing | IntentStatus::Breaking => Severity::High,
+            _ => Severity::Low,
+        };
+        f.filtered = status == IntentStatus::Met; // met 是信息项，进清单但折叠
+        f.path = String::new();
+        f.start_line = 0;
+        f.message = msg.into();
+        f.suggestion = None;
+        f.criterion = Some(criterion.into());
+        f.intent_status = Some(status);
+        f
+    }
+
+    #[test]
+    fn intent_findings_render_as_checklist_not_in_regular_sections() {
+        let outcome = ReviewOutcome {
+            findings: vec![
+                intent_finding(
+                    "验收#1:buildURL 接受 URL 对象",
+                    IntentStatus::Met,
+                    "已在 buildURL 处理",
+                ),
+                intent_finding(
+                    "验收#2:dispatch 处理 URL 对象",
+                    IntentStatus::Missing,
+                    "dispatchRequest 未规范化 URL 对象",
+                ),
+                finding(Severity::High, false), // 常规缺陷,应进 Must Fix
+            ],
+            files_changed: 2,
+            decision: GateDecision::Warn,
+            incomplete: false,
+            warnings: vec![],
+            usage: Usage::default(),
+        };
+
+        let text = render_text(&outcome, false);
+        // 验收清单区出现,按 criterion 分组,带状态标签。
+        assert!(text.contains("Intent / Acceptance Checklist"));
+        assert!(text.contains("验收#2:dispatch 处理 URL 对象"));
+        assert!(text.contains("met"));
+        assert!(text.contains("missing"));
+        assert!(text.contains("dispatchRequest 未规范化 URL 对象"));
+        // 意图发现不重复出现在常规缺陷描述里（常规区只该有那条 SQL 注入缺陷）。
+        assert!(text.contains("SQL injection"));
+        let dispatch_hits = text.matches("dispatchRequest 未规范化 URL 对象").count();
+        assert_eq!(dispatch_hits, 1, "意图发现只应出现在清单里，不重复");
+    }
 }

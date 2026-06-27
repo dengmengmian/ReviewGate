@@ -40,6 +40,11 @@ pub async fn run_agent_with_stats(
 ) -> Result<AgentRun> {
     // 意图维度用需求锚定的 report_intent_finding，其余维度用行锚的 report_finding。
     let intent_dim = cfg.dimension == Dimension::Intent;
+    let report_name = if intent_dim {
+        "report_intent_finding"
+    } else {
+        "report_finding"
+    };
     let report_def = || {
         if intent_dim {
             report_intent_finding_def()
@@ -110,9 +115,9 @@ pub async fn run_agent_with_stats(
         let is_final = round + 1 >= cfg.max_rounds;
         let round_tools = if is_final { &final_tools } else { &tools };
         if is_final {
-            messages.push(Message::user(
-                "This is the final round. Conclude from the information you already have: call report_finding for confirmed issues, or call task_done if there are no credible issues. Do not call additional investigation tools.",
-            ));
+            messages.push(Message::user(format!(
+                "This is the final round. Conclude from the information you already have: call {report_name} for confirmed issues, or call task_done if there are no credible issues. Do not call additional investigation tools."
+            )));
         }
         if cfg.verbose {
             eprintln!(
@@ -190,9 +195,9 @@ pub async fn run_agent_with_stats(
                 break;
             }
             // 异常：给一次纠正提示。
-            messages.push(Message::user(
-                "Please call report_finding to report an issue, or call task_done if there are no issues.",
-            ));
+            messages.push(Message::user(format!(
+                "Please call {report_name} to report an issue, or call task_done if there are no issues."
+            )));
             continue;
         }
 

@@ -230,7 +230,9 @@ mod tests {
         );
 
         // 非法/缺字段 → 报错
-        assert!(parse_intent_finding(&json!({"criterion":"c","status":"bogus","message":"m"})).is_err());
+        assert!(
+            parse_intent_finding(&json!({"criterion":"c","status":"bogus","message":"m"})).is_err()
+        );
         assert!(parse_intent_finding(&json!({"status":"met","message":"m"})).is_err());
     }
 }
