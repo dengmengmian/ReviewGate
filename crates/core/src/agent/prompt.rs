@@ -14,7 +14,16 @@ fn dimension_focus(d: Dimension) -> &'static str {
         Dimension::Style => include_str!("../../prompts/dimensions/style.md").trim_end(),
         Dimension::Business => include_str!("../../prompts/dimensions/business.md").trim_end(),
         Dimension::AiSmell => include_str!("../../prompts/dimensions/ai_smell.md").trim_end(),
+        Dimension::Intent => include_str!("../../prompts/dimensions/intent.md").trim_end(),
     }
+}
+
+/// 意图/技术评审专用系统提示——鼓励跨文件探索、评估「实现 vs 意图」的完整性，
+/// 与 [`shared_system_prompt`]（缺陷向、抑制跨文件探索）形成对比。
+pub fn intent_system_prompt() -> String {
+    include_str!("../../prompts/intent_system.md")
+        .trim_end()
+        .to_string()
 }
 
 /// Dimension-independent shared system prompt.

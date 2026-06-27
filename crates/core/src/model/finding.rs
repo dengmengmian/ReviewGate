@@ -19,6 +19,9 @@ pub enum Dimension {
     /// 业务/项目规则：领域语义、权限边界、状态机、金额/订单/库存等。
     /// 不在 [`Dimension::ALL`] 默认集内——仅在配置了业务规则或显式指定时启用。
     Business,
+    /// 意图/技术评审：实现是否符合传入的意图/需求/验收标准（完整性、与意图不符、破坏既有行为、方案风险）。
+    /// 不在 [`Dimension::ALL`] 内——仅在提供了 `--intent`（意图/参考文档）时由独立的整体性 Agent 运行。
+    Intent,
 }
 
 impl Dimension {
@@ -40,6 +43,7 @@ impl Dimension {
             Dimension::Style => "style",
             Dimension::AiSmell => "ai_smell",
             Dimension::Business => "business",
+            Dimension::Intent => "intent",
         }
     }
 }

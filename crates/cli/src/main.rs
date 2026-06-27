@@ -83,6 +83,47 @@ fn resolve_mode(
     })
 }
 
+/// 解析意图文本：优先 `--intent`（文件路径，或 `-` 读 stdin）；否则 `--intent-from-commit` 用提交信息。
+/// 这是「意图作为每次不同的输入」的入口——与常驻的 `business.rules` 正交。
+fn resolve_intent(args: &ReviewArgs) -> anyhow::Result<Option<String>> {
+    use anyhow::Context;
+    let normalize = |s: String| {
+        let t = s.trim().to_string();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
+    };
+    if let Some(src) = &args.intent {
+        let text = if src == "-" {
+            use std::io::Read;
+            let mut buf = String::new();
+            std::io::stdin()
+                .read_to_string(&mut buf)
+                .context("读取 stdin 意图失败")?;
+            buf
+        } else {
+            std::fs::read_to_string(src).with_context(|| format!("读取意图文件失败：{src}"))?
+        };
+        return Ok(normalize(text));
+    }
+    if args.intent_from_commit {
+        let Some(sha) = &args.commit else {
+            anyhow::bail!("--intent-from-commit 需配合 --commit 使用");
+        };
+        let out = std::process::Command::new("git")
+            .args(["log", "-1", "--format=%B", sha])
+            .output()
+            .context("执行 git 读取提交信息失败")?;
+        if !out.status.success() {
+            anyhow::bail!("读取 commit {sha} 提交信息失败");
+        }
+        return Ok(normalize(String::from_utf8_lossy(&out.stdout).to_string()));
+    }
+    Ok(None)
+}
+
 #[derive(Parser)]
 struct ReviewArgs {
     /// 输出格式：text | json
@@ -131,6 +172,12 @@ struct ReviewArgs {
     /// 会执行模型生成的自包含 JS/Python 片段——仅在可信/CI 沙箱环境使用。默认关闭。
     #[arg(long)]
     exec_verify: bool,
+    /// 意图/参考文档路径（需求/设计/验收标准）；`-` 读 stdin。提供后运行独立的「实现 vs 意图」技术评审。
+    #[arg(long)]
+    intent: Option<String>,
+    /// 用本次 commit 的提交信息作为意图（仅 --commit 模式；同时给了 --intent 时以 --intent 为准）。
+    #[arg(long)]
+    intent_from_commit: bool,
 }
 
 #[tokio::main]
@@ -328,6 +375,10 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     opts.samples = samples;
     opts.judge_concurrency = args.judge_concurrency.max(1);
     opts.exec_verify = args.exec_verify;
+    opts.intent = resolve_intent(args)?;
+    if opts.intent.is_some() {
+        eprintln!("  + 意图/技术评审：已加载意图，运行独立的「实现 vs 意图」评审。");
+    }
     let outcome = run_review(&cfg, &opts).await?;
 
     match args.format.as_str() {

@@ -6,6 +6,7 @@
 mod aggregate;
 mod context;
 mod dedup;
+mod intent;
 mod rules;
 mod units;
 
@@ -53,6 +54,9 @@ pub struct ReviewOptions {
     pub exec_verify: bool,
     /// Judge 并发上限，避免候选过多时打满 provider 限流。
     pub judge_concurrency: usize,
+    /// 意图 / 参考文档（需求 / 设计 / 验收标准）。提供后由独立的整体性 Agent 做「实现 vs 意图」评审。
+    /// None / 空 = 不做意图评审（零退化）。
+    pub intent: Option<String>,
 }
 
 impl ReviewOptions {
@@ -67,6 +71,7 @@ impl ReviewOptions {
             samples: 1,
             exec_verify: false,
             judge_concurrency: 4,
+            intent: None,
         }
     }
 
@@ -335,6 +340,33 @@ pub async fn run_review_with_client(
     // 行号校验/兜底（模型多数已直接报标注行号）→ 跨维度去重。
     relocate_all(&mut findings, Path::new(&root), &new_ref, &diff).await;
     findings = dedupe(findings);
+
+    // 意图 / 技术评审：若提供了意图，整体跑一次独立 Agent（不进 per-unit fan-out，从 diff 出发跨文件探索），
+    // 其发现并入主结果一起过 Judge / 闸口（缺失类发现不走 relocate，保留其需求锚定）。
+    if let Some(intent_text) = opts.intent.as_deref() {
+        if !intent_text.trim().is_empty() {
+            let ir = intent::run_intent_review(
+                client,
+                &reg,
+                &ctx,
+                &diff,
+                intent_text,
+                budget,
+                opts.verbose,
+                opts.timeout,
+            )
+            .await;
+            if ir.incomplete {
+                incomplete = true;
+                warnings.push(ReviewWarning {
+                    dimension: Dimension::Intent.as_str().to_string(),
+                    kind: "incomplete",
+                    message: "意图评审未审完（超时/上下文超预算），结果可能不完整".into(),
+                });
+            }
+            findings.extend(ir.findings);
+        }
+    }
 
     // 证伪 Judge（可关）。
     let mut judge_stats = JudgeStats::default();

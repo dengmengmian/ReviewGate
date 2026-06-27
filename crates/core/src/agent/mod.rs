@@ -7,7 +7,9 @@ mod control_tools;
 mod prompt;
 mod run;
 
-pub use prompt::{build_user_prompt, dimension_focus_block, shared_system_prompt};
+pub use prompt::{
+    build_user_prompt, dimension_focus_block, intent_system_prompt, shared_system_prompt,
+};
 pub use run::{run_agent, run_agent_with_stats};
 
 use crate::model::{ContentBlock, Dimension, Finding, Usage};

@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Added
+- **意图 / 技术评审(MVP)**：`reviewgate review --intent <文件|->`（或 `--intent-from-commit` 取提交信息）传入本次改动的需求/设计/验收标准，由一个**独立的整体性 Agent**审「实现 vs 意图」——从 diff 出发主动跨文件探索(调用方/契约/测试),报告：缺失需求、与意图不符、破坏既有行为、方案风险。与常驻的 `business.rules` 正交(规则=不变量，intent=本次该做什么)。发现并入主结果过证伪 Judge / 闸口；未提供 `--intent` 时零退化。受控 A/B 实测(axios URL 对象特性)：不完整实现命中缺口、完整实现 0 误报。
+
 ### Changed
 - 大 diff（多审查单元）下**采样固定为 1**：避免 `单元×维度×样本` 的成本放大；`--samples` 多采样只在单单元（正常 PR）上生效。
 
