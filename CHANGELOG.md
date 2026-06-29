@@ -4,6 +4,32 @@
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-06-29
+
+### Added
+- **限流/瞬时错误重试**：LLM 请求对 `429`（限流）与 `408`（请求超时）也自动重试，并优先采纳服务端 `Retry-After`（上限 60s）——此前一次瞬时 429 就会让审查单元误判为 incomplete。
+- **fan-out 并发上限**：`单元×维度×样本` 改用 `buffer_unordered` 限并发（默认 6，`--fanout-concurrency` 可调），避免大 PR 瞬时拉起几十路 LLM 流打满限流；与 Judge 阶段一致的背压策略。
+- **符号检索结果缓存**：并发维度 Agent 常重复查同一批改动符号，结果按 `(mode, symbol)` 缓存，命中即免去重复的 `git grep` 子进程 + AST 解析。
+- **鉴权失败单独归类**：`complete()` 失败时区分 `AuthFailed`（401/403、invalid/incorrect api key）与一般 `RequestFailed`，并保留真实错误摘要如实展示——不再把 key 配错笼统报成"上下文溢出/未审完"。
+- **占位符 API key 拦截**：配置里仍是模板占位串（`REPLACE_WITH…`/`YOUR_API_KEY`/`<your-key>`/`CHANGEME` 等）时在加载阶段就明确报错，而非把占位串发给服务端换回看不懂的 400/401。
+- **颜色环境变量**：渲染尊重 `NO_COLOR`（任意值即关色）与 `FORCE_COLOR`/`CLICOLOR_FORCE`（管道/CI 强制开色）。
+
+### Changed
+- **输出美观化**：文本结果改为分隔线 + 状态图标（`✓ PASS`/`⚠ WARN`/`✖ BLOCK`）+ `▌` 区块标记 + 右对齐的「维度·严重度·置信度」；关键计数语义化配色（`must-fix` 红 / `warn` 黄 / 为 0 灰），发现编号按严重度上色、文件锚点加粗。折行改为**按词断行**（ASCII 整词不拆、CJK 逐字可断），消除英文单词被从中间切断。
+- **token 估算按 ASCII / 非 ASCII 分桶**：CJK 不再被统一 `/3` **低估**（不安全方向），改为非 ASCII `~0.67 token/char`，更贴近真实分词粒度。
+- **共享 HTTP 客户端**：各 provider 实例与 GitHub 评论复用同一 `reqwest::Client`（连接池），免去重复建池与 TLS 握手。
+
+### Fixed
+- **置信度排序对 NaN 稳定**：filtered 列表排序改用 `f32::total_cmp`，避免 `partial_cmp` 遇 NaN 退化成"全部相等"而打乱顺序。
+- **未定位发现去重的退化**：内容聚类按 path 建索引，只在同 path 簇内匹配，避免大量未定位发现时的 O(N×K) 线性扫。
+
+### Tests
+- 新增编排集成测试 `orchestration`：覆盖「零发现 → PASS」与「请求全失败 → incomplete（不被洗成通过）」两条主路径。
+- 新增 CLI 退出码全矩阵 + `parse_dimensions` 单测；重试状态码、token 分桶、符号缓存、鉴权归类、占位符 key 等均带单测。
+
+### Docs
+- README 输出语言段补全**优先级**（`REVIEWGATE_OUTPUT_LANGUAGE` > `LC_ALL`/`LC_MESSAGES`/`LANG` > 英文兜底）与「CLI 骨架恒英文、仅 finding 本地化」的区分；补 `--fanout-concurrency` 与刷新后的输出示例。
+
 ## [0.1.2] - 2026-06-27
 
 ### Added
