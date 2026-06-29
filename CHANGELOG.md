@@ -7,13 +7,12 @@
 ## [0.1.4] - 2026-06-29
 
 ### Changed
-- **报告与进度行跟随输出语言本地化**：整份人类可读报告（章节标题 `MUST FIX`/`WARNINGS`/`NEXT STEPS`/`NOT SHOWN`/`INCOMPLETE REVIEW`/验收清单、状态词 `PASS`/`WARN`/`BLOCK`、计数行、引导正文）与实时进度行（`评审中`/`评审完成`/`N 次调用`）现按 `output_language()` 本地化——中文 locale 显示中文，其它语言回退英文。命令名、维度/严重度标识、token 计量行保持英文。`output_language()` 提升为公开 API，新增 `crate::i18n::Lang` 集中所有可本地化文案。
+- 评审报告和实时进度现在跟随你的语言：中文环境下，章节标题（必须修复 / 警告 / 后续步骤…）、状态（通过 / 警告 / 拦截）、计数行和进度提示都显示中文；其它语言自动回退英文。命令、维度名等保持英文，方便直接复制运行。
+  Review output now follows your language: under a Chinese locale the section titles, status, counts, and live progress all show in Chinese; other languages fall back to English. Commands and dimension names stay English so you can copy-paste them as-is.
 
 ### Fixed
-- **进度行窄终端折行刷屏**：实时进度单行就地刷新此前只截断中间活动文本，整行（含 `Reviewing` 前缀与 `· N calls · M:SS` 后缀）超过终端宽度时被折行，`\r\x1b[2K` 只清当前物理行而残留折行 → 满屏堆叠。改为把整行压进固定显示宽度预算（按显示列计、CJK 记 2 列、按宽度截断），任何 ≥60 列终端都不再折行。
-
-### Docs
-- README（中/英）输出语言段同步：从「CLI 骨架始终英文」更正为「报告骨架与进度行随语言本地化、命令名/标识保持英文」。
+- 修复在较窄终端里进度提示不断换行、刷满整屏的问题，现在稳定地在同一行原地刷新。
+  Fixed the live progress line wrapping and flooding the screen on narrower terminals; it now refreshes cleanly in place on a single line.
 
 ## [0.1.3] - 2026-06-29
 
