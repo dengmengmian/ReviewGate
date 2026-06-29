@@ -193,7 +193,7 @@ reviewgate review --from main --to HEAD --intent docs/requirement.md
 
 `--exec-verify` 会让模型生成的自包含 JS/Python 片段在本机运行以验证边界用例。它默认关闭，且当前只是临时目录 + 清空环境 + 超时的**弱隔离**，不是 OS 级沙箱；只建议在可信或隔离的 CI 环境使用。
 
-**输出语言**：只影响 **finding 文案**（问题描述/修复建议）；CLI 骨架（`MUST FIX` / `NEXT STEPS` / 分隔线 / `BLOCK` 等）**始终英文**。语言按以下优先级决定：
+**输出语言**：影响 **finding 文案**（问题描述/修复建议）与**整份报告骨架**（章节标题如 `MUST FIX`/`NEXT STEPS`、状态词 `PASS`/`WARN`/`BLOCK`、计数行、验收清单、实时进度行）——中文 locale 下均显示中文，其它语言回退英文。命令名（`reviewgate review …`）、维度/严重度标识、token 计量行保持英文。语言按以下优先级决定：
 
 1. **`REVIEWGATE_OUTPUT_LANGUAGE`** —— 显式指定，原样使用（如 `"Chinese (Simplified)"`、`"日本語"`）。
 2. **终端 locale**，按 `LC_ALL` > `LC_MESSAGES` > `LANG` 取第一个非空值映射（`zh_CN`→简中、`zh_TW`/`zh_HK`/`zh_MO`→繁中、`ja`→日语、`ko`、`fr`、`de`、`es`、`pt_BR`、`ru`、`it`…）。

@@ -189,7 +189,7 @@ reviewgate review --from main --to HEAD --intent docs/requirement.md
 
 `--exec-verify` lets the model generate self-contained JS/Python snippets and run them locally to verify edge cases. It is off by default. The current isolation is weak: a temporary directory, empty environment, and timeout, not an OS-level sandbox. Use it only in trusted or isolated CI environments.
 
-**Output language**: affects only the **finding text** (issue descriptions / fix suggestions); the CLI chrome (`MUST FIX` / `NEXT STEPS` / separators / `BLOCK` …) is **always English**. The language is decided in this order:
+**Output language**: affects the **finding text** (issue descriptions / fix suggestions) **and the whole report chrome** (section headers like `MUST FIX`/`NEXT STEPS`, status words `PASS`/`WARN`/`BLOCK`, the count line, the acceptance checklist, and the live progress line) — all shown in your language under a matching locale, with English fallback for unsupported languages. Command names (`reviewgate review …`), dimension/severity identifiers, and the token-usage line stay English. The language is decided in this order:
 
 1. **`REVIEWGATE_OUTPUT_LANGUAGE`** — explicit, used verbatim (e.g. `"Chinese (Simplified)"`, `"日本語"`).
 2. **Terminal locale** — first non-empty of `LC_ALL` > `LC_MESSAGES` > `LANG`, mapped (`zh_CN`→Simplified, `zh_TW`/`zh_HK`/`zh_MO`→Traditional, `ja`, `ko`, `fr`, `de`, `es`, `pt_BR`, `ru`, `it`…).
