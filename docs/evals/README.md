@@ -13,8 +13,9 @@
 | 真实干净 PR：ripgrep#3420 / fzf#4739,#4803 / got#2454 / yt-dlp#16991 | 全 PASS，0 误 BLOCK |
 | 干净改动压测：8 语言的重构/加固/类型化（`precision-stress`） | 8/8 PASS |
 | judge 放宽后回归：安全的 jwt/crypto 良性改动 | PASS（0 误报）|
+| **前端真实合并 PR ×24**（excalidraw / vite / preact / TanStack-query / react-hook-form）[`frontend-real-pr-24`](2026-06-29__frontend-real-pr-24.md) | **0 BLOCK · 0 误报**；4 条 style/perf·low 真发现全部成立 |
 
-**累计 ~15 个干净用例，0 误 BLOCK。**
+**累计 ~39 个干净用例，0 误 BLOCK。**（含前端真实 PR 24 个）
 
 ## 二、召回（真实漏洞要 BLOCK）
 
