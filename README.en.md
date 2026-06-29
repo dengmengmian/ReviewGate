@@ -172,6 +172,7 @@ reviewgate review --timeout 120         # per-dimension wall-clock timeout in se
 reviewgate review --samples 3           # sample each dimension multiple times and union results
 reviewgate review --fix                 # apply suggested code after per-finding y/N confirmation
 reviewgate review --judge-concurrency 4 # limit judge concurrency to avoid provider rate limits
+reviewgate review --fanout-concurrency 6 # limit fan-out (units×dimensions×samples) concurrency to avoid rate limits on large PRs
 reviewgate review --verbose             # print per-dimension rounds and token/cache stats
 reviewgate review --commit <sha>        # review one commit; or use --from <base> --to <head>
 reviewgate review --intent spec.md      # also run "implementation vs intent" technical review (pass requirement/design/acceptance criteria)
@@ -188,7 +189,13 @@ reviewgate review --from main --to HEAD --intent docs/requirement.md
 
 `--exec-verify` lets the model generate self-contained JS/Python snippets and run them locally to verify edge cases. It is off by default. The current isolation is weak: a temporary directory, empty environment, and timeout, not an OS-level sandbox. Use it only in trusted or isolated CI environments.
 
-ReviewGate asks the model to write findings in `REVIEWGATE_OUTPUT_LANGUAGE` or the terminal locale (`LC_ALL`, `LC_MESSAGES`, `LANG`). Example:
+**Output language**: affects only the **finding text** (issue descriptions / fix suggestions); the CLI chrome (`MUST FIX` / `NEXT STEPS` / separators / `BLOCK` …) is **always English**. The language is decided in this order:
+
+1. **`REVIEWGATE_OUTPUT_LANGUAGE`** — explicit, used verbatim (e.g. `"Chinese (Simplified)"`, `"日本語"`).
+2. **Terminal locale** — first non-empty of `LC_ALL` > `LC_MESSAGES` > `LANG`, mapped (`zh_CN`→Simplified, `zh_TW`/`zh_HK`/`zh_MO`→Traditional, `ja`, `ko`, `fr`, `de`, `es`, `pt_BR`, `ru`, `it`…).
+3. **English fallback** — none of the above, or a `C` / `POSIX` locale.
+
+Only environment variables are read (not git config or repo contents), so CI without a locale defaults to English. Force a language with:
 
 ```bash
 REVIEWGATE_OUTPUT_LANGUAGE="English" reviewgate review
@@ -197,25 +204,29 @@ REVIEWGATE_OUTPUT_LANGUAGE="English" reviewgate review
 Example output:
 
 ```text
-ReviewGate: BLOCK
+━━ ReviewGate ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✖ BLOCK    1 files · 1 must-fix · 0 warn · 3 hidden
+  LLM 120k in (cache 88%) · 2.1k out
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1 files changed · 1 must fix · 0 warnings · 3 filtered
-LLM: 120k in (88% cache hit) · 2.1k out
+▌ MUST FIX
 
-Must Fix
+  1  handler.rs:3                       security · high · 100%
 
-1. handler.rs:3
-   security / high / confidence 1.00
+     SQL injection: req.user_id is interpolated directly into a DELETE statement...
 
-   SQL injection: req.user_id is interpolated directly into a DELETE statement...
+     Patch
+       - let q = format!("DELETE FROM users WHERE id = {}", req.user_id);
+       + let q = "DELETE FROM users WHERE id = $1";
 
-   Current:
-     -   let q = format!("DELETE FROM users WHERE id = {}", req.user_id);
-   Suggested patch:
-     +   let q = "DELETE FROM users WHERE id = $1";
+▌ NOT SHOWN
 
-Not Shown
   3 low-confidence findings hidden. Run with --show-filtered to inspect them.
+
+▌ NEXT STEPS
+
+  Some findings include suggested patches. Apply manually, or run:
+    reviewgate review --fix
 ```
 
 Exit codes for CI: `BLOCK -> 1`, otherwise `0`. Adjust with `--fail-on block|warn|never`.
