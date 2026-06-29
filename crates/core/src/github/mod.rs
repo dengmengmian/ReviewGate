@@ -87,7 +87,7 @@ pub async fn post_summary(outcome: &ReviewOutcome) -> Result<()> {
 
     let body = render_markdown(outcome);
     let url = format!("https://api.github.com/repos/{repo}/issues/{pr}/comments");
-    let client = reqwest::Client::new();
+    let client = crate::llm::http::shared_http_client()?;
     let resp = client
         .post(&url)
         .header("Authorization", format!("Bearer {token}"))
@@ -123,7 +123,7 @@ pub async fn post_inline_suggestions(outcome: &ReviewOutcome) -> Result<()> {
     };
 
     let url = format!("https://api.github.com/repos/{repo}/pulls/{pr}/comments");
-    let client = reqwest::Client::new();
+    let client = crate::llm::http::shared_http_client()?;
     let mut posted = 0usize;
     for f in outcome
         .findings

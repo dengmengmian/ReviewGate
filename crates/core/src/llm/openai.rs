@@ -20,7 +20,7 @@ pub struct OpenAiClient {
 
 impl OpenAiClient {
     pub fn new(cfg: &ProviderConfig) -> Result<Self> {
-        let http = super::http::build_http_client()?;
+        let http = super::http::shared_http_client()?;
         let endpoint = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
         Ok(Self {
             http,

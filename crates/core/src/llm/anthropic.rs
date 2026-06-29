@@ -23,7 +23,7 @@ pub struct AnthropicClient {
 
 impl AnthropicClient {
     pub fn new(cfg: &ProviderConfig) -> Result<Self> {
-        let http = super::http::build_http_client()?;
+        let http = super::http::shared_http_client()?;
         let endpoint = format!("{}/v1/messages", cfg.base_url.trim_end_matches('/'));
         Ok(Self {
             http,
