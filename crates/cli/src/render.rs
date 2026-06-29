@@ -1,5 +1,6 @@
 //! 审查结果渲染：JSON 信封 + 人类可读文本。
 
+use crate::i18n::{GateLabel, Lang};
 use reviewgate_core::gate::GateDecision;
 use reviewgate_core::model::{Dimension, Finding, IntentStatus, Severity};
 use reviewgate_core::review::{ReviewOutcome, ReviewWarning};
@@ -113,7 +114,7 @@ fn sanitize(s: &str) -> String {
 // ───────────────────────── CJK 宽度换行 ─────────────────────────
 
 /// 字符显示宽度：东亚宽字符与 emoji 记 2 列，其余 1。
-fn char_width(c: char) -> usize {
+pub(crate) fn char_width(c: char) -> usize {
     let u = c as u32;
     let wide = (0x1100..=0x115F).contains(&u)
         || (0x2E80..=0xA4CF).contains(&u)
@@ -262,14 +263,14 @@ fn section(p: &Palette, title: &str, bar_code: &str) -> String {
     format!("{} {}", p.paint(bar_code, "▌"), p.bold(title))
 }
 
-/// 判定状态行：图标 + 大写判定，整体按判定配色。
-fn status_line(p: &Palette, d: GateDecision) -> String {
-    let (icon, label, code) = match d {
-        GateDecision::Pass => ("✓", "PASS", "1;32"),
-        GateDecision::Warn => ("⚠", "WARN", "1;33"),
-        GateDecision::Block => ("✖", "BLOCK", "1;31"),
+/// 判定状态行：图标 + 判定词（本地化），整体按判定配色。
+fn status_line(p: &Palette, d: GateDecision, t: Lang) -> String {
+    let (icon, gate, code) = match d {
+        GateDecision::Pass => ("✓", GateLabel::Pass, "1;32"),
+        GateDecision::Warn => ("⚠", GateLabel::Warn, "1;33"),
+        GateDecision::Block => ("✖", GateLabel::Block, "1;31"),
     };
-    p.paint(code, &format!("{icon} {label}"))
+    p.paint(code, &format!("{icon} {}", t.gate_label(gate)))
 }
 
 /// 紧凑计数：12000→"12k"、1500→"1.5k"、800→"800"。
@@ -283,17 +284,37 @@ fn human_count(n: u64) -> String {
     }
 }
 
-fn display_width(s: &str) -> usize {
+pub(crate) fn display_width(s: &str) -> usize {
     s.chars().map(char_width).sum()
+}
+
+/// 按显示宽度截断（不加省略号）：尽量多取字符，但累计显示宽度不超过 `max`。
+pub(crate) fn truncate_to_width(s: &str, max: usize) -> String {
+    let mut used = 0;
+    let mut out = String::new();
+    for c in s.chars() {
+        let w = char_width(c);
+        if used + w > max {
+            break;
+        }
+        used += w;
+        out.push(c);
+    }
+    out
 }
 
 /// 渲染人类可读文本。`show_filtered` 时展开被过滤的低置信项。
 pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
+    render_text_lang(outcome, show_filtered, Lang::detect())
+}
+
+/// 报告渲染的语言可注入版本（测试用，避免依赖进程 locale）。
+fn render_text_lang(outcome: &ReviewOutcome, show_filtered: bool, t: Lang) -> String {
     let p = Palette::new();
     let mut out = String::new();
 
     if outcome.files_changed == 0 {
-        return "No changes detected.\n".into();
+        return format!("{}\n", t.no_changes());
     }
 
     // 意图评审发现单独走「验收清单」区，不混进常规缺陷区（避免重复）。
@@ -329,23 +350,23 @@ pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
     out.push('\n');
     // 计数行：有问题的计数才上色（must-fix 红 / warn 黄），为 0 则灰掉——一眼抓重点。
     let mf = if must_fix > 0 {
-        p.paint("1;31", &format!("{must_fix} must-fix"))
+        p.paint("1;31", &t.must_fix(must_fix))
     } else {
-        p.dim("0 must-fix")
+        p.dim(&t.must_fix(0))
     };
     let wn = if warnings > 0 {
-        p.paint("33", &format!("{warnings} warn"))
+        p.paint("33", &t.warn(warnings))
     } else {
-        p.dim("0 warn")
+        p.dim(&t.warn(0))
     };
     out.push_str(&format!(
-        "  {}    {} files {} {mf} {} {wn} {} {}\n",
-        status_line(&p, outcome.decision),
-        outcome.files_changed,
+        "  {}    {} {} {mf} {} {wn} {} {}\n",
+        status_line(&p, outcome.decision, t),
+        t.files(outcome.files_changed),
         p.dim("·"),
         p.dim("·"),
         p.dim("·"),
-        p.dim(&format!("{} hidden", filtered.len())),
+        p.dim(&t.hidden(filtered.len())),
     ));
     if outcome.usage.total_input() > 0 || outcome.usage.output_tokens > 0 {
         let input = outcome.usage.total_input() as u64;
@@ -362,7 +383,7 @@ pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
     out.push('\n');
     if outcome.incomplete {
         out.push('\n');
-        let msg = "Incomplete: some dimensions/units did not finish (timeout, request failure, context overflow, or oversized file skipped) — this result does not mean \"no issues\".";
+        let msg = t.incomplete_note();
         for (i, line) in wrap(msg, MSG_WIDTH).into_iter().enumerate() {
             let prefix = if i == 0 { "  ✖ " } else { "    " };
             out.push_str(&p.paint("1;31", &format!("{prefix}{line}")));
@@ -372,10 +393,10 @@ pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
     out.push('\n');
 
     if !outcome.warnings.is_empty() {
-        out.push_str(&section(&p, "INCOMPLETE REVIEW", "1;33"));
+        out.push_str(&section(&p, t.sec_incomplete_review(), "1;33"));
         out.push('\n');
         out.push('\n');
-        out.push_str("  The following dimensions did not finish:\n");
+        out.push_str(&format!("  {}\n", t.dims_not_finished()));
         for w in &outcome.warnings {
             out.push_str(&format!(
                 "    • {}: {} ({})\n",
@@ -384,16 +405,16 @@ pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
                 w.kind
             ));
         }
-        out.push_str("\n  Result may be incomplete. Re-run with:\n");
+        out.push_str(&format!("\n  {}\n", t.result_may_incomplete()));
         out.push_str(&p.dim("    reviewgate review --timeout 300 -v\n\n"));
     }
 
     if !intent.is_empty() {
-        out.push_str(&render_intent_checklist(&p, &intent));
+        out.push_str(&render_intent_checklist(&p, &intent, t));
     }
 
     if kept.is_empty() {
-        out.push_str(&p.sev(Severity::Low, "  No actionable issues found.\n\n"));
+        out.push_str(&p.sev(Severity::Low, &format!("  {}\n\n", t.no_actionable())));
     } else {
         let highs: Vec<&Finding> = kept
             .iter()
@@ -407,86 +428,81 @@ pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
             .collect();
 
         if !highs.is_empty() {
-            out.push_str(&section(&p, "MUST FIX", "1;31"));
+            out.push_str(&section(&p, t.sec_must_fix(), "1;31"));
             out.push_str("\n\n");
             for (i, f) in highs.into_iter().enumerate() {
-                out.push_str(&render_finding(&p, f, i + 1));
+                out.push_str(&render_finding(&p, f, i + 1, t));
                 out.push('\n');
             }
         }
 
         if !non_highs.is_empty() {
-            out.push_str(&section(&p, "WARNINGS", "1;33"));
+            out.push_str(&section(&p, t.sec_warnings(), "1;33"));
             out.push_str("\n\n");
             for (i, f) in non_highs.into_iter().enumerate() {
-                out.push_str(&render_finding(&p, f, i + 1));
+                out.push_str(&render_finding(&p, f, i + 1, t));
                 out.push('\n');
             }
         }
     }
 
     if !filtered.is_empty() {
-        out.push_str(&section(&p, "NOT SHOWN", "2"));
+        out.push_str(&section(&p, t.sec_not_shown(), "2"));
         out.push('\n');
         out.push('\n');
         if show_filtered {
-            out.push_str(&p.dim(&format!(
-                "  {} low-confidence findings:\n\n",
-                filtered.len()
-            )));
+            out.push_str(&p.dim(&format!("  {}\n\n", t.low_conf_listed(filtered.len()))));
             for (i, f) in filtered.iter().copied().enumerate() {
-                out.push_str(&render_finding(&p, f, i + 1));
+                out.push_str(&render_finding(&p, f, i + 1, t));
                 out.push('\n');
             }
         } else {
-            out.push_str(&p.dim(&format!(
-                "  {} low-confidence findings hidden. Run with --show-filtered to inspect them.\n\n",
-                filtered.len()
-            )));
+            out.push_str(&p.dim(&format!("  {}\n\n", t.low_conf_hidden(filtered.len()))));
         }
     }
 
-    out.push_str(&section(&p, "NEXT STEPS", "2"));
+    out.push_str(&section(&p, t.sec_next_steps(), "2"));
     out.push('\n');
     out.push('\n');
     if kept.iter().any(|f| !f.suggestion_code.trim().is_empty()) {
-        out.push_str("  Some findings include suggested patches. Apply manually, or run:\n");
+        out.push_str(&format!("  {}\n", t.next_patches()));
         out.push_str(&p.dim("    reviewgate review --fix\n"));
     } else if outcome.decision == GateDecision::Pass && outcome.warnings.is_empty() {
-        out.push_str("  No action required.\n");
+        out.push_str(&format!("  {}\n", t.next_no_action()));
     } else {
-        out.push_str("  Fix the findings above, then re-run:\n");
+        out.push_str(&format!("  {}\n", t.next_fix_rerun()));
         out.push_str(&p.dim("    reviewgate review\n"));
     }
-    out.push_str(
-        &p.dim("  Debug slow reviews:  reviewgate review -v --no-judge --dimensions logic\n"),
-    );
+    out.push_str(&p.dim(&format!(
+        "  {}reviewgate review -v --no-judge --dimensions logic\n",
+        t.debug_slow_prefix()
+    )));
 
     out
 }
 
 /// 意图/技术评审的「验收清单」：按验收标准分组，逐条显示满足/缺失/不符/破坏/建议。
-fn render_intent_checklist(p: &Palette, intent: &[&Finding]) -> String {
+fn render_intent_checklist(p: &Palette, intent: &[&Finding], t: Lang) -> String {
     use std::collections::BTreeMap;
     let mut out = String::new();
-    out.push_str(&section(p, "INTENT / ACCEPTANCE CHECKLIST", "1;36"));
+    out.push_str(&section(p, t.sec_intent_checklist(), "1;36"));
     out.push_str("\n\n");
 
     let mut by_crit: BTreeMap<&str, Vec<&Finding>> = BTreeMap::new();
     for f in intent {
-        let c = f.criterion.as_deref().unwrap_or("(unspecified)");
+        let c = f.criterion.as_deref().unwrap_or_else(|| t.unspecified());
         by_crit.entry(c).or_default().push(f);
     }
     for (crit, items) in &by_crit {
         out.push_str(&format!("• {}\n", sanitize(crit)));
         for f in items {
             let (label, color) = match f.intent_status {
-                Some(IntentStatus::Met) => ("✓ met", "32"),
-                Some(IntentStatus::Missing) => ("✗ missing", "1;31"),
-                Some(IntentStatus::Breaking) => ("✗ breaking", "1;31"),
-                Some(IntentStatus::Deviation) => ("⚠ deviation", "33"),
-                Some(IntentStatus::Suggestion) => ("• suggestion", "36"),
-                Some(IntentStatus::Unknown) => ("? not assessed", "2"),
+                Some(IntentStatus::Met) => (t.intent_met(), "32"),
+                Some(IntentStatus::Missing) => (t.intent_missing(), "1;31"),
+                Some(IntentStatus::Breaking) => (t.intent_breaking(), "1;31"),
+                Some(IntentStatus::Deviation) => (t.intent_deviation(), "33"),
+                Some(IntentStatus::Suggestion) => (t.intent_suggestion(), "36"),
+                Some(IntentStatus::Unknown) => (t.intent_not_assessed(), "2"),
                 None => ("·", "0"),
             };
             out.push_str(&format!(
@@ -513,7 +529,7 @@ fn render_intent_checklist(p: &Palette, intent: &[&Finding]) -> String {
     out
 }
 
-fn render_finding(p: &Palette, f: &Finding, num: usize) -> String {
+fn render_finding(p: &Palette, f: &Finding, num: usize, t: Lang) -> String {
     let loc = if f.located() {
         if f.end_line > f.start_line {
             format!("{}:{}-{}", f.path, f.start_line, f.end_line)
@@ -546,10 +562,7 @@ fn render_finding(p: &Palette, f: &Finding, num: usize) -> String {
         .saturating_sub(display_width(&meta_plain));
     s.push_str(&format!("{left}{}{meta_painted}\n", " ".repeat(gap.max(2))));
     if f.agreed_dimensions >= 2 {
-        s.push_str(&p.dim(&format!(
-            "     confirmed by {} dimensions\n",
-            f.agreed_dimensions
-        )));
+        s.push_str(&p.dim(&format!("     {}\n", t.confirmed_by(f.agreed_dimensions))));
     }
     s.push('\n');
 
@@ -562,7 +575,7 @@ fn render_finding(p: &Palette, f: &Finding, num: usize) -> String {
 
     // 有补丁时统一走「Patch」差异块；否则按「Current / Fix」分别展示。
     if has_fix {
-        s.push_str(&p.dim("\n     Patch\n"));
+        s.push_str(&p.dim(&format!("\n     {}\n", t.patch())));
         for line in code.lines().filter(|l| !l.trim().is_empty()).take(8) {
             s.push_str(&p.paint("91", &format!("       - {}", line.trim_end())));
             s.push('\n');
@@ -577,12 +590,12 @@ fn render_finding(p: &Palette, f: &Finding, num: usize) -> String {
             .map(|l| l.trim_end())
             .find(|l| !l.trim().is_empty())
         {
-            s.push_str(&p.dim("\n     Current\n"));
+            s.push_str(&p.dim(&format!("\n     {}\n", t.current())));
             s.push_str(&p.paint("91", &format!("       - {line}")));
             s.push('\n');
         }
         if let Some(sug) = &f.suggestion {
-            s.push_str(&p.dim("\n     Fix\n"));
+            s.push_str(&p.dim(&format!("\n     {}\n", t.fix())));
             for line in wrap(&sanitize(sug), MSG_WIDTH.saturating_sub(2)) {
                 s.push_str(&p.dim(&format!("       {line}")));
                 s.push('\n');
@@ -686,7 +699,7 @@ mod tests {
             },
         };
 
-        let text = render_text(&outcome, false);
+        let text = render_text_lang(&outcome, false, Lang::En);
         assert!(text.contains("BLOCK"));
         assert!(text.contains("ReviewGate"));
         assert!(text.contains("3 files · 1 must-fix · 1 warn · 1 hidden"));
@@ -696,6 +709,15 @@ mod tests {
         assert!(text.contains("NOT SHOWN"));
         assert!(text.contains("Patch"));
         assert!(text.contains("NEXT STEPS"));
+
+        // 同一结果切到中文：章节/状态/计数行均本地化，命令名保持原样。
+        let zh = render_text_lang(&outcome, false, Lang::Zh);
+        assert!(zh.contains("拦截"));
+        assert!(zh.contains("3 个文件 · 1 必须修复 · 1 警告 · 1 隐藏"));
+        assert!(zh.contains("必须修复"));
+        assert!(zh.contains("后续步骤"));
+        assert!(zh.contains("reviewgate review --fix"));
+        assert!(!zh.contains("NEXT STEPS"));
     }
 
     fn intent_finding(criterion: &str, status: IntentStatus, msg: &str) -> Finding {
@@ -738,7 +760,7 @@ mod tests {
             usage: Usage::default(),
         };
 
-        let text = render_text(&outcome, false);
+        let text = render_text_lang(&outcome, false, Lang::En);
         // 验收清单区出现,按 criterion 分组,带状态标签。
         assert!(text.contains("INTENT / ACCEPTANCE CHECKLIST"));
         assert!(text.contains("验收#2:dispatch 处理 URL 对象"));

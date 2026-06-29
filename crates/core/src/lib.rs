@@ -13,7 +13,7 @@ pub mod gate;
 pub mod github;
 pub mod index;
 pub mod judge;
-pub(crate) mod language;
+pub mod language;
 pub mod llm;
 pub mod model;
 pub mod progress;

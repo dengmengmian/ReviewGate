@@ -1,6 +1,7 @@
 //! ReviewGate CLI —— 主形态。
 
 mod fix;
+mod i18n;
 mod render;
 
 use clap::{Parser, Subcommand};
@@ -404,25 +405,29 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     let progress = live.then(|| std::sync::Arc::new(reviewgate_core::progress::Progress::new()));
     opts.progress = progress.clone();
     let render = progress.clone().map(|p| {
+        let t = i18n::Lang::detect();
         tokio::spawn(async move {
             const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
             // 整行可见宽度上限，与文本渲染保持一致：超出会被终端折行，导致 \r\x1b[2K
             // 只清当前物理行、残留前面的折行 → 刷屏。把「整行」（含前后缀）压进预算即可。
+            // 宽度按显示列算（CJK 记 2 列），否则中文文案会撑破预算。
             const LINE_WIDTH: usize = 60;
+            let reviewing = t.reviewing();
             let start = std::time::Instant::now();
             let mut i = 0usize;
             loop {
                 tokio::time::sleep(std::time::Duration::from_millis(120)).await;
                 let (n, last) = p.snapshot();
                 let s = start.elapsed().as_secs();
-                // 固定的可见骨架：`⠋ Reviewing · ` + last + ` · {n} calls · M:SS`。
+                // 可见骨架：`⠋ {reviewing} · ` + last + ` · {n} calls · M:SS`。
                 // 先给前后缀留位，剩下的预算分给 last，保证整行不超过 LINE_WIDTH。
-                let suffix = format!(" · {n} calls · {}:{:02}", s / 60, s % 60);
-                let fixed = "  Reviewing · ".len() + suffix.chars().count();
+                let suffix = format!(" · {} · {}:{:02}", t.calls(n), s / 60, s % 60);
+                // 1(spinner)+1(空格)+reviewing+1(空格)+2("· ") 为前缀可见宽。
+                let fixed = 5 + render::display_width(reviewing) + render::display_width(&suffix);
                 let budget = LINE_WIDTH.saturating_sub(fixed);
-                let last: String = last.chars().take(budget).collect();
+                let last = render::truncate_to_width(&last, budget);
                 eprint!(
-                    "\r\x1b[2K\x1b[36m{}\x1b[0m Reviewing \x1b[2m·\x1b[0m {last}\x1b[2m{suffix}\x1b[0m",
+                    "\r\x1b[2K\x1b[36m{}\x1b[0m {reviewing} \x1b[2m·\x1b[0m {last}\x1b[2m{suffix}\x1b[0m",
                     FRAMES[i % FRAMES.len()],
                 );
                 let _ = std::io::Write::flush(&mut std::io::stderr());
@@ -436,12 +441,15 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
 
     if let Some(h) = render {
         h.abort();
+        let t = i18n::Lang::detect();
         let (n, _) = progress.as_ref().unwrap().snapshot();
         let s = started.elapsed().as_secs();
         // 清掉进度行，留一行紧凑完成摘要（细节收起）。
         eprint!("\r\x1b[2K");
         eprintln!(
-            "\x1b[32m✓\x1b[0m Review complete \x1b[2m· {n} tool calls · {}:{:02}\x1b[0m",
+            "\x1b[32m✓\x1b[0m {} \x1b[2m· {} · {}:{:02}\x1b[0m",
+            t.review_complete(),
+            t.tool_calls(n),
             s / 60,
             s % 60
         );
