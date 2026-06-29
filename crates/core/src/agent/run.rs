@@ -78,6 +78,7 @@ pub async fn run_agent_with_stats(
     let start = std::time::Instant::now();
     // 默认 MaxRounds：循环自然走完即视为完成（末轮已强制收口）。各 break 点会覆盖。
     let mut exit_reason = AgentExitReason::MaxRounds;
+    let mut error_detail: Option<String> = None;
 
     let dim = cfg.dimension.as_str();
     for round in 0..cfg.max_rounds {
@@ -156,8 +157,9 @@ pub async fn run_agent_with_stats(
         let resp = match resp {
             Ok(r) => r,
             Err(e) => {
-                // 请求失败（含上下文超限的 4xx）：保留已收集的发现，但标记未审完，不静默放行。
-                exit_reason = AgentExitReason::RequestFailed;
+                // 请求失败：如实归类（鉴权 vs 其它），保留已收集的发现，但标记未审完，不静默放行。
+                exit_reason = crate::agent::classify_request_error(&e);
+                error_detail = Some(truncate_detail(&e.to_string()));
                 if cfg.verbose {
                     eprintln!(
                         "  [{dim}] round {} request failed; wrapping up early (kept {} findings): {e}",
@@ -281,7 +283,20 @@ pub async fn run_agent_with_stats(
         findings,
         stats,
         exit_reason,
+        error_detail,
     })
+}
+
+/// 截断错误详情，避免把整段服务端 JSON 灌进告警；保留足够定位的前缀。
+fn truncate_detail(s: &str) -> String {
+    const MAX: usize = 240;
+    let one_line = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if one_line.chars().count() <= MAX {
+        one_line
+    } else {
+        let head: String = one_line.chars().take(MAX).collect();
+        format!("{head}…")
+    }
 }
 
 /// 估算一次请求的输入 token（system + 所有消息的文本/工具入参/工具结果）。保守偏高。

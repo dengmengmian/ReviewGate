@@ -175,9 +175,17 @@ impl Config {
                 p.model = m;
             }
         }
-        if p.api_key.trim().is_empty() {
+        let key = p.api_key.trim();
+        if key.is_empty() {
             anyhow::bail!(
-                "no API key configured: set api_key under [providers.*] in the config, or set the REVIEWGATE_API_KEY environment variable"
+                "no API key configured for provider '{}': set api_key under [providers.{}] in the config, or set the REVIEWGATE_API_KEY environment variable",
+                self.provider, self.provider
+            );
+        }
+        if is_placeholder_key(key) {
+            anyhow::bail!(
+                "the API key for provider '{}' is still the placeholder ('{}'): replace it with a real key under [providers.{}], or set the REVIEWGATE_API_KEY environment variable",
+                self.provider, key, self.provider
             );
         }
         Ok(p)
@@ -213,6 +221,19 @@ fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// 是否是模板占位符而非真 key。命中时提前拦下，给出明确指引，
+/// 而不是把占位串发给服务端换回一个看不懂的 400/401。
+fn is_placeholder_key(key: &str) -> bool {
+    let k = key.to_ascii_uppercase();
+    k.contains("REPLACE_WITH")
+        || k.contains("PLACEHOLDER")
+        || k.contains("YOUR_API_KEY")
+        || k.contains("YOUR-API-KEY")
+        || k == "CHANGEME"
+        || k == "TODO"
+        || (key.starts_with('<') && key.ends_with('>'))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,6 +252,17 @@ model = "claude"
 [business]
 skills_dir = ".claude/skills"
 "#;
+
+    #[test]
+    fn placeholder_keys_detected() {
+        assert!(is_placeholder_key("REPLACE_WITH_REVIEWGATE_API_KEY_OR_ENV"));
+        assert!(is_placeholder_key("your_api_key_here"));
+        assert!(is_placeholder_key("<your-key>"));
+        assert!(is_placeholder_key("changeme"));
+        // 真 key 不应误伤。
+        assert!(!is_placeholder_key("sk-abc123def456"));
+        assert!(!is_placeholder_key("AIzaSyD-1234567890"));
+    }
 
     #[test]
     fn parses_and_defaults() {

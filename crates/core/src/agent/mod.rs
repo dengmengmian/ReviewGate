@@ -44,10 +44,29 @@ pub enum AgentExitReason {
     MaxRounds,
     /// 墙钟超时提前收尾。
     TimedOut,
-    /// `complete()` 请求失败（含上下文超限的 4xx、网络错误）。
+    /// `complete()` 请求失败（网络错误、5xx、非鉴权类 4xx）。
     RequestFailed,
+    /// 鉴权失败（401/403，或服务端报 invalid/incorrect api key）——通常是 key 没配对。
+    AuthFailed,
     /// 发送前预检估算超输入预算，主动收尾（未撞 API）。
     ContextOverflow,
+}
+
+/// 把一次失败的 LLM 请求错误归类成退出原因。鉴权类（key 问题）单列，避免误报成"上下文溢出"。
+pub fn classify_request_error(err: &anyhow::Error) -> AgentExitReason {
+    let s = err.to_string().to_ascii_lowercase();
+    let is_auth = s.contains("invalid_api_key")
+        || s.contains("invalid api key")
+        || s.contains("incorrect api key")
+        || s.contains("401")
+        || s.contains("unauthorized")
+        || s.contains("403")
+        || s.contains("forbidden");
+    if is_auth {
+        AgentExitReason::AuthFailed
+    } else {
+        AgentExitReason::RequestFailed
+    }
 }
 
 impl AgentExitReason {
@@ -58,6 +77,7 @@ impl AgentExitReason {
             self,
             AgentExitReason::TimedOut
                 | AgentExitReason::RequestFailed
+                | AgentExitReason::AuthFailed
                 | AgentExitReason::ContextOverflow
         )
     }
@@ -68,6 +88,7 @@ impl AgentExitReason {
             AgentExitReason::MaxRounds => "max_rounds",
             AgentExitReason::TimedOut => "timed_out",
             AgentExitReason::RequestFailed => "request_failed",
+            AgentExitReason::AuthFailed => "auth_failed",
             AgentExitReason::ContextOverflow => "context_overflow",
         }
     }
@@ -116,6 +137,8 @@ pub struct AgentRun {
     pub stats: AgentStats,
     /// 退出原因：用于在输出中提示该维度是否未审完。
     pub exit_reason: AgentExitReason,
+    /// 失败时的真实错误摘要（已截断），供上层如实展示，避免只给笼统猜测。
+    pub error_detail: Option<String>,
 }
 
 impl AgentRun {
@@ -155,4 +178,30 @@ pub fn assistant_text(content: &[ContentBlock]) -> String {
         })
         .collect::<Vec<_>>()
         .join("")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auth_errors_classified_distinctly() {
+        let auth = anyhow::anyhow!(
+            r#"LLM returned 400 Bad Request: {{"error":{{"code":"invalid_api_key"}}}}"#
+        );
+        assert_eq!(classify_request_error(&auth), AgentExitReason::AuthFailed);
+        assert_eq!(
+            classify_request_error(&anyhow::anyhow!("LLM returned 401 Unauthorized")),
+            AgentExitReason::AuthFailed
+        );
+        // 网络/5xx/限流不是鉴权问题。
+        assert_eq!(
+            classify_request_error(&anyhow::anyhow!("failed to send LLM request: timed out")),
+            AgentExitReason::RequestFailed
+        );
+        assert_eq!(
+            classify_request_error(&anyhow::anyhow!("LLM returned 500 Internal Server Error")),
+            AgentExitReason::RequestFailed
+        );
+    }
 }
