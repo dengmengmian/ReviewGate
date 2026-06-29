@@ -7,9 +7,11 @@
 //! - v1 `TreeSitterIndex`（未来）：tree-sitter AST 精确解析 + 缓存，
 //!   升级时只替换注入的实现，Agent 与工具层零改动。
 
+mod cache;
 mod grep;
 mod treesitter;
 
+pub use cache::CachingIndex;
 pub use grep::GrepIndex;
 pub use treesitter::{list_function_bodies, FnBody, TreeSitterIndex};
 

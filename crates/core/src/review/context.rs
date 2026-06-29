@@ -125,7 +125,7 @@ pub(super) async fn build_unit_prompt(
     if include_ctx {
         let files_ctx = render_changed_files(diff, file_indices, root, new_ref).await;
         if !files_ctx.is_empty() {
-            prompt.push_str("\n\n## 改动文件的完整新版本（已附上，无需再逐个读取）\n\n");
+            prompt.push_str("\n\n## Full new contents of the changed files (provided below; no need to read them one by one)\n\n");
             prompt.push_str(&files_ctx);
         }
     }

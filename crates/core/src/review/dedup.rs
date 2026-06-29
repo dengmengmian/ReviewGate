@@ -45,7 +45,7 @@ fn merge_group(mut group: Vec<Finding>) -> Finding {
         .collect();
     if !others.is_empty() {
         best.message
-            .push_str(&format!("（另由 {} 维度同时标记）", others.join("/")));
+            .push_str(&format!(" (also flagged by {})", others.join("/")));
     }
     // 归属修正：若该发现引用了业务规则（[B1]/[B2]…），其语义归属应是 business 维度，
     // 而非"恰好置信度最高"的那个维度（去重前常被 security/logic 同时报）。
@@ -72,11 +72,13 @@ pub fn dedupe(findings: Vec<Finding>) -> Vec<Finding> {
     let mut located: HashMap<(String, u32), Vec<Finding>> = HashMap::new();
     // 2) 未定位：内容聚类。每个簇 = (path, 显著行并集, 成员)。
     struct Cluster {
-        path: String,
         sig: HashSet<String>,
         items: Vec<Finding>,
     }
     let mut clusters: Vec<Cluster> = Vec::new();
+    // path → 该 path 下各簇在 `clusters` 中的下标。未定位聚类只在**同 path** 的簇里找相交，
+    // 避免对全体簇做 O(N×K) 线性扫（大量未定位发现时会退化）。
+    let mut clusters_by_path: HashMap<String, Vec<usize>> = HashMap::new();
 
     for f in findings {
         if f.start_line > 0 {
@@ -95,19 +97,23 @@ pub fn dedupe(findings: Vec<Finding>) -> Vec<Finding> {
             let m = normalize(&f.message);
             sig.insert(m.chars().take(60).collect());
         }
-        let hit = clusters
-            .iter_mut()
-            .find(|c| c.path == f.path && c.sig.intersection(&sig).next().is_some());
+        let idxs = clusters_by_path.entry(f.path.clone()).or_default();
+        let hit = idxs
+            .iter()
+            .copied()
+            .find(|&i| clusters[i].sig.intersection(&sig).next().is_some());
         match hit {
-            Some(c) => {
-                c.sig.extend(sig);
-                c.items.push(f);
+            Some(i) => {
+                clusters[i].sig.extend(sig);
+                clusters[i].items.push(f);
             }
-            None => clusters.push(Cluster {
-                path: f.path.clone(),
-                sig,
-                items: vec![f],
-            }),
+            None => {
+                idxs.push(clusters.len());
+                clusters.push(Cluster {
+                    sig,
+                    items: vec![f],
+                });
+            }
         }
     }
 

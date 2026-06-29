@@ -54,6 +54,8 @@ pub struct ReviewOptions {
     pub exec_verify: bool,
     /// Judge 并发上限，避免候选过多时打满 provider 限流。
     pub judge_concurrency: usize,
+    /// fan-out（单元×维度×样本）并发上限，避免大 PR 瞬时拉起几十路 LLM 流打满 provider 限流。
+    pub fanout_concurrency: usize,
     /// 意图 / 参考文档（需求 / 设计 / 验收标准）。提供后由独立的整体性 Agent 做「实现 vs 意图」评审。
     /// None / 空 = 不做意图评审（零退化）。
     pub intent: Option<String>,
@@ -73,6 +75,7 @@ impl ReviewOptions {
             samples: 1,
             exec_verify: false,
             judge_concurrency: 4,
+            fanout_concurrency: 6,
             intent: None,
             progress: None,
         }
@@ -242,8 +245,8 @@ pub async fn run_review_with_client(
         unit_prompts.push(None);
     }
 
-    // fan-out：(单元 × 维度 × 样本) 并行。`labels` 与 `results` 一一对应，用于回填告警维度。
-    let mut labels: Vec<Dimension> = Vec::new();
+    // fan-out：(单元 × 维度 × 样本) 并行。维度随每个 task 一起返回，以便 buffer_unordered
+    // 乱序完成后仍能正确回填告警维度（不再依赖外部 labels 的下标对齐）。
     let mut tasks = Vec::new();
     for prompt_opt in unit_prompts.iter() {
         let Some(prompt) = prompt_opt else { continue };
@@ -259,9 +262,10 @@ pub async fn run_review_with_client(
                 let prompt = prompt.clone();
                 let reg = &reg;
                 let ctx = &ctx;
-                labels.push(*d);
+                let dim = *d;
                 tasks.push(async move {
-                    run_agent_with_stats(client, reg, ctx, &agent_cfg, prompt).await
+                    let r = run_agent_with_stats(client, reg, ctx, &agent_cfg, prompt).await;
+                    (dim, r)
                 });
             }
         }
@@ -288,12 +292,18 @@ pub async fn run_review_with_client(
             None => None,
         }
     };
-    let (results, intent_outcome) = tokio::join!(futures::future::join_all(tasks), intent_fut);
+    // fan-out 用 buffer_unordered 限并发：大 PR 的 单元×维度×样本 可达数十，无上限并发会
+    // 瞬时打满 provider 限流（与 judge 阶段保持一致的背压策略）。
+    use futures::stream::StreamExt;
+    let fanout_fut = futures::stream::iter(tasks)
+        .buffer_unordered(opts.fanout_concurrency.max(1))
+        .collect::<Vec<_>>();
+    let (results, intent_outcome) = tokio::join!(fanout_fut, intent_fut);
 
     // 每(单元×维度)容错：单个失败只记告警，不影响其它返回部分结果；未审完则标记 incomplete。
     let mut findings = Vec::new();
     let mut agent_stats = AgentStats::default();
-    for (dim, r) in labels.iter().zip(results) {
+    for (dim, r) in results {
         match r {
             Ok(run) => {
                 agent_stats.llm_requests += run.stats.llm_requests;
@@ -314,12 +324,34 @@ pub async fn run_review_with_client(
                             message: "wall-clock timeout; this dimension did not finish (its partial findings are kept)".into(),
                         });
                     }
+                    AgentExitReason::AuthFailed => {
+                        incomplete = true;
+                        let detail = run
+                            .error_detail
+                            .as_deref()
+                            .map(|d| format!(" ({d})"))
+                            .unwrap_or_default();
+                        warnings.push(ReviewWarning {
+                            dimension: dim.as_str().to_string(),
+                            kind: "auth_failed",
+                            message: format!(
+                                "LLM authentication failed — check the API key for the active provider (api_key in the config, or REVIEWGATE_API_KEY){detail}; this dimension did not finish"
+                            ),
+                        });
+                    }
                     AgentExitReason::RequestFailed => {
                         incomplete = true;
+                        let detail = run
+                            .error_detail
+                            .as_deref()
+                            .map(|d| format!(" ({d})"))
+                            .unwrap_or_default();
                         warnings.push(ReviewWarning {
                             dimension: dim.as_str().to_string(),
                             kind: "incomplete",
-                            message: "LLM request failed (possibly context overflow); this dimension did not finish".into(),
+                            message: format!(
+                                "LLM request failed{detail}; this dimension did not finish"
+                            ),
                         });
                     }
                     AgentExitReason::ContextOverflow => {
@@ -350,10 +382,17 @@ pub async fn run_review_with_client(
     }
     // 质量闸口不能把"未审完"误读成"通过"：未审完的维度/单元已保留其部分发现，但仍要醒目提示。
     if incomplete {
-        eprintln!(
-            "! this review is incomplete (timeout/request failure/context overflow/oversized file skipped): the result may be partial. \
-             For a complete conclusion, raise --timeout, increase max_input_tokens, or split the change and re-run."
-        );
+        if warnings.iter().any(|w| w.kind == "auth_failed") {
+            eprintln!(
+                "! this review is incomplete because LLM authentication failed: \
+                 fix the API key for the active provider (api_key in the config, or REVIEWGATE_API_KEY) and re-run."
+            );
+        } else {
+            eprintln!(
+                "! this review is incomplete (timeout/request failure/context overflow/oversized file skipped): the result may be partial. \
+                 For a complete conclusion, raise --timeout, increase max_input_tokens, or split the change and re-run."
+            );
+        }
     }
     if opts.verbose {
         eprintln!(
