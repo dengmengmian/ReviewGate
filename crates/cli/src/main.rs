@@ -167,6 +167,9 @@ struct ReviewArgs {
     /// Judge concurrency limit, to avoid provider rate limits when there are many candidates.
     #[arg(long, default_value = "4")]
     judge_concurrency: usize,
+    /// Fan-out concurrency limit (units × dimensions × samples), to avoid provider rate limits on large PRs.
+    #[arg(long, default_value = "6")]
+    fanout_concurrency: usize,
     /// After per-finding y/N confirmation, apply suggestion_code to working-tree files (not applied when non-interactive).
     #[arg(long)]
     fix: bool,
@@ -343,7 +346,6 @@ async fn tool_call(name: &str, input: &str) -> anyhow::Result<()> {
 
 async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     use reviewgate_core::config::Config;
-    use reviewgate_core::gate::GateDecision;
     use reviewgate_core::review::{run_review, ReviewOptions};
 
     let dims = parse_dimensions(&args.dimensions)?;
@@ -358,17 +360,26 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     let agents = effective_dims * samples;
 
     let mode = resolve_mode(&args.commit, &args.from, &args.to)?;
-    eprintln!(
-        "ReviewGate reviewing ({} base dimensions: {}{}; samples={}; {} agents)...",
-        dims.len(),
-        names.join(", "),
-        if auto_business {
-            "; +business (auto)"
+    let etty = std::io::stderr().is_terminal();
+    let dim = |s: &str| {
+        if etty {
+            format!("\x1b[2m{s}\x1b[0m")
         } else {
-            ""
-        },
-        samples,
-        agents
+            s.to_string()
+        }
+    };
+    let business = if auto_business { " + business" } else { "" };
+    let samples_note = if samples > 1 {
+        format!(" · samples={samples}")
+    } else {
+        String::new()
+    };
+    eprintln!(
+        "ReviewGate {} {}{} {}",
+        dim("reviewing"),
+        names.join(", "),
+        business,
+        dim(&format!("· {agents} agents{samples_note}")),
     );
 
     let mut opts = ReviewOptions::new(mode, dims);
@@ -380,6 +391,7 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     }
     opts.samples = samples;
     opts.judge_concurrency = args.judge_concurrency.max(1);
+    opts.fanout_concurrency = args.fanout_concurrency.max(1);
     opts.exec_verify = args.exec_verify;
     opts.intent = resolve_intent(args)?;
     if opts.intent.is_some() {
@@ -402,7 +414,7 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
                 let last: String = last.chars().take(60).collect();
                 let s = start.elapsed().as_secs();
                 eprint!(
-                    "\r\x1b[2K{} Reviewing - {n} tool calls - {last} - {}:{:02}",
+                    "\r\x1b[2K\x1b[36m{}\x1b[0m Reviewing \x1b[2m·\x1b[0m {last} \x1b[2m· {n} calls · {}:{:02}\x1b[0m",
                     FRAMES[i % FRAMES.len()],
                     s / 60,
                     s % 60
@@ -423,7 +435,7 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
         // 清掉进度行，留一行紧凑完成摘要（细节收起）。
         eprint!("\r\x1b[2K");
         eprintln!(
-            "OK Review complete - {n} tool calls - {}:{:02}",
+            "\x1b[32m✓\x1b[0m Review complete \x1b[2m· {n} tool calls · {}:{:02}\x1b[0m",
             s / 60,
             s % 60
         );
@@ -450,17 +462,31 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
         fix::apply_fixes(&outcome.findings, std::path::Path::new(&root))?;
     }
 
-    // 退出码语义（供 CI 闸口）。
-    // 未审完 + fail_on_incomplete：无论 --fail-on 取值，一律非 0——杜绝"漏审却放行"。
-    if outcome.incomplete && cfg.gate.fail_on_incomplete {
-        return Ok(1);
+    Ok(exit_code(
+        outcome.decision,
+        outcome.incomplete,
+        cfg.gate.fail_on_incomplete,
+        &args.fail_on,
+    ))
+}
+
+/// CI 闸口退出码语义（纯函数，便于单测覆盖各组合）。
+/// 未审完 + `fail_on_incomplete`：无论 `--fail-on` 取值一律非 0——杜绝"漏审却放行"。
+fn exit_code(
+    decision: reviewgate_core::gate::GateDecision,
+    incomplete: bool,
+    fail_on_incomplete: bool,
+    fail_on: &str,
+) -> i32 {
+    use reviewgate_core::gate::GateDecision;
+    if incomplete && fail_on_incomplete {
+        return 1;
     }
-    let code = match (outcome.decision, args.fail_on.as_str()) {
+    match (decision, fail_on) {
         (GateDecision::Block, "block") | (GateDecision::Block, "warn") => 1,
         (GateDecision::Warn, "warn") => 1,
         _ => 0,
-    };
-    Ok(code)
+    }
 }
 
 async fn diff_summary(args: &DiffArgs) -> anyhow::Result<()> {
@@ -506,17 +532,45 @@ async fn llm_test() -> anyhow::Result<()> {
         .await?;
 
     println!("---\nReply: {}", resp.text().trim());
-    println!(
-        "Stop reason: {:?}  Usage: in={} out={}",
-        resp.stop_reason, resp.usage.input_tokens, resp.usage.output_tokens
-    );
     println!("LLM connectivity OK");
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::release_asset;
+    use super::{exit_code, parse_dimensions, release_asset};
+    use reviewgate_core::gate::GateDecision;
+    use reviewgate_core::model::Dimension;
+
+    #[test]
+    fn exit_code_gate_and_fail_on_matrix() {
+        // block + fail-on=block/warn → 1；fail-on=never → 0。
+        assert_eq!(exit_code(GateDecision::Block, false, false, "block"), 1);
+        assert_eq!(exit_code(GateDecision::Block, false, false, "warn"), 1);
+        assert_eq!(exit_code(GateDecision::Block, false, false, "never"), 0);
+        // warn 只在 fail-on=warn 时非 0。
+        assert_eq!(exit_code(GateDecision::Warn, false, false, "warn"), 1);
+        assert_eq!(exit_code(GateDecision::Warn, false, false, "block"), 0);
+        // pass 永远 0。
+        assert_eq!(exit_code(GateDecision::Pass, false, false, "warn"), 0);
+    }
+
+    #[test]
+    fn exit_code_incomplete_overrides_when_configured() {
+        // 未审完 + fail_on_incomplete：即便 PASS / fail-on=never 也非 0（杜绝漏审放行）。
+        assert_eq!(exit_code(GateDecision::Pass, true, true, "never"), 1);
+        assert_eq!(exit_code(GateDecision::Warn, true, true, "block"), 1);
+        // 未审完但未开 fail_on_incomplete：回到常规闸口语义。
+        assert_eq!(exit_code(GateDecision::Pass, true, false, "block"), 0);
+    }
+
+    #[test]
+    fn parse_dimensions_all_and_list_and_invalid() {
+        assert_eq!(parse_dimensions("all").unwrap(), Dimension::ALL.to_vec());
+        let list = parse_dimensions("security,logic").unwrap();
+        assert_eq!(list, vec![Dimension::Security, Dimension::Logic]);
+        assert!(parse_dimensions("security,bogus").is_err());
+    }
 
     #[test]
     fn release_asset_maps_platforms() {

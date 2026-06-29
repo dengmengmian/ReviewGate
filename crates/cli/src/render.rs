@@ -131,24 +131,72 @@ fn char_width(c: char) -> usize {
     }
 }
 
-/// 按显示宽度折行（CJK 友好）。尊重已有换行。
+/// 按显示宽度折行：**按词断行**（ASCII 整词不拆开），CJK 逐字可断；超长单词兜底硬切。
+/// 尊重已有换行。
 fn wrap(s: &str, max: usize) -> Vec<String> {
     let mut out = Vec::new();
     for para in s.split('\n') {
         let mut cur = String::new();
-        let mut w = 0;
-        for ch in para.chars() {
-            let cw = char_width(ch);
-            if w + cw > max && !cur.is_empty() {
-                out.push(std::mem::take(&mut cur));
-                w = 0;
+        let mut w = 0usize;
+        for unit in break_units(para) {
+            // 行首不保留空白单元（断行处的空格丢弃）。
+            if cur.is_empty() && unit.trim().is_empty() {
+                continue;
             }
-            cur.push(ch);
-            w += cw;
+            let uw: usize = unit.chars().map(char_width).sum();
+            if w + uw > max && !cur.is_empty() {
+                out.push(cur.trim_end().to_string());
+                cur = String::new();
+                w = 0;
+                if unit.trim().is_empty() {
+                    continue;
+                }
+            }
+            if uw > max {
+                // 单个单元就超宽（超长 ASCII 词）：按字符硬切，避免溢出。
+                for ch in unit.chars() {
+                    let cw = char_width(ch);
+                    if w + cw > max && !cur.is_empty() {
+                        out.push(std::mem::take(&mut cur));
+                        w = 0;
+                    }
+                    cur.push(ch);
+                    w += cw;
+                }
+            } else {
+                cur.push_str(&unit);
+                w += uw;
+            }
         }
-        out.push(cur);
+        out.push(cur.trim_end().to_string());
     }
     out
+}
+
+/// 断行单元：宽字符各自成单元（逐字可断）；ASCII 按「空格段 / 非空格词」切分。
+fn break_units(s: &str) -> Vec<String> {
+    let mut units = Vec::new();
+    let mut buf = String::new();
+    let mut buf_space = false;
+    for ch in s.chars() {
+        if char_width(ch) == 2 {
+            if !buf.is_empty() {
+                units.push(std::mem::take(&mut buf));
+            }
+            units.push(ch.to_string());
+            continue;
+        }
+        let is_space = ch == ' ';
+        if !buf.is_empty() && is_space != buf_space {
+            units.push(std::mem::take(&mut buf));
+        }
+        buf.push(ch);
+        buf_space = is_space;
+    }
+    if !buf.is_empty() {
+        units.push(buf);
+    }
+    units
 }
 
 // ───────────────────────── 文本渲染 ─────────────────────────
@@ -159,8 +207,13 @@ struct Palette {
 
 impl Palette {
     fn new() -> Self {
+        // 颜色开关：尊重 `NO_COLOR`（任意值即关）；`FORCE_COLOR`/`CLICOLOR_FORCE` 可强制开
+        // （管道/CI 里也上色）；否则按 stdout 是否为终端自适应。
+        let no_color = std::env::var_os("NO_COLOR").is_some();
+        let force = std::env::var_os("FORCE_COLOR").is_some()
+            || std::env::var_os("CLICOLOR_FORCE").is_some();
         Palette {
-            on: std::io::stdout().is_terminal(),
+            on: !no_color && (force || std::io::stdout().is_terminal()),
         }
     }
     fn paint(&self, code: &str, s: &str) -> String {
@@ -186,13 +239,52 @@ impl Palette {
     }
 }
 
-fn decision_banner(p: &Palette, d: GateDecision) -> String {
-    let code = match d {
-        GateDecision::Pass => "1;32",
-        GateDecision::Warn => "1;33",
-        GateDecision::Block => "1;31",
+/// 视觉宽度：分隔线与右对齐元信息的目标列。固定值，对宽/窄终端都稳。
+const WIDTH: usize = 60;
+/// 正文（发现描述/修复建议）折行宽度——比头部分隔线宽，散文读起来更顺。
+const MSG_WIDTH: usize = 72;
+
+/// 一条贯穿分隔线（dim）。
+fn rule(p: &Palette) -> String {
+    p.dim(&"━".repeat(WIDTH))
+}
+
+/// 带标题的顶部分隔线：`━━ ReviewGate ━━━…`（填满到 WIDTH）。
+fn titled_rule(p: &Palette, title: &str) -> String {
+    let head = format!("━━ {title} ");
+    let used = display_width(&head);
+    let tail = WIDTH.saturating_sub(used);
+    p.dim(&format!("{head}{}", "━".repeat(tail)))
+}
+
+/// 区块标题：`▌ TITLE`，竖条按语境配色、标题加粗。
+fn section(p: &Palette, title: &str, bar_code: &str) -> String {
+    format!("{} {}", p.paint(bar_code, "▌"), p.bold(title))
+}
+
+/// 判定状态行：图标 + 大写判定，整体按判定配色。
+fn status_line(p: &Palette, d: GateDecision) -> String {
+    let (icon, label, code) = match d {
+        GateDecision::Pass => ("✓", "PASS", "1;32"),
+        GateDecision::Warn => ("⚠", "WARN", "1;33"),
+        GateDecision::Block => ("✖", "BLOCK", "1;31"),
     };
-    p.paint(code, &format!("ReviewGate: {}", d.as_str()))
+    p.paint(code, &format!("{icon} {label}"))
+}
+
+/// 紧凑计数：12000→"12k"、1500→"1.5k"、800→"800"。
+fn human_count(n: u64) -> String {
+    if n < 1000 {
+        n.to_string()
+    } else if n < 10_000 {
+        format!("{:.1}k", n as f64 / 1000.0)
+    } else {
+        format!("{}k", n / 1000)
+    }
+}
+
+fn display_width(s: &str) -> usize {
+    s.chars().map(char_width).sum()
 }
 
 /// 渲染人类可读文本。`show_filtered` 时展开被过滤的低置信项。
@@ -226,51 +318,74 @@ pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
             .then(a.path.cmp(&b.path))
             .then(a.start_line.cmp(&b.start_line))
     });
-    filtered.sort_by(|a, b| {
-        b.confidence
-            .partial_cmp(&a.confidence)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
+    // total_cmp 给 f32 一个全序：即便置信度出现 NaN 也能稳定排序，不会因 partial_cmp 返回
+    // None 退化成"全部相等"而打乱顺序。
+    filtered.sort_by(|a, b| b.confidence.total_cmp(&a.confidence));
     let must_fix = kept.iter().filter(|f| f.severity == Severity::High).count();
     let warnings = kept.len() - must_fix;
 
-    out.push_str(&decision_banner(&p, outcome.decision));
+    // ── 顶部：标题分隔线 + 状态/计数行 + LLM 行 + 收尾分隔线 ──
+    out.push_str(&titled_rule(&p, "ReviewGate"));
     out.push('\n');
-    if outcome.incomplete {
-        out.push_str(&p.paint(
-            "1;31",
-            "Incomplete: some dimensions/units did not finish (timeout, request failure, context overflow, or oversized file skipped) - this result does not mean \"no issues\".",
-        ));
-        out.push('\n');
-    }
-    out.push('\n');
+    // 计数行：有问题的计数才上色（must-fix 红 / warn 黄），为 0 则灰掉——一眼抓重点。
+    let mf = if must_fix > 0 {
+        p.paint("1;31", &format!("{must_fix} must-fix"))
+    } else {
+        p.dim("0 must-fix")
+    };
+    let wn = if warnings > 0 {
+        p.paint("33", &format!("{warnings} warn"))
+    } else {
+        p.dim("0 warn")
+    };
     out.push_str(&format!(
-        "{} files changed · {} must fix · {} warnings · {} filtered\n",
+        "  {}    {} files {} {mf} {} {wn} {} {}\n",
+        status_line(&p, outcome.decision),
         outcome.files_changed,
-        must_fix,
-        warnings,
-        filtered.len()
+        p.dim("·"),
+        p.dim("·"),
+        p.dim("·"),
+        p.dim(&format!("{} hidden", filtered.len())),
     ));
     if outcome.usage.total_input() > 0 || outcome.usage.output_tokens > 0 {
-        out.push_str(&p.dim(&format!("LLM: {}\n", outcome.usage.summary())));
+        let input = outcome.usage.total_input() as u64;
+        let cache = outcome.usage.cache_read_input_tokens as u64;
+        let pct = (cache * 100).checked_div(input).unwrap_or(0);
+        out.push_str(&p.dim(&format!(
+            "  LLM {} in (cache {}%) · {} out\n",
+            human_count(input),
+            pct,
+            human_count(outcome.usage.output_tokens as u64),
+        )));
+    }
+    out.push_str(&rule(&p));
+    out.push('\n');
+    if outcome.incomplete {
+        out.push('\n');
+        let msg = "Incomplete: some dimensions/units did not finish (timeout, request failure, context overflow, or oversized file skipped) — this result does not mean \"no issues\".";
+        for (i, line) in wrap(msg, MSG_WIDTH).into_iter().enumerate() {
+            let prefix = if i == 0 { "  ✖ " } else { "    " };
+            out.push_str(&p.paint("1;31", &format!("{prefix}{line}")));
+            out.push('\n');
+        }
     }
     out.push('\n');
 
     if !outcome.warnings.is_empty() {
-        out.push_str(&p.paint("1;33", "Incomplete Review"));
+        out.push_str(&section(&p, "INCOMPLETE REVIEW", "1;33"));
         out.push('\n');
         out.push('\n');
-        out.push_str("The following dimensions did not finish:\n");
+        out.push_str("  The following dimensions did not finish:\n");
         for w in &outcome.warnings {
             out.push_str(&format!(
-                "- {}: {} ({})\n",
+                "    • {}: {} ({})\n",
                 sanitize(&w.dimension),
                 sanitize(&w.message),
                 w.kind
             ));
         }
-        out.push_str("\nResult may be incomplete. Re-run with:\n");
-        out.push_str("  reviewgate review --timeout 300 -v\n\n");
+        out.push_str("\n  Result may be incomplete. Re-run with:\n");
+        out.push_str(&p.dim("    reviewgate review --timeout 300 -v\n\n"));
     }
 
     if !intent.is_empty() {
@@ -278,7 +393,7 @@ pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
     }
 
     if kept.is_empty() {
-        out.push_str(&p.sev(Severity::Low, "No actionable issues found.\n\n"));
+        out.push_str(&p.sev(Severity::Low, "  No actionable issues found.\n\n"));
     } else {
         let highs: Vec<&Finding> = kept
             .iter()
@@ -292,7 +407,7 @@ pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
             .collect();
 
         if !highs.is_empty() {
-            out.push_str(&p.bold("Must Fix"));
+            out.push_str(&section(&p, "MUST FIX", "1;31"));
             out.push_str("\n\n");
             for (i, f) in highs.into_iter().enumerate() {
                 out.push_str(&render_finding(&p, f, i + 1));
@@ -301,7 +416,7 @@ pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
         }
 
         if !non_highs.is_empty() {
-            out.push_str(&p.bold("Warnings"));
+            out.push_str(&section(&p, "WARNINGS", "1;33"));
             out.push_str("\n\n");
             for (i, f) in non_highs.into_iter().enumerate() {
                 out.push_str(&render_finding(&p, f, i + 1));
@@ -311,37 +426,41 @@ pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
     }
 
     if !filtered.is_empty() {
-        out.push_str(&p.dim("Not Shown"));
+        out.push_str(&section(&p, "NOT SHOWN", "2"));
         out.push('\n');
         out.push('\n');
         if show_filtered {
-            out.push_str(&p.dim(&format!("{} low-confidence findings:\n\n", filtered.len())));
+            out.push_str(&p.dim(&format!(
+                "  {} low-confidence findings:\n\n",
+                filtered.len()
+            )));
             for (i, f) in filtered.iter().copied().enumerate() {
                 out.push_str(&render_finding(&p, f, i + 1));
                 out.push('\n');
             }
         } else {
             out.push_str(&p.dim(&format!(
-                "{} low-confidence findings hidden. Run with --show-filtered to inspect them.\n\n",
+                "  {} low-confidence findings hidden. Run with --show-filtered to inspect them.\n\n",
                 filtered.len()
             )));
         }
     }
 
-    out.push_str(&p.dim("Next Steps"));
+    out.push_str(&section(&p, "NEXT STEPS", "2"));
     out.push('\n');
     out.push('\n');
     if kept.iter().any(|f| !f.suggestion_code.trim().is_empty()) {
-        out.push_str("Some findings include suggested patches. Apply manually, or run:\n");
-        out.push_str("  reviewgate review --fix\n");
+        out.push_str("  Some findings include suggested patches. Apply manually, or run:\n");
+        out.push_str(&p.dim("    reviewgate review --fix\n"));
     } else if outcome.decision == GateDecision::Pass && outcome.warnings.is_empty() {
-        out.push_str("No action required.\n");
+        out.push_str("  No action required.\n");
     } else {
-        out.push_str("Fix the findings above, then re-run:\n");
-        out.push_str("  reviewgate review\n");
+        out.push_str("  Fix the findings above, then re-run:\n");
+        out.push_str(&p.dim("    reviewgate review\n"));
     }
-    out.push_str("To debug slow reviews:\n");
-    out.push_str("  reviewgate review -v --no-judge --dimensions logic\n");
+    out.push_str(
+        &p.dim("  Debug slow reviews:  reviewgate review -v --no-judge --dimensions logic\n"),
+    );
 
     out
 }
@@ -350,7 +469,7 @@ pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
 fn render_intent_checklist(p: &Palette, intent: &[&Finding]) -> String {
     use std::collections::BTreeMap;
     let mut out = String::new();
-    out.push_str(&p.bold("Intent / Acceptance Checklist"));
+    out.push_str(&section(p, "INTENT / ACCEPTANCE CHECKLIST", "1;36"));
     out.push_str("\n\n");
 
     let mut by_crit: BTreeMap<&str, Vec<&Finding>> = BTreeMap::new();
@@ -405,57 +524,69 @@ fn render_finding(p: &Palette, f: &Finding, num: usize) -> String {
         format!("{}:?", f.path)
     };
     let mut s = String::new();
-    s.push_str(&format!("{}. {}\n", num, p.bold(&loc)));
-    s.push_str(&p.sev(
-        f.severity,
-        &format!(
-            "   {} / {} / confidence {:.2}",
-            f.dimension.as_str(),
-            f.severity.as_str(),
-            f.confidence,
-        ),
-    ));
+
+    // 标题行：`  N  path:line` 左对齐，`dimension · severity · NN%` 右对齐到 WIDTH（按严重度配色）。
+    // 编号按严重度上色，当作彩色项目符号；路径加粗作为可点击的导航锚点。
+    let left = format!(
+        "  {}  {}",
+        p.sev(f.severity, &num.to_string()),
+        p.bold(&loc)
+    );
+    let left_plain = format!("  {num}  {loc}");
+    let meta_plain = format!(
+        "{} · {} · {:.0}%",
+        f.dimension.as_str(),
+        f.severity.as_str(),
+        f.confidence * 100.0
+    );
+    let meta_painted = p.sev(f.severity, &meta_plain);
+    // justify 按显示宽度计算间隔，但 left 含颜色码——这里用去色的 left_plain 量宽度。
+    let gap = WIDTH
+        .saturating_sub(display_width(&left_plain))
+        .saturating_sub(display_width(&meta_plain));
+    s.push_str(&format!("{left}{}{meta_painted}\n", " ".repeat(gap.max(2))));
     if f.agreed_dimensions >= 2 {
         s.push_str(&p.dim(&format!(
-            " / confirmed by {} dimensions",
+            "     confirmed by {} dimensions\n",
             f.agreed_dimensions
         )));
     }
-    s.push_str("\n\n");
+    s.push('\n');
 
-    for line in wrap(&sanitize(&f.message), 88) {
-        s.push_str(&format!("   {line}\n"));
+    for line in wrap(&sanitize(&f.message), MSG_WIDTH) {
+        s.push_str(&format!("     {line}\n"));
     }
 
     let code = sanitize(&f.existing_code);
     let has_fix = !f.suggestion_code.trim().is_empty();
-    if let Some(line) = code
-        .lines()
-        .map(|l| l.trim_end())
-        .find(|l| !l.trim().is_empty())
-    {
-        s.push_str("\n   Current:\n");
-        s.push_str(&p.paint("91", &format!("     - {line}")));
-        s.push('\n');
-    }
 
-    if let Some(sug) = &f.suggestion {
-        s.push_str("\n   Fix:\n");
-        for line in wrap(&sanitize(sug), 84) {
-            s.push_str(&p.dim(&format!("     {line}")));
-            s.push('\n');
-        }
-    }
-
+    // 有补丁时统一走「Patch」差异块；否则按「Current / Fix」分别展示。
     if has_fix {
-        s.push_str("\n   Suggested patch:\n");
+        s.push_str(&p.dim("\n     Patch\n"));
         for line in code.lines().filter(|l| !l.trim().is_empty()).take(8) {
-            s.push_str(&p.paint("91", &format!("     - {}", line.trim_end())));
+            s.push_str(&p.paint("91", &format!("       - {}", line.trim_end())));
             s.push('\n');
         }
         for line in sanitize(&f.suggestion_code).lines().take(8) {
-            s.push_str(&p.paint("92", &format!("     + {}", line.trim_end())));
+            s.push_str(&p.paint("92", &format!("       + {}", line.trim_end())));
             s.push('\n');
+        }
+    } else {
+        if let Some(line) = code
+            .lines()
+            .map(|l| l.trim_end())
+            .find(|l| !l.trim().is_empty())
+        {
+            s.push_str(&p.dim("\n     Current\n"));
+            s.push_str(&p.paint("91", &format!("       - {line}")));
+            s.push('\n');
+        }
+        if let Some(sug) = &f.suggestion {
+            s.push_str(&p.dim("\n     Fix\n"));
+            for line in wrap(&sanitize(sug), MSG_WIDTH.saturating_sub(2)) {
+                s.push_str(&p.dim(&format!("       {line}")));
+                s.push('\n');
+            }
         }
     }
 
@@ -487,10 +618,6 @@ mod tests {
         for l in &lines {
             assert!(display_width(l) <= 6);
         }
-    }
-
-    fn display_width(s: &str) -> usize {
-        s.chars().map(char_width).sum()
     }
 
     fn finding(severity: Severity, filtered: bool) -> Finding {
@@ -560,14 +687,15 @@ mod tests {
         };
 
         let text = render_text(&outcome, false);
-        assert!(text.contains("ReviewGate: BLOCK"));
-        assert!(text.contains("3 files changed · 1 must fix · 1 warnings · 1 filtered"));
-        assert!(text.contains("Incomplete Review"));
-        assert!(text.contains("Must Fix"));
-        assert!(text.contains("Warnings"));
-        assert!(text.contains("Not Shown"));
-        assert!(text.contains("Suggested patch"));
-        assert!(text.contains("Next Steps"));
+        assert!(text.contains("BLOCK"));
+        assert!(text.contains("ReviewGate"));
+        assert!(text.contains("3 files · 1 must-fix · 1 warn · 1 hidden"));
+        assert!(text.contains("INCOMPLETE REVIEW"));
+        assert!(text.contains("MUST FIX"));
+        assert!(text.contains("WARNINGS"));
+        assert!(text.contains("NOT SHOWN"));
+        assert!(text.contains("Patch"));
+        assert!(text.contains("NEXT STEPS"));
     }
 
     fn intent_finding(criterion: &str, status: IntentStatus, msg: &str) -> Finding {
@@ -612,7 +740,7 @@ mod tests {
 
         let text = render_text(&outcome, false);
         // 验收清单区出现,按 criterion 分组,带状态标签。
-        assert!(text.contains("Intent / Acceptance Checklist"));
+        assert!(text.contains("INTENT / ACCEPTANCE CHECKLIST"));
         assert!(text.contains("验收#2:dispatch 处理 URL 对象"));
         assert!(text.contains("met"));
         assert!(text.contains("missing"));

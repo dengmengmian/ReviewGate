@@ -123,7 +123,7 @@ impl FileDiff {
     pub fn render_for_prompt(&self) -> String {
         let mut out = format!("### {}  [{:?}]\n", self.path(), self.status);
         if self.binary {
-            out.push_str("(二进制文件，略)\n");
+            out.push_str("(binary file, omitted)\n");
             return out;
         }
         for h in &self.hunks {
