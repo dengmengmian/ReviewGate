@@ -406,18 +406,24 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     let render = progress.clone().map(|p| {
         tokio::spawn(async move {
             const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+            // 整行可见宽度上限，与文本渲染保持一致：超出会被终端折行，导致 \r\x1b[2K
+            // 只清当前物理行、残留前面的折行 → 刷屏。把「整行」（含前后缀）压进预算即可。
+            const LINE_WIDTH: usize = 60;
             let start = std::time::Instant::now();
             let mut i = 0usize;
             loop {
                 tokio::time::sleep(std::time::Duration::from_millis(120)).await;
                 let (n, last) = p.snapshot();
-                let last: String = last.chars().take(60).collect();
                 let s = start.elapsed().as_secs();
+                // 固定的可见骨架：`⠋ Reviewing · ` + last + ` · {n} calls · M:SS`。
+                // 先给前后缀留位，剩下的预算分给 last，保证整行不超过 LINE_WIDTH。
+                let suffix = format!(" · {n} calls · {}:{:02}", s / 60, s % 60);
+                let fixed = "  Reviewing · ".len() + suffix.chars().count();
+                let budget = LINE_WIDTH.saturating_sub(fixed);
+                let last: String = last.chars().take(budget).collect();
                 eprint!(
-                    "\r\x1b[2K\x1b[36m{}\x1b[0m Reviewing \x1b[2m·\x1b[0m {last} \x1b[2m· {n} calls · {}:{:02}\x1b[0m",
+                    "\r\x1b[2K\x1b[36m{}\x1b[0m Reviewing \x1b[2m·\x1b[0m {last}\x1b[2m{suffix}\x1b[0m",
                     FRAMES[i % FRAMES.len()],
-                    s / 60,
-                    s % 60
                 );
                 let _ = std::io::Write::flush(&mut std::io::stderr());
                 i += 1;
