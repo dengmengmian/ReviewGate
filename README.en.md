@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Let AI review AI-written code before merge: <b>catch high-risk issues first and reduce low-value review noise</b>
+  Pre-merge quality gate for AI-written code: <b>catch high-risk issues first and reduce low-value review noise</b>
 </p>
 
 <p align="center">
@@ -16,23 +16,15 @@
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT">
 </p>
 
-ReviewGate runs before PRs are merged and gives AI-generated, or AI-heavy, code a second review pass. It does not replace human review. It pre-filters the work for reviewers by promoting high-risk findings and folding low-confidence noise by default.
+ReviewGate is a **Beta** quality gate for AI-generated, or AI-heavy, code. It does not replace tests or human review. It filters PRs before merge: high-risk findings are promoted, and low-confidence noise is folded by default.
 
-## Positioning
-
-ReviewGate is a pre-merge quality gate for teams that write code with AI: **catch security, logic, and business-rule risks first, while suppressing low-value review noise**.
-
-| Current pain | What ReviewGate gives you |
+| Core value | What it means for teams |
 |---|---|
-| AI changes code quickly, but reviewers do not know where the risk is | Parallel review by security, logic, performance, business rules, and other focused dimensions |
-| AI review is verbose, repetitive, or too speculative | Deduplication, counter-evidence judging, and confidence-based filtering |
-| Team rules live in people's heads | Permission, money, state-machine, and language rules can run on every PR |
-| You want a CI gate but cannot accept fake passes | Incomplete reviews, timeouts, and oversized context degrade to WARN instead of pretending to pass |
+| Catch high-risk issues | Parallel review by security, logic, performance, business rules, and other focused dimensions |
+| Reduce noise | Deduplication, counter-evidence judging, and confidence-based filtering |
+| Avoid fake passes | Incomplete reviews, timeouts, and oversized context degrade to WARN instead of pretending to pass |
 
-**Best fit**: teams with heavy AI-assisted development, many PRs, review bottlenecks, and clear product/security rules.
-**Not a fit**: replacing tests, replacing human reviewers, or auto-merging model-generated fixes without review.
-
-## Start In 30 Seconds
+## Quick Start
 
 You need three things: a git repository, an LLM API key, and the `reviewgate` command.
 
@@ -49,10 +41,9 @@ provider = "deepseek"
 protocol = "openai"
 base_url = "https://api.deepseek.com/v1"
 model = "deepseek-v4-pro"
-# api_key = "sk-..."   # may go here; the env var below is preferred (keeps secrets out of the repo)
 EOF
 
-# 3) Keep the API key in the environment (overrides the config's api_key), not in the config file.
+# 3) Keep the API key in the environment, not in the config file.
 export REVIEWGATE_API_KEY="your key"
 
 # 4) Check that the model is reachable.
@@ -71,16 +62,45 @@ Windows users can install with PowerShell:
 irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex
 ```
 
-## When To Use It
+## Example Output
 
-| Scenario | What ReviewGate does |
+```text
+━━ ReviewGate ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✖ BLOCK    1 files · 1 must-fix · 0 warn · 3 hidden
+  LLM 120k in (cache 88%) · 2.1k out
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+▌ MUST FIX
+
+  1  handler.rs:3                       security · high · 100%
+
+     SQL injection: req.user_id is interpolated directly into a DELETE statement...
+
+     Patch
+       - let q = format!("DELETE FROM users WHERE id = {}", req.user_id);
+       + let q = "DELETE FROM users WHERE id = $1";
+
+▌ NOT SHOWN
+
+  3 low-confidence findings hidden. Run with --show-filtered to inspect them.
+```
+
+## When To Use It / Not Use It
+
+| Good fit | Not a fit |
 |---|---|
-| AI changed many files at once | Reviews the diff by security, performance, logic, and other focused dimensions |
-| Review comments are noisy or scattered | Deduplicates overlapping findings and folds low-confidence feedback |
-| AI code looks plausible but may be wrong | Checks hallucinated APIs, assumption drift, and unadapted copy/paste |
-| Your team has business rules | Injects rules for permissions, money, state machines, and domain behavior on every review |
-| You want to confirm the implementation matches the requirement/design | Pass this change's intent (`--intent`); an independent agent reviews "implementation vs intent" across files and emits an acceptance checklist |
-| You want a CI gate | High-confidence issues can block merges, and incomplete reviews do not silently pass |
+| AI changes many files and reviewers need risk prioritization | Replacing unit tests, integration tests, or human review |
+| Permission, money, state-machine, or product rules need repeated checks | Auto-merging model-generated fixes without review |
+| You want a high-confidence PR/CI gate | Teams that cannot tolerate conservative WARNs from a Beta tool |
+| You want `--intent` to check implementation against requirements/design | Environments without an LLM API key or permission to send code context to a model |
+
+## Why Trust It
+
+| Evidence | What it means |
+|---|---|
+| Public eval logs | Real PRs, revert gold sets, 45-language samples, large PRs, and intent-review checks are recorded under [`docs/evals/`](docs/evals/) |
+| Read-only by default | Except for explicit `--fix` with per-finding confirmation, ReviewGate does not write the worktree or run arbitrary shell commands |
+| Conservative gate | Low-confidence findings are folded by default; incomplete reviews, timeouts, and context overflow degrade to WARN |
 
 <details>
 <summary><b>How does it review code?</b></summary>
@@ -133,6 +153,8 @@ To upgrade later, just re-run the install command above—it always fetches the 
 
 ## Configuration
 
+ReviewGate does not lock you into a model. Use any OpenAI-compatible or Anthropic endpoint that matches your team's cost, latency, and context-window needs.
+
 **Minimal config** needs just one provider (everything else has defaults):
 
 ```toml
@@ -141,8 +163,8 @@ provider = "deepseek"
 [providers.deepseek]
 protocol = "openai"          # OpenAI-compatible (DeepSeek/Kimi/GLM/Qwen…); use "anthropic" for Anthropic
 base_url = "https://api.deepseek.com/v1"
-api_key  = "sk-..."          # or leave empty and inject via REVIEWGATE_API_KEY (recommended in CI)
 model    = "deepseek-v4-pro"
+# api_key = ""               # optional; prefer REVIEWGATE_API_KEY
 ```
 
 <details>
@@ -176,22 +198,31 @@ ReviewGate has one core engine and three thin wrappers: CLI, Claude Code Skill, 
 ### CLI
 
 ```bash
-reviewgate review                       # review current changes; 5 default dimensions, plus business when configured
-reviewgate review --dimensions security,logic
+reviewgate review                       # review current worktree changes
+reviewgate review --from main --to HEAD # review this branch against main
+reviewgate review --intent spec.md      # check implementation against requirements/design
 reviewgate review --format json         # machine-readable output
-reviewgate review --no-judge            # faster, with more false positives
-reviewgate review --show-filtered       # show folded low-confidence findings
 reviewgate review --fail-on block       # exit 1 on BLOCK, useful for CI
-reviewgate review --timeout 120         # per-dimension wall-clock timeout in seconds
-reviewgate review --samples 3           # sample each dimension multiple times and union results
-reviewgate review --fix                 # apply suggested code after per-finding y/N confirmation
-reviewgate review --judge-concurrency 4 # limit judge concurrency to avoid provider rate limits
-reviewgate review --fanout-concurrency 6 # limit fan-out (units×dimensions×samples) concurrency to avoid rate limits on large PRs
-reviewgate review --verbose             # print per-dimension rounds and token/cache stats
-reviewgate review --commit <sha>        # review one commit; or use --from <base> --to <head>
-reviewgate review --intent spec.md      # also run "implementation vs intent" technical review (pass requirement/design/acceptance criteria)
-reviewgate review --commit <sha> --intent-from-commit  # use that commit's message as the intent
 ```
+
+<details>
+<summary><b>More CLI options</b></summary>
+
+```bash
+reviewgate review --dimensions security,logic
+reviewgate review --no-judge
+reviewgate review --show-filtered
+reviewgate review --timeout 120
+reviewgate review --samples 3
+reviewgate review --fix
+reviewgate review --judge-concurrency 4
+reviewgate review --fanout-concurrency 6
+reviewgate review --verbose
+reviewgate review --commit <sha>
+reviewgate review --commit <sha> --intent-from-commit
+```
+
+</details>
 
 ### Intent / Technical Review (`--intent`)
 
@@ -213,34 +244,6 @@ Only environment variables are read (not git config or repo contents), so CI wit
 
 ```bash
 REVIEWGATE_OUTPUT_LANGUAGE="English" reviewgate review
-```
-
-Example output:
-
-```text
-━━ ReviewGate ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✖ BLOCK    1 files · 1 must-fix · 0 warn · 3 hidden
-  LLM 120k in (cache 88%) · 2.1k out
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-▌ MUST FIX
-
-  1  handler.rs:3                       security · high · 100%
-
-     SQL injection: req.user_id is interpolated directly into a DELETE statement...
-
-     Patch
-       - let q = format!("DELETE FROM users WHERE id = {}", req.user_id);
-       + let q = "DELETE FROM users WHERE id = $1";
-
-▌ NOT SHOWN
-
-  3 low-confidence findings hidden. Run with --show-filtered to inspect them.
-
-▌ NEXT STEPS
-
-  Some findings include suggested patches. Apply manually, or run:
-    reviewgate review --fix
 ```
 
 Exit codes for CI: `BLOCK -> 1`, otherwise `0`. Adjust with `--fail-on block|warn|never`.
@@ -306,11 +309,8 @@ jobs:
           comment: "true"
 ```
 
-## Why It Is Trustworthy
+## Design Details
 
-- Public evaluation notes are kept under [`docs/evals/`](docs/evals/): real PRs, revert gold sets, 45-language samples, large PRs, and intent-review checks.
-- The product bias is "less noise, no fake pass": low-confidence findings are folded by default; incomplete reviews, timeouts, and context overflow degrade to WARN.
-- The default review path is read-only. Except for explicit `--fix` with per-finding confirmation, ReviewGate does not write the worktree or run arbitrary shell commands.
 - Custom agent orchestration and LLM client, with no provider SDK dependency. ReviewGate uses `reqwest` directly and supports OpenAI-compatible and Anthropic protocols.
 - Read-only, structured tools instead of arbitrary shell or write access. `confine_path` keeps reads inside the repository.
 - Code context retrieval through tree-sitter symbol lookup and function-body extraction, with grep fallback.
@@ -331,12 +331,15 @@ See [`CHANGELOG.md`](CHANGELOG.md) and [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 The results below come from public samples recorded under [`docs/evals/`](docs/evals/) and are not a general accuracy guarantee. The current samples were mainly run with `deepseek-v4-pro`.
 
-- **Precision**: no false BLOCK was observed in the recorded real PRs, clean 45-language samples, and real merged commit samples. Suspected false positives are kept with investigation notes in the eval logs.
-- **Recall**: real CVE reverts, about 18 vulnerability classes, real user issues, and synthetic strong triggers are covered. The real PR revert gold set is 4/4: axios prototype-pollution SSRF, requests Content-Type parsing, gin ClientIP XFF, and ripgrep gitignore cache.
-- **Languages**: 45 built-in language rules are enabled by default and can be disabled or overridden.
-- **Large PRs / incomplete review**: context overflow, request failure, timeout, and skipped oversized files degrade to WARN and can make CI exit non-zero instead of silently passing. Mechanism and real big-PR results (up to 55 files / 5000 lines) in [`docs/BIG_PR_HANDLING.md`](docs/BIG_PR_HANDLING.md).
-- **Intent review (`--intent`)**: validated on real code with real intent. Structured enforcement splits the intent into N acceptance criteria checked one by one; controlled A/B tells complete from incomplete implementations (axios; cobra Go slice-aliasing bug: an injected gap is precisely caught, the complete version yields no false gap), 10 real correct-fix commits across 5 languages are **10/10 met with 0 false misses**, and any criterion not individually checked falls back to "not assessed" and degrades to WARN — never an empty checklist or a fake PASS. See [`docs/evals/`](docs/evals/) section 6 ([structured enforcement](docs/evals/2026-06-27__intent-structured-enforcement.md) · [controlled A/B](docs/evals/2026-06-27__intent-mvp-ab.md) · [10-commit batch](docs/evals/2026-06-27__intent-batch10.md) · [Go A/B](docs/evals/2026-06-27__intent-cobra-pr2356.md)).
-- **Known limits**: subtle multi-step arithmetic and carry/rounding off-by-one bugs remain a hard tail for static LLM review. See [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md).
+| Signal | Current record |
+|---|---|
+| False BLOCK | No false BLOCK observed in recorded real PRs, clean 45-language samples, and real merged commit samples |
+| Revert gold set | Real PR revert gold set **4/4**: axios, requests, gin, and ripgrep |
+| Language coverage | **45 built-in language rules** enabled by default; can be disabled or overridden |
+| Large PRs | Context overflow, request failure, timeout, and skipped oversized files degrade to WARN |
+| Intent review | 10 real correct-fix commits across 5 languages are **10/10 met with 0 false misses** |
+
+See [`docs/evals/`](docs/evals/) for details, [`docs/BIG_PR_HANDLING.md`](docs/BIG_PR_HANDLING.md) for large PR handling, and [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md) for known limits.
 
 ## Current Status
 

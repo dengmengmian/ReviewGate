@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  合并前先让 AI 审一遍 AI 写的代码：<b>优先拦住高风险问题，少看低价值 review 噪音</b>
+  AI 代码的合并前质量闸口：<b>优先拦截高风险问题，减少低价值 review 噪音</b>
 </p>
 
 <p align="center">
@@ -16,23 +16,15 @@
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT">
 </p>
 
-ReviewGate 用在 PR 合并前，给 AI 生成或 AI 大量参与的代码做二次审查。它不替代人工 review，而是先帮 reviewer 过滤一遍：**高风险问题推到前面，低置信反馈默认折叠**。
+ReviewGate 是给 AI 生成或 AI 大量参与代码准备的 **Beta** 质量闸口。它不替代测试和人工 review，而是在 PR 合并前先做一轮过滤：高风险问题推到前面，低置信反馈默认折叠。
 
-## 一句话定位
-
-给使用 AI 写代码的团队加一道合并前质量闸口：**先拦安全、逻辑、业务规则这类高风险问题，再把低价值 review 噪音压下去**。
-
-| 你现在的痛点 | ReviewGate 的价值 |
+| 核心价值 | 对团队的意义 |
 |---|---|
-| AI 改动很快，但 reviewer 不确定哪里最危险 | 按安全、逻辑、性能、业务规则等维度并行审查，把 must-fix 放到前面 |
-| AI review 容易啰嗦、重复、误报多 | 去重、证伪、按置信度过滤，默认只展示值得先看的问题 |
-| 团队规则散在脑子里，靠人肉记忆 | 把权限、金额、状态机、语言约定写成规则，每个 PR 自动检查 |
-| 想接 CI，但怕工具不稳定导致假通过 | 未审完、超时、上下文过大都会降级 WARN，不伪装 PASS |
+| 拦高危 | 按安全、逻辑、性能、业务规则等维度并行审查，把 must-fix 放到前面 |
+| 降噪音 | 去重、证伪、按置信度过滤，默认隐藏低价值反馈 |
+| 不假通过 | 超时、上下文过大、未审完都会降级 WARN，不把不完整审查伪装成 PASS |
 
-**适合**：AI 参与度高、PR 数量多、review 压力大、已有明确业务/安全规则的团队。
-**不适合**：想用它替代测试、替代人工 reviewer，或让模型自动改代码直接合并。
-
-## 30 秒跑起来
+## 快速开始
 
 你只需要三样东西：一个 git 仓库、一个 LLM API key、`reviewgate` 命令。
 
@@ -49,10 +41,9 @@ provider = "deepseek"
 protocol = "openai"
 base_url = "https://api.deepseek.com/v1"
 model = "deepseek-v4-pro"
-# api_key = "sk-..."   # 可写在这里；更推荐用下方环境变量，避免把密钥提交进仓库
 EOF
 
-# 3) 用环境变量放 key（优先级高于配置文件里的 api_key），不写进配置文件
+# 3) 用环境变量放 key，不写进配置文件
 export REVIEWGATE_API_KEY="你的 key"
 
 # 4) 确认模型能连上
@@ -73,16 +64,45 @@ irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 |
 
 > **升级**：重新运行上面的安装命令即可——`install.sh` / `install.ps1` 总是拉取最新 release 并覆盖旧版本；或直接 `reviewgate upgrade` 自更新到最新版。
 
-## 适合解决什么
+## 输出长这样
 
-| 场景 | ReviewGate 帮你做什么 |
+```text
+━━ ReviewGate ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✖ BLOCK    1 files · 1 must-fix · 0 warn · 3 hidden
+  LLM 120k in (cache 88%) · 2.1k out
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+▌ MUST FIX
+
+  1  handler.rs:3                       security · high · 100%
+
+     SQL 注入：用户输入 req.user_id 通过 format! 直接拼接到 DELETE 语句…
+
+     Patch
+       - let q = format!("DELETE FROM users WHERE id = {}", req.user_id);
+       + let q = "DELETE FROM users WHERE id = $1";
+
+▌ NOT SHOWN
+
+  3 low-confidence findings hidden. Run with --show-filtered to inspect them.
+```
+
+## 什么时候适合 / 不适合
+
+| 适合 | 不适合 |
 |---|---|
-| AI 一次改了很多文件 | 先按安全、性能、逻辑等维度扫一遍，减少人工漏看 |
-| review 评论太多太散 | 合并重复发现，默认折叠低置信反馈 |
-| 担心 AI 写出“看起来对、其实错”的代码 | 专门检查幻觉 API、假设漂移、复制后未适配 |
-| 团队有业务规则 | 把权限、金额、状态机等规则写进配置，每次审查自动带上 |
-| 想确认实现是否真的符合需求/设计 | 传入本次意图（`--intent`），独立 Agent 跨文件审「实现 vs 意图」，输出验收清单 |
-| 想在 CI 里加一道闸口 | 高置信问题可阻断合并，未审完不会被当成干净通过 |
+| AI 一次改很多文件，reviewer 想先知道哪里最危险 | 替代单元测试、集成测试或人工 review |
+| 团队有权限、金额、状态机等业务规则需要反复检查 | 让模型自动改代码并无人确认地合并 |
+| 想给 PR/CI 加一道高置信风险闸口 | 对误报零容忍、无法接受 Beta 工具的保守 WARN |
+| 想用 `--intent` 检查实现是否符合需求/设计 | 完全没有 LLM API key 或不允许代码片段发给模型 |
+
+## 为什么可以信
+
+| 证据 | 说明 |
+|---|---|
+| 公开评测留痕 | 真实 PR、revert 金标准、45 语言样例、大 PR、意图评审结果都记录在 [`docs/evals/`](docs/evals/) |
+| 默认只读 | 除显式 `--fix` 且逐条确认外，审查链路不写工作区，不执行任意 shell |
+| 保守闸口 | 低置信默认折叠；未审完、超时、上下文超限会降级 WARN |
 
 <details>
 <summary><b>它是怎么审的？</b></summary>
@@ -127,7 +147,7 @@ irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 |
 
 ## 配置
 
-ReviewGate 自带 0 个模型。你需要提供一个 OpenAI 兼容或 Anthropic 的 LLM 端点。
+ReviewGate 不绑定模型。你可以接 OpenAI 兼容或 Anthropic 端点，按团队成本、速度和上下文窗口选择 provider。
 
 建议把通用配置放到 `~/.reviewgate/config.toml`，这样所有仓库都能直接用；只有项目需要覆盖规则时，再在项目根目录放 `reviewgate.toml`。
 
@@ -140,7 +160,7 @@ provider = "deepseek"
 protocol = "openai"          # OpenAI 兼容（DeepSeek/Kimi/GLM/通义…）；用 Anthropic 则填 "anthropic"
 base_url = "https://api.deepseek.com/v1"
 model    = "deepseek-v4-pro"
-api_key  = "sk-..."          # 可写在这里；CI/共享环境更推荐用环境变量（见下，优先级更高）
+# api_key = ""               # 可省略；推荐用 REVIEWGATE_API_KEY 注入
 ```
 
 API key 推荐用环境变量（覆盖配置文件里的 `api_key`）：
@@ -180,22 +200,31 @@ ReviewGate 一个引擎，三种形态——**CLI 为主，Skill / Action 都是
 ### 1. CLI（主形态）
 
 ```bash
-reviewgate review                       # 审查当前改动，默认 5 维度；配置业务规则后自动加 business
-reviewgate review --dimensions security,logic
-reviewgate review --format json         # 机器可读
-reviewgate review --no-judge            # 更快，误报略多
-reviewgate review --show-filtered       # 展开被过滤的低置信项
-reviewgate review --fail-on block       # BLOCK → 退出码 1（CI 用）
-reviewgate review --timeout 120         # 单维度墙钟上限（秒），超时跳过该维度保留其余
-reviewgate review --samples 3           # 每维度多采样取并集，提升 flaky 漏报（如 SSRF）的召回稳定性
-reviewgate review --fix                 # 逐条 y/N 确认后把建议代码应用到工作区（锚点校验防改错）
-reviewgate review --judge-concurrency 4 # 限制 Judge 并发，避免候选多时触发限流
-reviewgate review --fanout-concurrency 6 # 限制 fan-out（单元×维度×样本）并发，避免大 PR 触发限流
-reviewgate review --verbose             # 打印每维度轮数 + token/缓存命中率
-reviewgate review --commit <sha>        # 审查单个 commit；或 --from <base> --to <head>
-reviewgate review --intent spec.md      # 额外做「实现 vs 意图」技术评审（传入需求/设计/验收标准）
-reviewgate review --commit <sha> --intent-from-commit  # 用该 commit 的提交信息作为意图
+reviewgate review                       # 审查当前工作区改动
+reviewgate review --from main --to HEAD # 审查当前分支相对 main 的改动
+reviewgate review --intent spec.md      # 检查实现是否符合需求/设计
+reviewgate review --format json         # 输出机器可读 JSON
+reviewgate review --fail-on block       # BLOCK 时退出码 1，适合 CI
 ```
+
+<details>
+<summary><b>更多 CLI 参数</b></summary>
+
+```bash
+reviewgate review --dimensions security,logic
+reviewgate review --no-judge             # 更快，误报略多
+reviewgate review --show-filtered        # 展开被过滤的低置信项
+reviewgate review --timeout 120          # 单维度墙钟上限（秒）
+reviewgate review --samples 3            # 每维度多采样取并集
+reviewgate review --fix                  # 逐条 y/N 确认后应用建议代码
+reviewgate review --judge-concurrency 4  # 限制 Judge 并发
+reviewgate review --fanout-concurrency 6 # 限制 fan-out 并发
+reviewgate review --verbose              # 打印 token/缓存/轮数
+reviewgate review --commit <sha>         # 审查单个 commit
+reviewgate review --commit <sha> --intent-from-commit
+```
+
+</details>
 
 ### 意图 / 技术评审（`--intent`）
 
@@ -214,34 +243,6 @@ reviewgate review --from main --to HEAD --intent docs/requirement.md
 3. **兜底英文** —— 上述都没有，或 locale 为 `C` / `POSIX` 时。
 
 仅读环境变量（不读 git 配置或仓库内容），所以未设 locale 的 CI 默认英文。强制某语言：`REVIEWGATE_OUTPUT_LANGUAGE="Chinese (Simplified)" reviewgate review`。
-
-输出示例：
-
-```
-━━ ReviewGate ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✖ BLOCK    1 files · 1 must-fix · 0 warn · 3 hidden
-  LLM 120k in (cache 88%) · 2.1k out
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-▌ MUST FIX
-
-  1  handler.rs:3                       security · high · 100%
-
-     SQL 注入：用户输入 req.user_id 通过 format! 直接拼接到 DELETE 语句…
-
-     Patch
-       - let q = format!("DELETE FROM users WHERE id = {}", req.user_id);
-       + let q = "DELETE FROM users WHERE id = $1";
-
-▌ NOT SHOWN
-
-  3 low-confidence findings hidden. Run with --show-filtered to inspect them.
-
-▌ NEXT STEPS
-
-  Some findings include suggested patches. Apply manually, or run:
-    reviewgate review --fix
-```
 
 **退出码（CI 闸口用）**：`BLOCK → 1`，否则 `0`；用 `--fail-on block|warn|never` 调整。
 
@@ -307,11 +308,8 @@ jobs:
           comment: "true"
 ```
 
-## 为什么可信
+## 设计细节
 
-- 有公开评测留痕：真实 PR、revert 金标准、45 语言样例、大 PR、意图评审结果都记录在 [`docs/evals/`](docs/evals/)。
-- 设计目标是“少报废话、别假通过”：低置信默认折叠；未审完、超时、上下文超限会降级 WARN。
-- 默认只读：除显式 `--fix` 且逐条确认外，审查链路不写工作区，不执行任意 shell。
 - 自研 Agent 编排与 LLM 客户端，**零 SDK 依赖**（reqwest 直连，OpenAI/Anthropic 双协议）。
 - 工具集刻意**只读 + 结构化上报**（不照搬通用编码 Agent 的写/任意 shell）；
   路径限制（`confine_path`）确保不读仓库外文件。
@@ -335,12 +333,15 @@ jobs:
 
 以下结果来自 `docs/evals/` 中留痕的公开样本，不是通用准确率承诺。当前样本主要用 `deepseek-v4-pro` 真实跑通（[`docs/evals/`](docs/evals/) · [总览](docs/evals/README.md)）：
 
-- **精度**：在已记录的真实 PR、45 语言干净样例和真实合并 commit 样本中，未观察到误 BLOCK；疑似误报会在 eval 记录中保留核查过程。
-- **召回**：真实 CVE（revert 法）+ ~18 漏洞类型 + 真实用户 issue + 合成强触发；**真实 PR revert 金标准 4/4**（axios 原型污染 SSRF / requests Content-Type 解析 / gin ClientIP XFF / ripgrep gitignore 缓存）全部命中，发现精确还原原修复所针对的回归。
-- **语言**：**45 种内置默认开**（常见+不常见：含仓颉/Zig/Nim/Crystal/OCaml/F#/Solidity/COBOL/Fortran/Dockerfile/Terraform…），按改动语言注入、可关、可覆盖。
-- **大 PR / 未审完不静默放行**：diff 超上下文窗口、请求失败、上下文超限、超时、超大文件跳过等情况会降级 WARN，并可让 CI 非 0 退出，避免被当成干净 PASS。机制与真实大 PR 实测（最大 55 文件/5000 行）见 [`docs/BIG_PR_HANDLING.md`](docs/BIG_PR_HANDLING.md)。
-- **意图评审（`--intent`）**：真实代码 + 真实意图实测。结构化强制把意图拆成 N 条验收标准逐条核对；受控 A/B 能区分完整 vs 不完整实现（axios、cobra Go 切片别名 bug：故意制造缺口→精确命中、完整版→0 误报），10 个真实正确修复 commit 跨 5 语言 **10/10 met 且 0 误报**；未逐条核对的标准兜底标「未核对」并降级 WARN，绝不空清单或伪 PASS。见 [`docs/evals/`](docs/evals/) 第六节（[结构化强制](docs/evals/2026-06-27__intent-structured-enforcement.md) · [受控 A/B](docs/evals/2026-06-27__intent-mvp-ab.md) · [10 commit 批量](docs/evals/2026-06-27__intent-batch10.md) · [Go A/B](docs/evals/2026-06-27__intent-cobra-pr2356.md)）。
-- **诚实局限**：细微多步算术/进位 off-by-one 是静态审查硬尾，见 [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md)，建议测试互补。
+| 指标 | 当前记录 |
+|---|---|
+| 误 BLOCK | 已记录真实 PR、45 语言干净样例、真实合并 commit 样本中未观察到误 BLOCK |
+| Revert 金标准 | 真实 PR revert gold set **4/4** 命中：axios、requests、gin、ripgrep |
+| 语言覆盖 | **45 种内置语言规则** 默认开启，可关闭、覆盖或追加 |
+| 大 PR | diff 超上下文、请求失败、超时、超大文件跳过会降级 WARN，不静默 PASS |
+| 意图评审 | 10 个真实正确修复 commit 跨 5 语言 **10/10 met 且 0 误报** |
+
+详细评测见 [`docs/evals/`](docs/evals/)；大 PR 机制见 [`docs/BIG_PR_HANDLING.md`](docs/BIG_PR_HANDLING.md)；已知局限见 [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md)。
 
 ## 当前状态
 
