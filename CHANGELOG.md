@@ -6,6 +6,14 @@ Changes are listed in Chinese first, then English.
 
 ## [Unreleased]
 
+### Fixed
+- 修复 GitHub Action 示例入口：示例 workflow 现在指向实际的 `integrations/github-action` action 路径，并同步到当前发布版本，避免用户照抄后找不到 action。
+  Fixed the GitHub Action example entrypoint: the sample workflow now points to the real `integrations/github-action` action path and the current release version, so copy-paste setup works.
+
+### Docs
+- README 增加可直接复制的 GitHub Action workflow；配置样例改为环境变量注入密钥优先，避免把占位 `api_key` 当成真实配置。
+  README now includes a copy-paste GitHub Action workflow; the config example now prefers environment-injected secrets instead of an active placeholder `api_key`.
+
 ## [0.1.4] - 2026-06-29
 
 ### Changed
