@@ -35,9 +35,11 @@ runs:
   steps:
     - name: Install ReviewGate
       shell: bash
+      # 跑随本 action（按用户 pin 的 ref 一起 checkout）的 install.sh，而不是 curl main 上那份——
+      # 这样即便 main 的 install.sh 写坏，也波及不到 pin 了某个 tag 的用户。
+      # $GITHUB_ACTION_PATH 指向 integrations/github-action，仓库根的 install.sh 在上两级。
       run: |
-        curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh \
-          | REVIEWGATE_VERSION="${{ inputs.version }}" sh
+        REVIEWGATE_VERSION="${{ inputs.version }}" sh "$GITHUB_ACTION_PATH/../../install.sh"
 
     - name: Run ReviewGate
       shell: bash
