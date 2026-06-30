@@ -309,7 +309,7 @@ jobs:
           comment: "true"
 ```
 
-> **Pinning**: `@v0` tracks compatible 0.x updates without jumping to a breaking major — this is the recommended pin. The action downloads the engine at runtime (`latest` by default), so a new CLI release needs **no workflow change**; teams that want reproducibility can add `with: { version: "0.2.0" }` to pin the engine to a specific version.
+> **Versioning**: use `@v0` to track compatible 0.x Action updates. The Action downloads the latest CLI by default, so CLI releases usually need no workflow change; for reproducible CI, set `with: { version: "v0.2.0" }` to pin the CLI engine.
 
 ## Design Details
 

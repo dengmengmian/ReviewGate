@@ -2,7 +2,7 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - "v*.*.*"   # 只匹配完整版本号；移动式大版本 tag（v0）不触发发布
 
 permissions:
   contents: write
@@ -50,6 +50,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
           merge-multiple: true
@@ -59,3 +62,12 @@ jobs:
       - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
+      # 把移动式大版本 tag（v0 / 将来 v1）指到这次稳定发布的提交，
+      # 让 `@v0` 始终等于「最新稳定发布」。带 - 后缀的预发布（v0.3.0-rc1 等）跳过。
+      - name: Move major tag to this release
+        if: ${{ !contains(github.ref_name, '-') }}
+        run: |
+          MAJOR="${GITHUB_REF_NAME%%.*}"
+          echo "Moving ${MAJOR} -> ${GITHUB_SHA} (${GITHUB_REF_NAME})"
+          git tag -f "${MAJOR}" "${GITHUB_SHA}"
+          git push -f origin "${MAJOR}"
