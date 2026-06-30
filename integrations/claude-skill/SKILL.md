@@ -1,6 +1,6 @@
 ---
 name: reviewgate
-description: 调用 ReviewGate CLI（reviewgate review）对当前 git 改动做合并前质量闸口——多 Agent 并行分维度审查（安全/性能/逻辑/规范/AI 代码专项 + 可选业务规则）、证伪 Judge、置信度过滤，只留可信问题并给出 PASS/WARN/BLOCK 判定。当用户提到 ReviewGate / reviewgate / 质量闸口、或想用 ReviewGate 审查改动做 pre-merge gate 时使用；显式触发用 /reviewgate。注意这与 Claude Code 内置的通用 code-review 不同：本 skill 专门驱动外部 reviewgate 命令。
+description: 合并前质量闸口 · Pre-merge quality gate. 驱动外部 ReviewGate CLI（reviewgate review）对当前 git 改动分维度并行审查、证伪、按置信度过滤，给出 PASS/WARN/BLOCK。当用户想用 ReviewGate / 做质量闸口 / pre-merge review 审查改动时使用；显式触发 /reviewgate，区别于内置 code-review。
 ---
 
 # ReviewGate Skill
