@@ -4,7 +4,7 @@ mod fix;
 mod i18n;
 mod render;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::io::IsTerminal;
 
 #[derive(Parser)]
@@ -37,7 +37,7 @@ enum Command {
     },
     /// Run a single-dimension agent (debug): reviewgate agent --dimension logic
     Agent {
-        /// Dimension: security | perf | logic | style | ai_smell
+        /// Dimension: security | perf | logic | style | ai_smell | business
         #[arg(long, default_value = "logic")]
         dimension: String,
     },
@@ -127,12 +127,28 @@ fn resolve_intent(args: &ReviewArgs) -> anyhow::Result<Option<String>> {
     Ok(None)
 }
 
+/// Output format. Invalid values are rejected at parse time (not silently coerced to text).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum OutputFormat {
+    Text,
+    Json,
+}
+
+/// Which verdict triggers a non-zero exit code. Invalid values are rejected at parse time,
+/// so a typo (e.g. `--fail-on blcok`) can never silently disable the gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum FailOn {
+    Block,
+    Warn,
+    Never,
+}
+
 #[derive(Parser)]
 struct ReviewArgs {
-    /// Output format: text | json
-    #[arg(long, default_value = "text")]
-    format: String,
-    /// Review dimensions: all, or a comma-separated list of security,perf,logic,style,ai_smell
+    /// Output format
+    #[arg(long, value_enum, default_value = "text")]
+    format: OutputFormat,
+    /// Review dimensions: all, or a comma-separated list of security,perf,logic,style,ai_smell,business
     #[arg(long, default_value = "all")]
     dimensions: String,
     /// Review the changes introduced by a single commit
@@ -150,9 +166,9 @@ struct ReviewArgs {
     /// Show filtered low-confidence findings
     #[arg(long)]
     show_filtered: bool,
-    /// Which verdict triggers a non-zero exit code: block | warn | never
-    #[arg(long, default_value = "block")]
-    fail_on: String,
+    /// Which verdict triggers a non-zero exit code
+    #[arg(long, value_enum, default_value = "block")]
+    fail_on: FailOn,
     /// Post a summary comment on the GitHub PR (for GitHub Action)
     #[arg(long)]
     comment: bool,
@@ -187,22 +203,32 @@ struct ReviewArgs {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() {
     let cli = Cli::parse();
-    match cli.command {
-        Command::Review(args) => {
-            let code = review(&args).await?;
-            std::process::exit(code);
+    match run(cli).await {
+        Ok(code) => std::process::exit(code),
+        // 操作性错误（配置缺失/网络失败/密钥未配…）用退出码 2，与「闸口 BLOCK」的 1 区分：
+        // CI 才能分辨「PR 有 must-fix」(1) 和「工具自身出错，应重试/告警」(2)。
+        Err(e) => {
+            eprintln!("error: {e:#}");
+            std::process::exit(2);
         }
-        Command::Llm { cmd } => match cmd {
-            LlmCmd::Test => llm_test().await?,
-        },
-        Command::Diff(args) => diff_summary(&args).await?,
-        Command::Tool { name, input } => tool_call(&name, &input).await?,
-        Command::Agent { dimension } => agent_run(&dimension).await?,
-        Command::Upgrade => upgrade().await?,
     }
-    Ok(())
+}
+
+/// 分发子命令，返回进程退出码。只有 `review` 走闸口语义（0=放行 / 1=拦截）；
+/// 其余成功即 0，错误统一冒泡到 `main` 记为 2。
+async fn run(cli: Cli) -> anyhow::Result<i32> {
+    match cli.command {
+        Command::Review(args) => review(&args).await,
+        Command::Llm { cmd } => match cmd {
+            LlmCmd::Test => llm_test().await.map(|()| 0),
+        },
+        Command::Diff(args) => diff_summary(&args).await.map(|()| 0),
+        Command::Tool { name, input } => tool_call(&name, &input).await.map(|()| 0),
+        Command::Agent { dimension } => agent_run(&dimension).await.map(|()| 0),
+        Command::Upgrade => upgrade().await.map(|()| 0),
+    }
 }
 
 /// 当前平台对应的 release 资产名（与 `install.sh` 命名一致）。
@@ -401,7 +427,8 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
 
     // 实时进度：仅在终端、非 JSON、非 --verbose 时开。单行就地刷新，结束清行并给紧凑摘要；
     // JSON/管道/CI/verbose 下不渲染（避免污染输出/与详细日志打架）。
-    let live = std::io::stderr().is_terminal() && args.format != "json" && !args.verbose;
+    let live =
+        std::io::stderr().is_terminal() && args.format != OutputFormat::Json && !args.verbose;
     let progress = live.then(|| std::sync::Arc::new(reviewgate_core::progress::Progress::new()));
     opts.progress = progress.clone();
     let render = progress.clone().map(|p| {
@@ -455,9 +482,9 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
         );
     }
 
-    match args.format.as_str() {
-        "json" => println!("{}", render::render_json(&outcome)?),
-        _ => print!("{}", render::render_text(&outcome, args.show_filtered)),
+    match args.format {
+        OutputFormat::Json => println!("{}", render::render_json(&outcome)?),
+        OutputFormat::Text => print!("{}", render::render_text(&outcome, args.show_filtered)),
     }
 
     // 可选：在 GitHub PR 上发摘要评论 + 行内 suggestion（作者一键应用，人把关）。
@@ -480,7 +507,7 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
         outcome.decision,
         outcome.incomplete,
         cfg.gate.fail_on_incomplete,
-        &args.fail_on,
+        args.fail_on,
     ))
 }
 
@@ -490,15 +517,15 @@ fn exit_code(
     decision: reviewgate_core::gate::GateDecision,
     incomplete: bool,
     fail_on_incomplete: bool,
-    fail_on: &str,
+    fail_on: FailOn,
 ) -> i32 {
     use reviewgate_core::gate::GateDecision;
     if incomplete && fail_on_incomplete {
         return 1;
     }
     match (decision, fail_on) {
-        (GateDecision::Block, "block") | (GateDecision::Block, "warn") => 1,
-        (GateDecision::Warn, "warn") => 1,
+        (GateDecision::Block, FailOn::Block) | (GateDecision::Block, FailOn::Warn) => 1,
+        (GateDecision::Warn, FailOn::Warn) => 1,
         _ => 0,
     }
 }
@@ -552,30 +579,30 @@ async fn llm_test() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{exit_code, parse_dimensions, release_asset};
+    use super::{exit_code, parse_dimensions, release_asset, FailOn};
     use reviewgate_core::gate::GateDecision;
     use reviewgate_core::model::Dimension;
 
     #[test]
     fn exit_code_gate_and_fail_on_matrix() {
         // block + fail-on=block/warn → 1；fail-on=never → 0。
-        assert_eq!(exit_code(GateDecision::Block, false, false, "block"), 1);
-        assert_eq!(exit_code(GateDecision::Block, false, false, "warn"), 1);
-        assert_eq!(exit_code(GateDecision::Block, false, false, "never"), 0);
+        assert_eq!(exit_code(GateDecision::Block, false, false, FailOn::Block), 1);
+        assert_eq!(exit_code(GateDecision::Block, false, false, FailOn::Warn), 1);
+        assert_eq!(exit_code(GateDecision::Block, false, false, FailOn::Never), 0);
         // warn 只在 fail-on=warn 时非 0。
-        assert_eq!(exit_code(GateDecision::Warn, false, false, "warn"), 1);
-        assert_eq!(exit_code(GateDecision::Warn, false, false, "block"), 0);
+        assert_eq!(exit_code(GateDecision::Warn, false, false, FailOn::Warn), 1);
+        assert_eq!(exit_code(GateDecision::Warn, false, false, FailOn::Block), 0);
         // pass 永远 0。
-        assert_eq!(exit_code(GateDecision::Pass, false, false, "warn"), 0);
+        assert_eq!(exit_code(GateDecision::Pass, false, false, FailOn::Warn), 0);
     }
 
     #[test]
     fn exit_code_incomplete_overrides_when_configured() {
         // 未审完 + fail_on_incomplete：即便 PASS / fail-on=never 也非 0（杜绝漏审放行）。
-        assert_eq!(exit_code(GateDecision::Pass, true, true, "never"), 1);
-        assert_eq!(exit_code(GateDecision::Warn, true, true, "block"), 1);
+        assert_eq!(exit_code(GateDecision::Pass, true, true, FailOn::Never), 1);
+        assert_eq!(exit_code(GateDecision::Warn, true, true, FailOn::Block), 1);
         // 未审完但未开 fail_on_incomplete：回到常规闸口语义。
-        assert_eq!(exit_code(GateDecision::Pass, true, false, "block"), 0);
+        assert_eq!(exit_code(GateDecision::Pass, true, false, FailOn::Block), 0);
     }
 
     #[test]

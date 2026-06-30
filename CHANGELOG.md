@@ -4,9 +4,17 @@
 每条变更先中文、后英文。
 Changes are listed in Chinese first, then English.
 
-## [Unreleased]
+## [0.2.0] - 2026-06-30
+
+### Changed
+- 退出码语义更清晰：`0` 放行、`1` 被闸口拦截、`2` 工具自身出错（配置/网络/密钥等）。以前工具出错和「代码被拦」都返回 1，CI 无法区分该重试还是该当成 must-fix；现在两者分开。
+  Clearer exit codes: `0` pass, `1` blocked by the gate, `2` the tool itself errored (config/network/key). Previously tool errors and real blocks both returned 1, so CI couldn't tell a retryable failure from a must-fix; now they're distinct.
 
 ### Fixed
+- `--fail-on` / `--format` 写错值时立即报错并列出可选值，不再被静默当成默认值——以前 `--fail-on blcok` 这类拼写错误会让闸口悄悄失效、永远放行。
+  Misspelled `--fail-on` / `--format` values now fail fast and list the valid choices instead of silently falling back to the default — previously a typo like `--fail-on blcok` could quietly disable the gate and pass everything.
+- 配置里拼错的字段名（如 `block_treshold`）现在在加载阶段直接报错，不再被静默忽略、让你以为调了阈值其实没生效。
+  Misspelled config keys (e.g. `block_treshold`) now error at load time instead of being silently ignored, so a mistyped threshold can no longer look applied when it isn't.
 - 修复 GitHub Action 示例入口：示例 workflow 现在指向实际的 `integrations/github-action` action 路径，并同步到当前发布版本，避免用户照抄后找不到 action。
   Fixed the GitHub Action example entrypoint: the sample workflow now points to the real `integrations/github-action` action path and the current release version, so copy-paste setup works.
 

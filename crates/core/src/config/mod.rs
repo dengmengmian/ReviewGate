@@ -21,6 +21,7 @@ pub enum Protocol {
 
 /// 单个提供方配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProviderConfig {
     #[serde(default)]
     pub protocol: Protocol,
@@ -49,6 +50,7 @@ impl ProviderConfig {
 
 /// 闸口阈值配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GateConfig {
     /// 置信度 ≥ 此值 → 阻断。
     #[serde(default = "default_block")]
@@ -85,6 +87,7 @@ fn default_true() -> bool {
 
 /// 业务/项目规则配置。注入到共享 prompt 块，供各维度参考。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BusinessConfig {
     /// 内联业务规则列表（最直接的形式）。
     #[serde(default)]
@@ -117,6 +120,7 @@ impl Default for BusinessConfig {
 
 /// 顶层配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     /// 默认提供方名（对应 `providers` 的 key）。
     pub provider: String,
@@ -277,6 +281,24 @@ skills_dir = ".claude/skills"
         assert_eq!(cfg.gate.warn_threshold, 0.5);
         // business.skills_dir 解析到。
         assert_eq!(cfg.business.skills_dir.as_deref(), Some(".claude/skills"));
+    }
+
+    #[test]
+    fn unknown_key_is_rejected() {
+        // 拼错的阈值键名不能被静默忽略——否则用户以为调了闸口，实际还是默认值。
+        let typo = r#"
+provider = "q"
+[providers.q]
+base_url = "https://x/v1"
+model = "m"
+[gate]
+block_treshold = 0.95
+"#;
+        let err = toml::from_str::<Config>(typo).unwrap_err().to_string();
+        assert!(
+            err.contains("block_treshold") || err.contains("unknown field"),
+            "expected unknown-field error, got: {err}"
+        );
     }
 
     #[test]

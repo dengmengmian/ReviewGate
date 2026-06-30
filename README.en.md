@@ -246,7 +246,7 @@ Only environment variables are read (not git config or repo contents), so CI wit
 REVIEWGATE_OUTPUT_LANGUAGE="English" reviewgate review
 ```
 
-Exit codes for CI: `BLOCK -> 1`, otherwise `0`. Adjust with `--fail-on block|warn|never`.
+Exit codes for CI: `0` pass · `1` blocked by the gate (per `--fail-on block|warn|never`) · `2` the tool itself errored (config/network/key — not a code problem; CI should retry or alert, not treat it as a must-fix). Invalid `--fail-on` / `--format` values are rejected at parse time (exit 2), never silently coerced to the default.
 
 ```bash
 REVIEWGATE_API_KEY=$SECRET reviewgate review --timeout 300 --fail-on block

@@ -244,7 +244,7 @@ reviewgate review --from main --to HEAD --intent docs/requirement.md
 
 仅读环境变量（不读 git 配置或仓库内容），所以未设 locale 的 CI 默认英文。强制某语言：`REVIEWGATE_OUTPUT_LANGUAGE="Chinese (Simplified)" reviewgate review`。
 
-**退出码（CI 闸口用）**：`BLOCK → 1`，否则 `0`；用 `--fail-on block|warn|never` 调整。
+**退出码（CI 闸口用）**：`0` 放行 · `1` 被闸口拦截（按 `--fail-on block|warn|never` 判定）· `2` 工具自身出错（配置/网络/密钥等，不是代码问题，CI 应重试或告警而非当成 must-fix）。非法的 `--fail-on` / `--format` 取值在解析期就报错（退出码 2），不会被静默当成默认值。
 
 ```bash
 # CI 里（慢端点加超时兜底）
