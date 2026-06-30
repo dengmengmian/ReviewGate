@@ -3,14 +3,57 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ReviewGate — AI 代码的合并前质量闸口</title>
-<meta name="description" content="ReviewGate：给 AI 生成代码准备的合并前质量闸口。按维度并行审查，优先拦截高风险问题，减少低价值 review 噪音，绝不把不完整审查伪装成 PASS。">
+<title>ReviewGate — AI 代码的合并前质量闸口 | Pre-merge quality gate for AI code</title>
+<meta name="description" content="ReviewGate：给 AI 生成代码准备的合并前质量闸口。按安全、逻辑、性能、业务规则等维度并行审查，优先拦截高风险问题，去重证伪降低噪音，未审完降级 WARN 绝不假 PASS。开源 MIT，Rust 编写，CLI / Claude Skill / GitHub Action 三种形态接入。">
+<link rel="canonical" href="https://dengmengmian.github.io/ReviewGate/">
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<meta name="author" content="dengmengmian">
+<meta name="keywords" content="AI code review,代码审查,质量闸口,quality gate,pre-merge,CI,GitHub Action,Claude Skill,code review tool,ReviewGate,LLM code review">
+<!-- Open Graph -->
 <meta property="og:type" content="website">
-<meta property="og:title" content="ReviewGate — 合并前质量闸口">
-<meta property="og:description" content="优先拦截高风险问题，减少低价值 review 噪音。CLI / Claude Skill / GitHub Action 三种形态接入。">
-<meta property="og:image" content="assets/logo.svg">
+<meta property="og:url" content="https://dengmengmian.github.io/ReviewGate/">
+<meta property="og:site_name" content="ReviewGate">
+<meta property="og:title" content="ReviewGate — AI 代码的合并前质量闸口">
+<meta property="og:description" content="优先拦截高风险问题，减少低价值 review 噪音，绝不把不完整审查伪装成 PASS。开源 MIT，CLI / Claude Skill / GitHub Action 三种形态接入。">
+<meta property="og:image" content="https://dengmengmian.github.io/ReviewGate/assets/og.png">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:locale:alternate" content="en_US">
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="ReviewGate — 合并前质量闸口">
+<meta name="twitter:description" content="给 AI 生成代码准备的合并前质量闸口：拦高危、降噪音、不假通过。开源 MIT。">
+<meta name="twitter:image" content="https://dengmengmian.github.io/ReviewGate/assets/og.png">
 <meta name="theme-color" content="#14B8A6">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "name": "ReviewGate",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Linux, macOS, Windows",
+      "description": "A pre-merge quality gate for AI-generated code. It reviews a git diff in parallel across security, logic, performance, style, AI-smell, and business-rule dimensions, deduplicates and counter-evidence-judges findings, surfaces must-fix issues first, folds low-confidence noise, and degrades to WARN on timeout or oversized context instead of faking a PASS.",
+      "url": "https://dengmengmian.github.io/ReviewGate/",
+      "downloadUrl": "https://github.com/dengmengmian/ReviewGate/releases/latest",
+      "softwareVersion": "0.2.0",
+      "license": "https://opensource.org/licenses/MIT",
+      "programmingLanguage": "Rust",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": { "@type": "Person", "name": "dengmengmian", "url": "https://github.com/dengmengmian" }
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "name": "ReviewGate",
+      "codeRepository": "https://github.com/dengmengmian/ReviewGate",
+      "programmingLanguage": "Rust",
+      "license": "https://opensource.org/licenses/MIT"
+    }
+  ]
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -155,6 +198,12 @@
   .band .btn-ghost{background:transparent;color:#fff;border-color:rgba(255,255,255,.5)}
   .band .btn-ghost:hover{border-color:#fff}
 
+  /* faq */
+  .faq{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .qa{border:1px solid var(--border);border-radius:14px;padding:24px 26px;background:#fff}
+  .qa h3{font-size:17px;color:var(--ink);font-weight:700;margin-bottom:10px}
+  .qa p{font-size:14.5px;color:var(--muted)}
+
   /* footer */
   footer{border-top:1px solid var(--border);padding:48px 0;color:var(--muted);font-size:14px}
   footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}
@@ -164,7 +213,7 @@
   @media(max-width:880px){
     section{padding:64px 0}
     .hero-grid,.install-grid,.two{grid-template-columns:1fr}
-    .pillars,.steps,.dims,.trust-cards,.ints{grid-template-columns:1fr}
+    .pillars,.steps,.dims,.trust-cards,.ints,.faq{grid-template-columns:1fr}
     h1{font-size:38px}h2{font-size:27px}
     nav .links{display:none}
     .band{padding:40px 24px}
@@ -181,6 +230,7 @@
       <a href="#how" data-zh="工作原理" data-en="How it works">工作原理</a>
       <a href="#install" data-zh="安装" data-en="Install">安装</a>
       <a href="#integrations" data-zh="接入" data-en="Integrations">接入</a>
+      <a href="#faq" data-zh="问答" data-en="FAQ">问答</a>
     </div>
     <div class="right">
       <button class="langbtn" id="lang" aria-label="切换语言">EN</button>
@@ -494,6 +544,74 @@ EOF
       </div>
     </div>
   </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" class="alt">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow" data-zh="常见问题" data-en="FAQ">常见问题</span>
+      <h2 data-zh="你可能想问的" data-en="Questions you might have">你可能想问的</h2>
+    </div>
+    <div class="faq">
+      <div class="qa">
+        <h3 data-zh="和普通 AI code review 有什么不同？" data-en="How is it different from a normal AI code reviewer?">和普通 AI code review 有什么不同？</h3>
+        <p data-zh="它是一道闸口，不是又一个 reviewer。发现会去重、被独立证伪、按置信度过滤；低价值反馈默认折叠；超时或未审完会降级 WARN 并让 CI 非 0 退出，绝不把不完整的审查伪装成 PASS。"
+           data-en="It's a gate, not another reviewer. Findings are deduplicated, independently counter-evidence-judged, and confidence-filtered; low-value feedback folds by default; timeouts or incomplete reviews degrade to WARN with a non-zero exit instead of faking a PASS.">
+          它是一道闸口，不是又一个 reviewer。发现会去重、被独立证伪、按置信度过滤；低价值反馈默认折叠；超时或未审完会降级 WARN 并让 CI 非 0 退出，绝不把不完整的审查伪装成 PASS。
+        </p>
+      </div>
+      <div class="qa">
+        <h3 data-zh="支持哪些模型或 provider？" data-en="Which models or providers are supported?">支持哪些模型或 provider？</h3>
+        <p data-zh="不绑定模型。任何 OpenAI 兼容或 Anthropic 端点都行——DeepSeek、Kimi、GLM、通义、Claude 等，按团队成本、速度、上下文窗口自选。"
+           data-en="Model-agnostic — any OpenAI-compatible or Anthropic endpoint works: DeepSeek, Kimi, GLM, Qwen, Claude, and more, chosen by your team's cost, latency, and context-window needs.">
+          不绑定模型。任何 OpenAI 兼容或 Anthropic 端点都行——DeepSeek、Kimi、GLM、通义、Claude 等，按团队成本、速度、上下文窗口自选。
+        </p>
+      </div>
+      <div class="qa">
+        <h3 data-zh="会把我的代码发给第三方吗？" data-en="Does it send my code to a third party?">会把我的代码发给第三方吗？</h3>
+        <p data-zh="只发给你自己在配置里指定的 LLM 端点，没有别的服务器。审查链路默认只读：除非显式 --fix 且逐条确认，不写工作区、不执行任意 shell。"
+           data-en="Only to the LLM endpoint you configure — no other server. The review path is read-only by default: unless you pass --fix with per-finding confirmation, it never writes your worktree or runs arbitrary shell.">
+          只发给你自己在配置里指定的 LLM 端点，没有别的服务器。审查链路默认只读：除非显式 --fix 且逐条确认，不写工作区、不执行任意 shell。
+        </p>
+      </div>
+      <div class="qa">
+        <h3 data-zh="怎么接入 CI？" data-en="How do I add it to CI?">怎么接入 CI？</h3>
+        <p data-zh="reviewgate review --fail-on block，退出码 0 放行 / 1 被闸口拦截 / 2 工具自身出错；或直接用 GitHub Action 在 PR 上自动审查并回贴行内 suggestion。"
+           data-en="Run reviewgate review --fail-on block (exit 0 pass / 1 blocked by the gate / 2 tool error), or use the GitHub Action to auto-review PRs and post inline suggestions.">
+          reviewgate review --fail-on block，退出码 0 放行 / 1 被闸口拦截 / 2 工具自身出错；或直接用 GitHub Action 在 PR 上自动审查并回贴行内 suggestion。
+        </p>
+      </div>
+      <div class="qa">
+        <h3 data-zh="免费吗？" data-en="Is it free?">免费吗？</h3>
+        <p data-zh="工具本身 MIT 开源、免费。你只需要为自己 LLM API 的用量付费。"
+           data-en="The tool itself is open source under MIT and free. You only pay for your own LLM API usage.">
+          工具本身 MIT 开源、免费。你只需要为自己 LLM API 的用量付费。
+        </p>
+      </div>
+      <div class="qa">
+        <h3 data-zh="误报会不会很多？" data-en="Will there be too many false positives?">误报会不会很多？</h3>
+        <p data-zh="每条发现都过一遍带证据的证伪 Judge，再按置信度闸口过滤，低置信默认折叠。可调 block / warn 阈值，也可用 --samples 提高召回或 --no-judge 加速。"
+           data-en="Every finding passes a counter-evidence judge and a confidence gate; low-confidence ones fold by default. Tune block/warn thresholds, raise recall with --samples, or speed up with --no-judge.">
+          每条发现都过一遍带证据的证伪 Judge，再按置信度闸口过滤，低置信默认折叠。可调 block / warn 阈值，也可用 --samples 提高召回或 --no-judge 加速。
+        </p>
+      </div>
+    </div>
+  </div>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      { "@type": "Question", "name": "ReviewGate 和普通 AI code review 有什么不同？", "acceptedAnswer": { "@type": "Answer", "text": "它是一道闸口，不是又一个 reviewer。发现会去重、被独立证伪、按置信度过滤；低价值反馈默认折叠；超时或未审完会降级 WARN 并让 CI 非 0 退出，绝不把不完整的审查伪装成 PASS。" } },
+      { "@type": "Question", "name": "ReviewGate 支持哪些模型或 provider？", "acceptedAnswer": { "@type": "Answer", "text": "不绑定模型。任何 OpenAI 兼容或 Anthropic 端点都行——DeepSeek、Kimi、GLM、通义、Claude 等，按团队成本、速度、上下文窗口自选。" } },
+      { "@type": "Question", "name": "ReviewGate 会把我的代码发给第三方吗？", "acceptedAnswer": { "@type": "Answer", "text": "只发给你自己在配置里指定的 LLM 端点，没有别的服务器。审查链路默认只读：除非显式 --fix 且逐条确认，不写工作区、不执行任意 shell。" } },
+      { "@type": "Question", "name": "怎么把 ReviewGate 接入 CI？", "acceptedAnswer": { "@type": "Answer", "text": "reviewgate review --fail-on block，退出码 0 放行 / 1 被闸口拦截 / 2 工具自身出错；或直接用 GitHub Action 在 PR 上自动审查并回贴行内 suggestion。" } },
+      { "@type": "Question", "name": "ReviewGate 免费吗？", "acceptedAnswer": { "@type": "Answer", "text": "工具本身 MIT 开源、免费。你只需要为自己 LLM API 的用量付费。" } },
+      { "@type": "Question", "name": "ReviewGate 误报会不会很多？", "acceptedAnswer": { "@type": "Answer", "text": "每条发现都过一遍带证据的证伪 Judge，再按置信度闸口过滤，低置信默认折叠。可调 block / warn 阈值，也可用 --samples 提高召回或 --no-judge 加速。" } }
+    ]
+  }
+  </script>
 </section>
 
 <!-- CTA BAND -->

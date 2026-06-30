@@ -1,0 +1,34 @@
+# ReviewGate
+
+> A pre-merge quality gate for AI-generated code. ReviewGate reviews a git diff in parallel across multiple focused dimensions, surfaces high-risk must-fix issues first, reduces low-value review noise, and never fakes a PASS on an incomplete review. It is open source (MIT), written in Rust, and runs as a CLI, a Claude Code skill, or a GitHub Action.
+
+## What it does
+
+- Runs multiple agents in parallel, each focused on one review dimension: security, perf, logic, style, ai_smell, and business (project rules).
+- Anchors and validates reported line numbers against code, then deduplicates findings across dimensions and raises confidence when several agree.
+- Counter-evidence "judge": each finding is independently verified with evidence before it is kept, reducing false positives.
+- Confidence gate: high-confidence issues BLOCK the merge, low-confidence noise is folded by default (still inspectable with --show-filtered).
+- Never fakes a pass: timeouts, oversized context, and incomplete review units degrade to WARN and exit non-zero, so an incomplete review is never reported as PASS.
+
+## Key facts
+
+- License: MIT (free; you only pay for your own LLM API usage).
+- Language: Rust.
+- Model-agnostic: any OpenAI-compatible or Anthropic endpoint (DeepSeek, Kimi, GLM, Qwen, Claude, ...).
+- Read-only by default: except for explicit `--fix` with per-finding confirmation, it does not write the worktree or run arbitrary shell.
+- CI exit codes: 0 = pass, 1 = blocked by the gate, 2 = the tool itself errored (config/network). Invalid `--fail-on`/`--format` values are rejected at parse time.
+- Three integration forms over one engine: CLI (primary), Claude Code skill, and GitHub Action.
+
+## Install
+
+- Linux / macOS: `curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh`
+- Windows (PowerShell): `irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex`
+- Run: `reviewgate review` (review the current git diff), `reviewgate review --fail-on block` (for CI).
+
+## Links
+
+- Homepage: https://dengmengmian.github.io/ReviewGate/
+- Repository: https://github.com/dengmengmian/ReviewGate
+- Releases: https://github.com/dengmengmian/ReviewGate/releases
+- Evals (public logs): https://github.com/dengmengmian/ReviewGate/tree/main/docs/evals
+- Changelog: https://github.com/dengmengmian/ReviewGate/blob/main/CHANGELOG.md
