@@ -4,6 +4,16 @@
 每条变更先中文、后英文。
 Changes are listed in Chinese first, then English.
 
+## [0.2.1] - 2026-06-30
+
+### Added
+- 新增 Codex 与 AtomCode 集成：在 OpenAI Codex CLI（经 `AGENTS.md`）和 AtomCode 里也能用同一套 ReviewGate 审查，一键装入项目。
+  Added Codex and AtomCode integrations: drive the same ReviewGate review from OpenAI Codex CLI (via `AGENTS.md`) and AtomCode, installable into a project in one command.
+
+### Fixed
+- Claude Code skill 的使用说明对齐当前真实输出：修正修复字段、退出码（含「未审完不放行」），并让触发更不易和内置 code-review 混淆。
+  The Claude Code skill instructions now match the real output: corrected the fix field and exit codes (including "incomplete never passes"), and made its trigger less likely to clash with the built-in code-review.
+
 ## [0.2.0] - 2026-06-30
 
 ### Changed
