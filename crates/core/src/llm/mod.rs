@@ -1,7 +1,7 @@
 //! LLM 客户端：协议无关的 `LlmClient` trait + 各协议实现。
 
 mod anthropic;
-mod http;
+pub(crate) mod http;
 mod openai;
 mod tokens;
 

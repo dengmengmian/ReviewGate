@@ -2,12 +2,15 @@
 //!
 //! `report_finding` / `task_done` 是控制工具，由循环内部拦截处理（前者收集 Finding，后者终止）。
 
-use super::control_tools::{parse_finding, report_finding_def, task_done_def};
+use super::control_tools::{
+    parse_finding, parse_intent_finding, report_finding_def, report_intent_finding_def,
+    task_done_def,
+};
 use super::{
     dimension_focus_block, AgentConfig, AgentExitReason, AgentRun, AgentStats, LOOP_GUARD_LIMIT,
 };
 use crate::llm::LlmClient;
-use crate::model::{ContentBlock, Finding, Message, Role, StopReason, ToolResult};
+use crate::model::{ContentBlock, Dimension, Finding, Message, Role, StopReason, ToolResult};
 use crate::tool::{ToolContext, ToolRegistry};
 use anyhow::Result;
 use std::collections::HashMap;
@@ -35,11 +38,25 @@ pub async fn run_agent_with_stats(
     cfg: &AgentConfig,
     user_prompt: String,
 ) -> Result<AgentRun> {
+    // 意图维度用需求锚定的 report_intent_finding，其余维度用行锚的 report_finding。
+    let intent_dim = cfg.dimension == Dimension::Intent;
+    let report_name = if intent_dim {
+        "report_intent_finding"
+    } else {
+        "report_finding"
+    };
+    let report_def = || {
+        if intent_dim {
+            report_intent_finding_def()
+        } else {
+            report_finding_def()
+        }
+    };
     let mut tools = registry.defs();
-    tools.push(report_finding_def());
+    tools.push(report_def());
     tools.push(task_done_def());
     // 最后一轮只给上报/结束工具，逼模型基于已有信息收口。
-    let final_tools = vec![report_finding_def(), task_done_def()];
+    let final_tools = vec![report_def(), task_done_def()];
 
     // 首条 user 消息分两块：
     //   块 0 = 共享大块（diff + 文件全文，维度无关）→ 由客户端挂缓存断点，跨维度/跨轮复用；
@@ -61,6 +78,7 @@ pub async fn run_agent_with_stats(
     let start = std::time::Instant::now();
     // 默认 MaxRounds：循环自然走完即视为完成（末轮已强制收口）。各 break 点会覆盖。
     let mut exit_reason = AgentExitReason::MaxRounds;
+    let mut error_detail: Option<String> = None;
 
     let dim = cfg.dimension.as_str();
     for round in 0..cfg.max_rounds {
@@ -71,7 +89,7 @@ pub async fn run_agent_with_stats(
                 exit_reason = AgentExitReason::TimedOut;
                 if cfg.verbose {
                     eprintln!(
-                        "  [{dim}] 超时 {}s，提前收尾（保留已收集 {} 条）",
+                        "  [{dim}] timed out after {}s; wrapping up early (kept {} findings)",
                         t.as_secs(),
                         findings.len()
                     );
@@ -86,7 +104,7 @@ pub async fn run_agent_with_stats(
                 exit_reason = AgentExitReason::ContextOverflow;
                 if cfg.verbose {
                     eprintln!(
-                        "  [{dim}] 第 {} 轮预检超预算（估算 {est} > {budget} tok），提前收尾（保留 {} 条）",
+                        "  [{dim}] round {} pre-check over budget (est {est} > {budget} tok); wrapping up early (kept {} findings)",
                         round + 1,
                         findings.len()
                     );
@@ -98,15 +116,15 @@ pub async fn run_agent_with_stats(
         let is_final = round + 1 >= cfg.max_rounds;
         let round_tools = if is_final { &final_tools } else { &tools };
         if is_final {
-            messages.push(Message::user(
-                "This is the final round. Conclude from the information you already have: call report_finding for confirmed issues, or call task_done if there are no credible issues. Do not call additional investigation tools.",
-            ));
+            messages.push(Message::user(format!(
+                "This is the final round. Conclude from the information you already have: call {report_name} for confirmed issues, or call task_done if there are no credible issues. Do not call additional investigation tools."
+            )));
         }
         if cfg.verbose {
             eprintln!(
-                "  [{dim}] 第 {} 轮：请求 LLM…{}",
+                "  [{dim}] round {}: calling LLM...{}",
                 round + 1,
-                if is_final { "（强制收口）" } else { "" }
+                if is_final { " (forced wrap-up)" } else { "" }
             );
         }
         stats.llm_requests += 1;
@@ -123,7 +141,7 @@ pub async fn run_agent_with_stats(
                     exit_reason = AgentExitReason::TimedOut;
                     if cfg.verbose {
                         eprintln!(
-                            "  [{dim}] 第 {} 轮请求超时，提前收尾（保留已收集的 {} 条）",
+                            "  [{dim}] round {} request timed out; wrapping up early (kept {} findings)",
                             round + 1,
                             findings.len()
                         );
@@ -139,16 +157,17 @@ pub async fn run_agent_with_stats(
         let resp = match resp {
             Ok(r) => r,
             Err(e) => {
-                // 请求失败（含上下文超限的 4xx）：保留已收集的发现，但标记未审完，不静默放行。
-                exit_reason = AgentExitReason::RequestFailed;
+                // 请求失败：如实归类（鉴权 vs 其它），保留已收集的发现，但标记未审完，不静默放行。
+                exit_reason = crate::agent::classify_request_error(&e);
+                error_detail = Some(truncate_detail(&e.to_string()));
                 if cfg.verbose {
                     eprintln!(
-                        "  [{dim}] 第 {} 轮请求失败，提前收尾（保留已收集的 {} 条）：{e}",
+                        "  [{dim}] round {} request failed; wrapping up early (kept {} findings): {e}",
                         round + 1,
                         findings.len()
                     );
                     eprintln!(
-                        "  [{dim}] 统计：LLM {} 次 · 工具 {} 次（{}）",
+                        "  [{dim}] stats: {} LLM calls, {} tool calls ({})",
                         stats.llm_requests,
                         stats.tool_calls,
                         stats.tool_summary()
@@ -164,7 +183,7 @@ pub async fn run_agent_with_stats(
         if cfg.verbose && !tool_uses.is_empty() {
             let names: Vec<&str> = tool_uses.iter().map(|t| t.name.as_str()).collect();
             eprintln!(
-                "  [{dim}] 第 {} 轮：调用 {} 个工具：{}",
+                "  [{dim}] round {}: {} tool call(s): {}",
                 round + 1,
                 tool_uses.len(),
                 names.join(", ")
@@ -178,9 +197,9 @@ pub async fn run_agent_with_stats(
                 break;
             }
             // 异常：给一次纠正提示。
-            messages.push(Message::user(
-                "Please call report_finding to report an issue, or call task_done if there are no issues.",
-            ));
+            messages.push(Message::user(format!(
+                "Please call {report_name} to report an issue, or call task_done if there are no issues."
+            )));
             continue;
         }
 
@@ -188,6 +207,9 @@ pub async fn run_agent_with_stats(
         let mut done = false;
         for tu in &tool_uses {
             stats.record_tool(&tu.name);
+            if let Some(p) = &cfg.progress {
+                p.record_tool(dim, &tu.name, &tool_target(&tu.input));
+            }
             let (content, is_error) = match tu.name.as_str() {
                 "report_finding" => match parse_finding(&tu.input, cfg.dimension) {
                     Ok(f) => {
@@ -195,6 +217,16 @@ pub async fn run_agent_with_stats(
                         ("Finding recorded.".to_string(), false)
                     }
                     Err(e) => (format!("Invalid report_finding arguments: {e}"), true),
+                },
+                "report_intent_finding" => match parse_intent_finding(&tu.input) {
+                    Ok(f) => {
+                        findings.push(f);
+                        ("Verdict recorded.".to_string(), false)
+                    }
+                    Err(e) => (
+                        format!("Invalid report_intent_finding arguments: {e}"),
+                        true,
+                    ),
                 },
                 "task_done" => {
                     done = true;
@@ -209,7 +241,7 @@ pub async fn run_agent_with_stats(
                         stats.loop_guarded += 1;
                         if cfg.verbose {
                             eprintln!(
-                                "  [{dim}] 循环熔断：{other} 已用相同参数调用 {n} 次，短路。"
+                                "  [{dim}] loop guard: {other} called {n}x with identical args; short-circuiting."
                             );
                         }
                         (
@@ -235,7 +267,7 @@ pub async fn run_agent_with_stats(
             exit_reason = AgentExitReason::Completed;
             if cfg.verbose {
                 eprintln!(
-                    "  [{dim}] 完成，{} 条发现；LLM {} 次 · 工具 {} 次（{}）；{}",
+                    "  [{dim}] done, {} findings; {} LLM calls, {} tool calls ({}); {}",
                     findings.len(),
                     stats.llm_requests,
                     stats.tool_calls,
@@ -251,7 +283,20 @@ pub async fn run_agent_with_stats(
         findings,
         stats,
         exit_reason,
+        error_detail,
     })
+}
+
+/// 截断错误详情，避免把整段服务端 JSON 灌进告警；保留足够定位的前缀。
+fn truncate_detail(s: &str) -> String {
+    const MAX: usize = 240;
+    let one_line = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if one_line.chars().count() <= MAX {
+        one_line
+    } else {
+        let head: String = one_line.chars().take(MAX).collect();
+        format!("{head}…")
+    }
 }
 
 /// 估算一次请求的输入 token（system + 所有消息的文本/工具入参/工具结果）。保守偏高。
@@ -271,6 +316,27 @@ fn estimate_request_tokens(system: &str, messages: &[Message]) -> usize {
         }
     }
     total
+}
+
+/// 从工具入参里取一个简短「目标」用于进度展示（路径/查询/符号名…），截断到 48 字符。
+fn tool_target(input: &serde_json::Value) -> String {
+    for k in [
+        "path",
+        "file",
+        "query",
+        "pattern",
+        "symbol",
+        "name",
+        "criterion",
+    ] {
+        if let Some(s) = input.get(k).and_then(|v| v.as_str()) {
+            let s = s.trim();
+            if !s.is_empty() {
+                return s.chars().take(48).collect();
+            }
+        }
+    }
+    String::new()
 }
 
 #[cfg(test)]

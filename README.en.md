@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Let AI review AI-written code before merge: <b>catch high-risk issues first and reduce low-value review noise</b>
+  Pre-merge quality gate for AI-written code: <b>catch high-risk issues first and reduce low-value review noise</b>
 </p>
 
 <p align="center">
@@ -16,9 +16,15 @@
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT">
 </p>
 
-ReviewGate runs before PRs are merged and gives AI-generated, or AI-heavy, code a second review pass. It does not replace human review. It pre-filters the work for reviewers by promoting high-risk findings and folding low-confidence noise by default.
+ReviewGate is a pre-merge quality gate for AI-generated, or AI-heavy, code. The core path is ready for real PRs and CI. It does not replace tests or human review; it filters PRs before merge by promoting high-risk findings and folding low-confidence noise by default.
 
-## Start In 30 Seconds
+| Core value | What it means for teams |
+|---|---|
+| Catch high-risk issues | Parallel review by security, logic, performance, business rules, and other focused dimensions |
+| Reduce noise | Deduplication, counter-evidence judging, and confidence-based filtering |
+| Avoid fake passes | Incomplete reviews, timeouts, and oversized context degrade to WARN instead of pretending to pass |
+
+## Quick Start
 
 You need three things: a git repository, an LLM API key, and the `reviewgate` command.
 
@@ -56,15 +62,45 @@ Windows users can install with PowerShell:
 irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex
 ```
 
-## When To Use It
+## Example Output
 
-| Scenario | What ReviewGate does |
+```text
+━━ ReviewGate ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✖ BLOCK    1 files · 1 must-fix · 0 warn · 3 hidden
+  LLM 120k in (cache 88%) · 2.1k out
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+▌ MUST FIX
+
+  1  handler.rs:3                       security · high · 100%
+
+     SQL injection: req.user_id is interpolated directly into a DELETE statement...
+
+     Patch
+       - let q = format!("DELETE FROM users WHERE id = {}", req.user_id);
+       + let q = "DELETE FROM users WHERE id = $1";
+
+▌ NOT SHOWN
+
+  3 low-confidence findings hidden. Run with --show-filtered to inspect them.
+```
+
+## When To Use It / Not Use It
+
+| Good fit | Not a fit |
 |---|---|
-| AI changed many files at once | Reviews the diff by security, performance, logic, and other focused dimensions |
-| Review comments are noisy or scattered | Deduplicates overlapping findings and folds low-confidence feedback |
-| AI code looks plausible but may be wrong | Checks hallucinated APIs, assumption drift, and unadapted copy/paste |
-| Your team has business rules | Injects rules for permissions, money, state machines, and domain behavior on every review |
-| You want a CI gate | High-confidence issues can block merges, and incomplete reviews do not silently pass |
+| AI changes many files and reviewers need risk prioritization | Replacing unit tests, integration tests, or human review |
+| Permission, money, state-machine, or product rules need repeated checks | Auto-merging model-generated fixes without review |
+| You want a high-confidence PR/CI gate | Teams that cannot tolerate conservative WARNs |
+| You want `--intent` to check implementation against requirements/design | Environments without an LLM API key or permission to send code context to a model |
+
+## Why Trust It
+
+| Evidence | What it means |
+|---|---|
+| Public eval logs | Real PRs, revert gold sets, 45-language samples, large PRs, and intent-review checks are recorded under [`docs/evals/`](docs/evals/) |
+| Read-only by default | Except for explicit `--fix` with per-finding confirmation, ReviewGate does not write the worktree or run arbitrary shell commands |
+| Conservative gate | Low-confidence findings are folded by default; incomplete reviews, timeouts, and context overflow degrade to WARN |
 
 <details>
 <summary><b>How does it review code?</b></summary>
@@ -117,6 +153,8 @@ To upgrade later, just re-run the install command above—it always fetches the 
 
 ## Configuration
 
+ReviewGate does not lock you into a model. Use any OpenAI-compatible or Anthropic endpoint that matches your team's cost, latency, and context-window needs.
+
 **Minimal config** needs just one provider (everything else has defaults):
 
 ```toml
@@ -125,8 +163,8 @@ provider = "deepseek"
 [providers.deepseek]
 protocol = "openai"          # OpenAI-compatible (DeepSeek/Kimi/GLM/Qwen…); use "anthropic" for Anthropic
 base_url = "https://api.deepseek.com/v1"
-api_key  = "sk-..."          # or leave empty and inject via REVIEWGATE_API_KEY (recommended in CI)
 model    = "deepseek-v4-pro"
+# api_key = ""               # optional; prefer REVIEWGATE_API_KEY
 ```
 
 <details>
@@ -160,40 +198,55 @@ ReviewGate has one core engine and three thin wrappers: CLI, Claude Code Skill, 
 ### CLI
 
 ```bash
-reviewgate review                       # review current changes; 5 default dimensions, plus business when configured
-reviewgate review --dimensions security,logic
+reviewgate review                       # review current worktree changes
+reviewgate review --from main --to HEAD # review this branch against main
+reviewgate review --intent spec.md      # check implementation against requirements/design
 reviewgate review --format json         # machine-readable output
-reviewgate review --no-judge            # faster, with more false positives
-reviewgate review --show-filtered       # show folded low-confidence findings
 reviewgate review --fail-on block       # exit 1 on BLOCK, useful for CI
-reviewgate review --timeout 120         # per-dimension wall-clock timeout in seconds
-reviewgate review --samples 3           # sample each dimension multiple times and union results
-reviewgate review --fix                 # apply suggested code after per-finding y/N confirmation
-reviewgate review --judge-concurrency 4 # limit judge concurrency to avoid provider rate limits
-reviewgate review --verbose             # print per-dimension rounds and token/cache stats
-reviewgate review --commit <sha>        # review one commit; or use --from <base> --to <head>
+```
+
+<details>
+<summary><b>More CLI options</b></summary>
+
+```bash
+reviewgate review --dimensions security,logic
+reviewgate review --no-judge
+reviewgate review --show-filtered
+reviewgate review --timeout 120
+reviewgate review --samples 3
+reviewgate review --fix
+reviewgate review --judge-concurrency 4
+reviewgate review --fanout-concurrency 6
+reviewgate review --verbose
+reviewgate review --commit <sha>
+reviewgate review --commit <sha> --intent-from-commit
+```
+
+</details>
+
+### Intent / Technical Review (`--intent`)
+
+Defect review does not need to know "what this change was supposed to do"; **technical review does**. Pass this change's intent (requirement/design/acceptance criteria, as a file or `-` to read stdin) and ReviewGate runs an **additional, independent holistic agent**: starting from the diff, it actively follows callers, contracts, and tests across files to judge whether the implementation completely and correctly satisfies the intent, then emits an **acceptance checklist** (each criterion marked ✓ met / ✗ missing / ✗ breaking / ⚠ deviation / • suggestion). The intent is **split into N acceptance criteria (C1..CN) checked one by one**; any criterion not individually adjudicated falls back to `? not assessed` (so the checklist is never empty), and any unassessed criterion **degrades the result to WARN** rather than a fake PASS. It is orthogonal to the always-on `business.rules`: rules are invariants, while `--intent` is the per-change "what should this one do". Zero overhead when `--intent` is not passed.
+
+```bash
+reviewgate review --from main --to HEAD --intent docs/requirement.md
 ```
 
 `--exec-verify` lets the model generate self-contained JS/Python snippets and run them locally to verify edge cases. It is off by default. The current isolation is weak: a temporary directory, empty environment, and timeout, not an OS-level sandbox. Use it only in trusted or isolated CI environments.
 
-ReviewGate asks the model to write findings in `REVIEWGATE_OUTPUT_LANGUAGE` or the terminal locale (`LC_ALL`, `LC_MESSAGES`, `LANG`). Example:
+**Output language**: affects the **finding text** (issue descriptions / fix suggestions) **and the whole report chrome** (section headers like `MUST FIX`/`NEXT STEPS`, status words `PASS`/`WARN`/`BLOCK`, the count line, the acceptance checklist, and the live progress line) — all shown in your language under a matching locale, with English fallback for unsupported languages. Command names (`reviewgate review …`), dimension/severity identifiers, and the token-usage line stay English. The language is decided in this order:
+
+1. **`REVIEWGATE_OUTPUT_LANGUAGE`** — explicit, used verbatim (e.g. `"Chinese (Simplified)"`, `"日本語"`).
+2. **Terminal locale** — first non-empty of `LC_ALL` > `LC_MESSAGES` > `LANG`, mapped (`zh_CN`→Simplified, `zh_TW`/`zh_HK`/`zh_MO`→Traditional, `ja`, `ko`, `fr`, `de`, `es`, `pt_BR`, `ru`, `it`…).
+3. **English fallback** — none of the above, or a `C` / `POSIX` locale.
+
+Only environment variables are read (not git config or repo contents), so CI without a locale defaults to English. Force a language with:
 
 ```bash
 REVIEWGATE_OUTPUT_LANGUAGE="English" reviewgate review
 ```
 
-Example output:
-
-```text
-Gate: BLOCK x blocking merge    1 file changed · 2 trusted findings · 3 filtered
-
-handler.rs
-  x [security · high · conf 1.00] L3
-    SQL injection: req.user_id is interpolated directly into a DELETE statement...
-    -> Suggestion: use parameterized queries.
-```
-
-Exit codes for CI: `BLOCK -> 1`, otherwise `0`. Adjust with `--fail-on block|warn|never`.
+Exit codes for CI: `0` pass · `1` blocked by the gate (per `--fail-on block|warn|never`) · `2` the tool itself errored (config/network/key — not a code problem; CI should retry or alert, not treat it as a must-fix). Invalid `--fail-on` / `--format` values are rejected at parse time (exit 2), never silently coerced to the default.
 
 ```bash
 REVIEWGATE_API_KEY=$SECRET reviewgate review --timeout 300 --fail-on block
@@ -230,7 +283,33 @@ ReviewGate also ships built-in language rules for 45 languages. Custom `<languag
 
 Copy `integrations/github-action/example-workflow.yml` into `.github/workflows/`, configure the `REVIEWGATE_API_KEY` repository secret, and ReviewGate can review PRs, post summary comments, and block by confidence threshold.
 
-## Why It Is Trustworthy
+```yaml
+name: ReviewGate
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: dengmengmian/ReviewGate/integrations/github-action@v0.2.0
+        env:
+          REVIEWGATE_API_KEY: ${{ secrets.REVIEWGATE_API_KEY }}
+        with:
+          dimensions: all
+          fail-on: block
+          comment: "true"
+```
+
+## Design Details
 
 - Custom agent orchestration and LLM client, with no provider SDK dependency. ReviewGate uses `reqwest` directly and supports OpenAI-compatible and Anthropic protocols.
 - Read-only, structured tools instead of arbitrary shell or write access. `confine_path` keeps reads inside the repository.
@@ -252,17 +331,28 @@ See [`CHANGELOG.md`](CHANGELOG.md) and [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 The results below come from public samples recorded under [`docs/evals/`](docs/evals/) and are not a general accuracy guarantee. The current samples were mainly run with `deepseek-v4-pro`.
 
-- **Precision**: no false BLOCK was observed in the recorded real PRs, clean 45-language samples, and real merged commit samples. Suspected false positives are kept with investigation notes in the eval logs.
-- **Recall**: real CVE reverts, about 18 vulnerability classes, real user issues, and synthetic strong triggers are covered. The real PR revert gold set is 4/4: axios prototype-pollution SSRF, requests Content-Type parsing, gin ClientIP XFF, and ripgrep gitignore cache.
-- **Languages**: 45 built-in language rules are enabled by default and can be disabled or overridden.
-- **Large PRs / incomplete review**: context overflow, request failure, timeout, and skipped oversized files degrade to WARN and can make CI exit non-zero instead of silently passing.
-- **Known limits**: subtle multi-step arithmetic and carry/rounding off-by-one bugs remain a hard tail for static LLM review. See [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md).
+| Signal | Current record |
+|---|---|
+| False BLOCK | No false BLOCK observed in recorded real PRs, clean 45-language samples, and real merged commit samples |
+| Revert gold set | Real PR revert gold set **4/4**: axios, requests, gin, and ripgrep |
+| Language coverage | **45 built-in language rules** enabled by default; can be disabled or overridden |
+| Large PRs | Context overflow, request failure, timeout, and skipped oversized files degrade to WARN |
+| Intent review | 10 real correct-fix commits across 5 languages are **10/10 met with 0 false misses** |
+
+See [`docs/evals/`](docs/evals/) for details, [`docs/BIG_PR_HANDLING.md`](docs/BIG_PR_HANDLING.md) for large PR handling, and [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md) for known limits.
 
 ## Current Status
 
-Beta. The core path is complete: parallel dimensions, counter-evidence judge, confidence gate, business rules, built-in rules for 45 languages, duplicate detection, multi-sampling, `--fix` anchor validation, reachability grading, incomplete-review handling, CLI, Skill, and Action.
+ReviewGate's core path is ready for real PRs and CI. For shared repositories, start with `WARN` / comment-only mode before making `BLOCK` a required merge gate.
 
-CI covers fmt, clippy with `-D warnings`, tests, Windows, and Ubuntu.
+| Status | Notes |
+|---|---|
+| Ready to use | CLI, Claude Code Skill, GitHub Action, business rules, intent review, and large-PR degradation |
+| Default boundary | Review is read-only; `--fix` requires per-finding confirmation; incomplete reviews never silently PASS |
+| Still needs support | Does not replace tests or human review; subtle multi-step runtime behavior still needs test coverage |
+| Quality checks | CI covers fmt, clippy with `-D warnings`, tests, Ubuntu, and Windows |
+
+See [`CHANGELOG.md`](CHANGELOG.md) for release notes.
 
 ## License
 

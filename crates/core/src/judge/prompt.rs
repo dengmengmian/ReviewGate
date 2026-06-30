@@ -80,6 +80,8 @@ mod tests {
             reachability: crate::model::Reachability::default(),
             filtered: false,
             agreed_dimensions: 1,
+            criterion: None,
+            intent_status: None,
         };
         let prompt = user_prompt(&f);
         assert!(prompt.contains("Finding to verify"));

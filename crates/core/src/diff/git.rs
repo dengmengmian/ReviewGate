@@ -9,7 +9,7 @@ pub async fn git(args: &[&str]) -> Result<String> {
         .args(args)
         .output()
         .await
-        .with_context(|| format!("执行 git {:?} 失败", args))?;
+        .with_context(|| format!("failed to run git {:?}", args))?;
     if !out.status.success() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         anyhow::bail!(
@@ -29,7 +29,7 @@ pub async fn git_lenient(args: &[&str]) -> Result<(i32, String)> {
         .args(args)
         .output()
         .await
-        .with_context(|| format!("执行 git {:?} 失败", args))?;
+        .with_context(|| format!("failed to run git {:?}", args))?;
     let code = out.status.code().unwrap_or(-1);
     Ok((code, String::from_utf8_lossy(&out.stdout).into_owned()))
 }
