@@ -1,6 +1,6 @@
 ---
 name: reviewgate
-description: 在代码合入主干前，用多个并行 Agent 做一次质量判断——安全/性能/逻辑/规范/AI 代码专项（及可选业务规则）分维度审查，带置信度过滤与质量闸口，只留下可信问题。当用户想审查当前改动、做合并前质量闸口、或检查 AI 生成代码时使用。
+description: 调用 ReviewGate CLI（reviewgate review）对当前 git 改动做合并前质量闸口——多 Agent 并行分维度审查（安全/性能/逻辑/规范/AI 代码专项 + 可选业务规则）、证伪 Judge、置信度过滤，只留可信问题并给出 PASS/WARN/BLOCK 判定。当用户提到 ReviewGate / reviewgate / 质量闸口、或想用 ReviewGate 审查改动做 pre-merge gate 时使用；显式触发用 /reviewgate。注意这与 Claude Code 内置的通用 code-review 不同：本 skill 专门驱动外部 reviewgate 命令。
 ---
 
 # ReviewGate Skill
@@ -36,15 +36,15 @@ cp integrations/claude-skill/SKILL.md ~/.claude/skills/reviewgate/SKILL.md
    - 只看部分维度：`--dimensions security,logic`。
    - 更快但误报略多：`--no-judge`。
    - **慢端点提示**：deepseek 等推理模型每轮慢，单维度可能跑几分钟；`--timeout` 到点会跳过该维度但**保留已确认的发现并如实告警**，不会把"没审完"伪装成"通过"。
-3. **解读 JSON**：每条 finding 含
-   `dimension / confidence(0–1) / severity(high|med|low) / path / start_line / end_line / message / suggestion / evidence / filtered / agreed_dimensions`。
+3. **解读 JSON**：顶层是一个信封 `{ decision, incomplete, files_changed, summary, warnings[], findings[], usage }`——`decision` 为 `pass|warn|block`，问题都在 `findings[]` 里。每条 finding 含
+   `path / start_line / end_line / dimension / severity(high|med|low) / confidence(0–1) / message / suggestion（修复思路，文字）/ suggestion_code（可直接套用的替换代码，可能为空串）/ existing_code（原始代码片段）/ evidence / filtered / agreed_dimensions`。
    - `filtered=true`：被闸口过滤的低置信项，**默认忽略**，除非用户要看全部。
    - `agreed_dimensions ≥ 2`：多个维度独立指向同一处 → **更可信**，优先汇报。
    - 排序：先 `severity`（high 优先）再 `confidence`。
    - **未审完检查（重要）**：顶层 `incomplete=true` 或 `warnings` 非空 → 有维度/单元因超时、上下文超限或请求失败**没审完**。此时**绝不能报告"无问题/通过"**，必须明确告知用户"审查不完整"，并建议重跑（如调大 `--timeout`）或人工补审。
 4. **汇报**：用简洁中文列出可信问题（`path:start_line` + 维度 + 一句话 + 建议），并说明闸口判定。
-   退出码：`BLOCK→1`，否则 `0`（`--fail-on block|warn|never` 可调）。
-5. **修复**（用户要求时）：逐条按 `suggestion` 改，改完再次 `reviewgate review` 复核。
+   退出码：`0`=放行 · `1`=被闸口拦截**或审查未完成** · `2`=工具自身出错（配置/网络/密钥）。`--fail-on block|warn|never` 调节闸口判定；只要 `incomplete=true` 即便 decision 是 warn/pass 也会非 0 退出（杜绝漏审放行）。
+5. **修复**（用户要求时）：优先套用 `suggestion_code`（可直接替换的代码；为空串则按 `suggestion` 的文字思路改），用 `existing_code` / `start_line` 定位，改完再次 `reviewgate review` 复核。
 
 ## 注意
 
