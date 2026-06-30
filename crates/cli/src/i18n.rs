@@ -33,7 +33,18 @@ impl Lang {
 
     // ── 顶部计数行 ──
     pub fn no_changes(self) -> &'static str {
-        self.pick("No changes detected.", "未检测到变更。")
+        self.pick(
+            "No changes detected.\n\
+             ReviewGate reviews the working tree by default (git diff HEAD), and there is no uncommitted diff right now.\n\
+             To review committed work, point it at a commit or a range, e.g.:\n  \
+               reviewgate review --commit HEAD           review the latest commit\n  \
+               reviewgate review --from main --to HEAD   review this branch against main",
+            "未检测到变更。\n\
+             ReviewGate 默认审查工作区改动（git diff HEAD），当前没有未提交的 diff。\n\
+             如需审查已提交内容，可指定提交或范围，例如：\n  \
+               reviewgate review --commit HEAD           审查最近一次提交\n  \
+               reviewgate review --from main --to HEAD   审查当前分支相对 main 的改动",
+        )
     }
     pub fn files(self, n: usize) -> String {
         match self {

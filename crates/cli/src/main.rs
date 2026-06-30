@@ -297,7 +297,7 @@ async fn agent_run(dimension: &str) -> anyhow::Result<()> {
     let root = diff::git::repo_root().await?;
     let d = Arc::new(diff::collect(&DiffMode::Workspace).await?);
     if d.files.is_empty() {
-        eprintln!("No changes detected.");
+        eprintln!("{}", crate::i18n::Lang::detect().no_changes());
         return Ok(());
     }
     // 只传共享大块；维度聚焦块由 run_agent 注入（见 review 路径说明）。
