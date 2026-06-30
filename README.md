@@ -195,7 +195,7 @@ rules = [
 
 ## 接入方式
 
-ReviewGate 一个引擎、多种形态，都只是调同一个 `reviewgate` CLI。**CLI 为主、GitHub Action 用于 PR/CI**，二者经真实使用打磨；**Claude Code Skill 与 Codex 是更薄的 agent 指令壳（experimental）**——已按当前 JSON schema 校准，但成熟度与覆盖面不及前两者。
+ReviewGate 一个引擎、多种形态，都只是调同一个 `reviewgate` CLI。**CLI 为主、GitHub Action 用于 PR/CI**，二者经真实使用打磨；**Claude Code Skill、Codex 与 AtomCode 是更薄的 agent 指令壳（experimental）**——已按当前 JSON schema 校准，但成熟度与覆盖面不及前两者。
 
 ### 1. CLI（主形态）
 
@@ -319,6 +319,16 @@ curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integr
 ```
 
 它把一段 ReviewGate 指令并入 `./AGENTS.md`，并生成 `reviewgate.toml` + `.reviewgate/rules/` 模板。之后在 Codex 里说"用 ReviewGate 审查我的改动"即可。与 Claude Skill 同源、同 JSON schema。
+
+### 5. AtomCode（experimental）
+
+[AtomCode](https://github.com/dengmengmian/AtomCode) 用与 Claude Code 相同的 `SKILL.md` 格式，会自动发现 `.atomcode/skills/`、`.claude/skills/`（项目与全局）。一键装入项目级 skill（与 claude-skill 同一份 SKILL.md）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integrations/atomcode/install-into-project.sh | sh
+```
+
+它生成 `.atomcode/skills/reviewgate/SKILL.md` + `reviewgate.toml` + `.reviewgate/rules/` 模板。若你已装过 claude-skill，AtomCode 会自动发现 `.claude/skills/`，无需重复安装。
 
 ## 设计细节
 

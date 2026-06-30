@@ -193,7 +193,7 @@ rules = [
 
 ## Ways To Use It
 
-ReviewGate has one core engine and several wrappers, all of which just call the same `reviewgate` CLI. **CLI is primary and the GitHub Action is for PR/CI** — both are exercised in real use. **The Claude Code Skill and Codex are thinner agent-instruction shells (experimental)**: calibrated to the current JSON schema, but less battle-tested than the first two.
+ReviewGate has one core engine and several wrappers, all of which just call the same `reviewgate` CLI. **CLI is primary and the GitHub Action is for PR/CI** — both are exercised in real use. **The Claude Code Skill, Codex, and AtomCode are thinner agent-instruction shells (experimental)**: calibrated to the current JSON schema, but less battle-tested than the first two.
 
 ### CLI
 
@@ -320,6 +320,16 @@ curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integr
 ```
 
 It appends a ReviewGate section to `./AGENTS.md` and creates `reviewgate.toml` + `.reviewgate/rules/` templates. Then tell Codex to "review my changes with ReviewGate". Same source and JSON schema as the Claude Skill.
+
+### 5. AtomCode (experimental)
+
+[AtomCode](https://github.com/dengmengmian/AtomCode) uses the same `SKILL.md` format as Claude Code and auto-discovers `.atomcode/skills/` and `.claude/skills/` (project and global). Install the project-level skill (the same SKILL.md as claude-skill) in one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integrations/atomcode/install-into-project.sh | sh
+```
+
+It creates `.atomcode/skills/reviewgate/SKILL.md` + `reviewgate.toml` + `.reviewgate/rules/` templates. If you already installed claude-skill, AtomCode auto-discovers `.claude/skills/`, so no separate install is needed.
 
 ## Design Details
 

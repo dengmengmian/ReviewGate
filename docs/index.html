@@ -511,7 +511,7 @@ EOF
     <div class="sec-head">
       <span class="eyebrow" data-zh="接入方式" data-en="Integrations">接入方式</span>
       <h2 data-zh="一个引擎，多种形态" data-en="One engine, several forms">一个引擎，多种形态</h2>
-      <p data-zh="都只是调同一个 reviewgate CLI。CLI 为主、Action 用于 PR/CI；Claude Skill 与 Codex 是更薄的 agent 壳（experimental）。" data-en="All just call the same reviewgate CLI. CLI is primary and the Action is for PR/CI; the Claude Skill and Codex are thinner agent shells (experimental).">都只是调同一个 reviewgate CLI。CLI 为主、Action 用于 PR/CI；Claude Skill 与 Codex 是更薄的 agent 壳（experimental）。</p>
+      <p data-zh="都只是调同一个 reviewgate CLI。CLI 为主、Action 用于 PR/CI；Claude Skill、Codex 与 AtomCode 是更薄的 agent 壳（experimental）。" data-en="All just call the same reviewgate CLI. CLI is primary and the Action is for PR/CI; the Claude Skill, Codex, and AtomCode are thinner agent shells (experimental).">都只是调同一个 reviewgate CLI。CLI 为主、Action 用于 PR/CI；Claude Skill、Codex 与 AtomCode 是更薄的 agent 壳（experimental）。</p>
     </div>
     <div class="ints">
       <div class="int">
@@ -535,13 +535,14 @@ EOF
       </div>
       <div class="int">
         <span class="tag exp">experimental</span>
-        <h3 data-zh="Agent 壳：Claude Skill / Codex" data-en="Agent shells: Claude Skill / Codex">Agent 壳：Claude Skill / Codex</h3>
-        <p data-zh="装进 Claude Code（用 /reviewgate 触发）或 Codex（AGENTS.md），在对话里调同一套引擎。比 CLI/Action 更薄、较新。"
-           data-en="Drop into Claude Code (trigger with /reviewgate) or Codex (AGENTS.md) to call the same engine from chat. Thinner and newer than CLI/Action.">
-          装进 Claude Code（用 /reviewgate 触发）或 Codex（AGENTS.md），在对话里调同一套引擎。比 CLI/Action 更薄、较新。
+        <h3 data-zh="Agent 壳：Claude / Codex / AtomCode" data-en="Agent shells: Claude / Codex / AtomCode">Agent 壳：Claude / Codex / AtomCode</h3>
+        <p data-zh="装进 Claude Code（用 /reviewgate 触发）、Codex（AGENTS.md）或 AtomCode（.atomcode/skills），在对话里调同一套引擎。比 CLI/Action 更薄、较新。"
+           data-en="Drop into Claude Code (trigger with /reviewgate), Codex (AGENTS.md), or AtomCode (.atomcode/skills) to call the same engine from chat. Thinner and newer than CLI/Action.">
+          装进 Claude Code（用 /reviewgate 触发）、Codex（AGENTS.md）或 AtomCode（.atomcode/skills），在对话里调同一套引擎。比 CLI/Action 更薄、较新。
         </p>
         <pre><span class="prompt">$</span> integrations/claude-skill/install-into-project.sh
-<span class="prompt">$</span> integrations/codex/install-into-project.sh</pre>
+<span class="prompt">$</span> integrations/codex/install-into-project.sh
+<span class="prompt">$</span> integrations/atomcode/install-into-project.sh</pre>
       </div>
     </div>
   </div>
