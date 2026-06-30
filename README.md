@@ -345,8 +345,15 @@ jobs:
 
 ## 当前状态
 
-Beta：核心链路完整（多维并行 + 证伪 Judge + 置信度闸口 + 业务规则 + 意图/技术评审 + 45 语言内置规则 + 重复检测 + 多采样 + `--fix` 锚点校验 + reachability 分级 + 大 diff 自适应单元/未审完不静默放行 + CLI/Skill/Action），
-含 CI（fmt/clippy -D warnings/test，Win+Ubuntu）、只读安全边界、缓存与超时兜底。
+ReviewGate 目前处于 **Beta**，适合在个人仓库、团队 PR 或 CI 里试用；建议先以 `WARN` / 评论模式观察一段时间，再把 `BLOCK` 接入强制合并闸口。
+
+| 状态 | 说明 |
+|---|---|
+| 已可用 | CLI、Claude Code Skill、GitHub Action、业务规则、意图评审、大 PR 降级处理 |
+| 默认边界 | 审查链路只读；`--fix` 需要逐条确认；未审完不会静默 PASS |
+| 仍需配合 | 不能替代测试和人工 review；细微多步计算、强运行时语义仍建议靠测试覆盖 |
+| 质量保障 | CI 覆盖 fmt、clippy `-D warnings`、测试，运行于 Ubuntu 和 Windows |
+
 变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## License

@@ -343,9 +343,16 @@ See [`docs/evals/`](docs/evals/) for details, [`docs/BIG_PR_HANDLING.md`](docs/B
 
 ## Current Status
 
-Beta. The core path is complete: parallel dimensions, counter-evidence judge, confidence gate, business rules, intent/technical review, built-in rules for 45 languages, duplicate detection, multi-sampling, `--fix` anchor validation, reachability grading, incomplete-review handling, CLI, Skill, and Action.
+ReviewGate is currently in **Beta**. It is ready to try in personal repositories, team PRs, and CI; for shared repositories, start with `WARN` / comment-only mode before making `BLOCK` a required merge gate.
 
-CI covers fmt, clippy with `-D warnings`, tests, Windows, and Ubuntu.
+| Status | Notes |
+|---|---|
+| Ready to use | CLI, Claude Code Skill, GitHub Action, business rules, intent review, and large-PR degradation |
+| Default boundary | Review is read-only; `--fix` requires per-finding confirmation; incomplete reviews never silently PASS |
+| Still needs support | Does not replace tests or human review; subtle multi-step runtime behavior still needs test coverage |
+| Quality checks | CI covers fmt, clippy with `-D warnings`, tests, Ubuntu, and Windows |
+
+See [`CHANGELOG.md`](CHANGELOG.md) for release notes.
 
 ## License
 
