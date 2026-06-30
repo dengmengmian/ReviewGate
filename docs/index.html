@@ -97,8 +97,8 @@
   .pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
   .card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:30px;transition:.18s}
   .card:hover{border-color:#bdeae3;box-shadow:0 14px 34px rgba(20,184,166,.10);transform:translateY(-2px)}
-  .card .ic{width:46px;height:46px;border-radius:12px;background:var(--teal-light);display:grid;place-items:center;font-size:22px;margin-bottom:18px}
   .card h3{font-size:19px;color:var(--ink);font-weight:700}
+  .card h3::before{content:"";display:block;width:30px;height:3px;border-radius:2px;background:var(--teal);margin-bottom:16px}
   .card p{color:var(--muted);font-size:15px;margin-top:9px}
 
   /* how it works */
@@ -111,8 +111,7 @@
 
   /* dimensions */
   .dims{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-  .dim-card{display:flex;gap:14px;padding:20px;border:1px solid var(--border);border-radius:13px;background:#fff}
-  .dim-card .emoji{font-size:24px;line-height:1}
+  .dim-card{padding:18px 20px;border:1px solid var(--border);border-left:3px solid var(--teal);border-radius:0 13px 13px 0;background:#fff}
   .dim-card h4{font-family:var(--mono);font-size:14px;color:var(--teal-dark);font-weight:700}
   .dim-card p{font-size:13.5px;color:var(--muted);margin-top:4px}
 
@@ -185,7 +184,7 @@
     </div>
     <div class="right">
       <button class="langbtn" id="lang" aria-label="切换语言">EN</button>
-      <a class="btn btn-primary" href="https://github.com/dengmengmian/ReviewGate" target="_blank" rel="noopener">GitHub ★</a>
+      <a class="btn btn-primary" href="https://github.com/dengmengmian/ReviewGate" target="_blank" rel="noopener">GitHub</a>
     </div>
   </div>
 </nav>
@@ -193,7 +192,7 @@
 <header class="hero" id="top">
   <div class="wrap hero-grid">
     <div>
-      <span class="pill">v0.2.0 · MIT · <b>Rust</b></span>
+      <span class="pill">MIT License · <b>Rust</b></span>
       <h1>
         <span data-zh="AI 代码的" data-en="A pre-merge ">AI 代码的</span><br>
         <span class="accent" data-zh="合并前质量闸口" data-en="quality gate for AI code">合并前质量闸口</span>
@@ -257,7 +256,6 @@
     </div>
     <div class="pillars">
       <div class="card">
-        <div class="ic">🛡️</div>
         <h3 data-zh="拦高危" data-en="Catch high-risk">拦高危</h3>
         <p data-zh="按安全、逻辑、性能、业务规则等维度并行审查，把 must-fix 放到最前面，reviewer 一眼看到最该处理的地方。"
            data-en="Parallel review across security, logic, performance, and business-rule dimensions — must-fix issues surface first.">
@@ -265,7 +263,6 @@
         </p>
       </div>
       <div class="card">
-        <div class="ic">🔇</div>
         <h3 data-zh="降噪音" data-en="Cut the noise">降噪音</h3>
         <p data-zh="跨维度去重、独立证伪、按置信度过滤，低价值反馈默认折叠——少一点“啰嗦但没用”的 review 评论。"
            data-en="Cross-dimension dedup, counter-evidence judging, and confidence filtering fold low-value feedback by default.">
@@ -273,7 +270,6 @@
         </p>
       </div>
       <div class="card">
-        <div class="ic">🚦</div>
         <h3 data-zh="不假通过" data-en="No fake pass">不假通过</h3>
         <p data-zh="超时、上下文过大、单元未审完都会降级 WARN 并让 CI 非 0 退出，绝不把不完整的审查伪装成 PASS。"
            data-en="Timeouts, oversized context, and incomplete units degrade to WARN with a non-zero exit — never a fake PASS.">
@@ -326,12 +322,12 @@
       <h2 style="font-size:24px" data-zh="六个审查维度" data-en="Six review dimensions">六个审查维度</h2>
     </div>
     <div class="dims">
-      <div class="dim-card"><span class="emoji">🔒</span><div><h4>security</h4><p data-zh="注入、越权、密钥泄露、不安全反序列化" data-en="injection, authz bypass, secret leaks, unsafe deserialization">注入、越权、密钥泄露、不安全反序列化</p></div></div>
-      <div class="dim-card"><span class="emoji">⚡</span><div><h4>perf</h4><p data-zh="N+1、无谓拷贝、热路径复杂度、阻塞调用" data-en="N+1 queries, needless copies, hot-path complexity, blocking calls">N+1、无谓拷贝、热路径复杂度、阻塞调用</p></div></div>
-      <div class="dim-card"><span class="emoji">🧠</span><div><h4>logic</h4><p data-zh="边界条件、空值、错误处理、并发竞态" data-en="edge cases, nulls, error paths, concurrency races">边界条件、空值、错误处理、并发竞态</p></div></div>
-      <div class="dim-card"><span class="emoji">📐</span><div><h4>style</h4><p data-zh="命名、可读性、重复代码" data-en="naming, readability, duplicated code">命名、可读性、重复代码</p></div></div>
-      <div class="dim-card"><span class="emoji">🤖</span><div><h4>ai_smell</h4><p data-zh="幻觉 API、看似合理实则错误、假设漂移" data-en="hallucinated APIs, plausible-but-wrong code, assumption drift">幻觉 API、看似合理实则错误、假设漂移</p></div></div>
-      <div class="dim-card"><span class="emoji">📋</span><div><h4>business</h4><p data-zh="业务规则、权限边界、状态机、金额/订单/库存" data-en="business rules, permission boundaries, state machines, money/orders">业务规则、权限边界、状态机、金额/订单/库存</p></div></div>
+      <div class="dim-card"><h4>security</h4><p data-zh="注入、越权、密钥泄露、不安全反序列化" data-en="injection, authz bypass, secret leaks, unsafe deserialization">注入、越权、密钥泄露、不安全反序列化</p></div>
+      <div class="dim-card"><h4>perf</h4><p data-zh="N+1、无谓拷贝、热路径复杂度、阻塞调用" data-en="N+1 queries, needless copies, hot-path complexity, blocking calls">N+1、无谓拷贝、热路径复杂度、阻塞调用</p></div>
+      <div class="dim-card"><h4>logic</h4><p data-zh="边界条件、空值、错误处理、并发竞态" data-en="edge cases, nulls, error paths, concurrency races">边界条件、空值、错误处理、并发竞态</p></div>
+      <div class="dim-card"><h4>style</h4><p data-zh="命名、可读性、重复代码" data-en="naming, readability, duplicated code">命名、可读性、重复代码</p></div>
+      <div class="dim-card"><h4>ai_smell</h4><p data-zh="幻觉 API、看似合理实则错误、假设漂移" data-en="hallucinated APIs, plausible-but-wrong code, assumption drift">幻觉 API、看似合理实则错误、假设漂移</p></div>
+      <div class="dim-card"><h4>business</h4><p data-zh="业务规则、权限边界、状态机、金额/订单/库存" data-en="business rules, permission boundaries, state machines, money/orders">业务规则、权限边界、状态机、金额/订单/库存</p></div>
     </div>
   </div>
 </section>
@@ -345,7 +341,6 @@
     </div>
     <div class="trust-cards">
       <div class="card">
-        <div class="ic">📊</div>
         <h3 data-zh="公开评测留痕" data-en="Public eval logs">公开评测留痕</h3>
         <p data-zh="真实 PR、revert 金标准、45 语言样例、大 PR、意图评审结果都记录在 docs/evals/，可复查。"
            data-en="Real PRs, revert gold sets, 45-language samples, large PRs, and intent reviews are all logged under docs/evals/.">
@@ -353,7 +348,6 @@
         </p>
       </div>
       <div class="card">
-        <div class="ic">🔐</div>
         <h3 data-zh="默认只读" data-en="Read-only by default">默认只读</h3>
         <p data-zh="除显式 --fix 且逐条确认外，审查链路不写工作区、不执行任意 shell 命令。"
            data-en="Except for explicit --fix with per-finding confirmation, it never writes your worktree or runs arbitrary shell.">
@@ -361,7 +355,6 @@
         </p>
       </div>
       <div class="card">
-        <div class="ic">🎚️</div>
         <h3 data-zh="保守闸口" data-en="Conservative gate">保守闸口</h3>
         <p data-zh="低置信默认折叠；超时、上下文超限、未审完一律降级 WARN，宁可保守也不漏审放行。"
            data-en="Low-confidence folds by default; timeouts, overflow, and incomplete reviews degrade to WARN rather than wave a PR through.">
@@ -372,7 +365,7 @@
 
     <div class="two" style="margin-top:40px">
       <div class="col good">
-        <h3>👍 <span data-zh="适合" data-en="Good fit">适合</span></h3>
+        <h3><span data-zh="适合" data-en="Good fit">适合</span></h3>
         <ul>
           <li data-zh="AI 一次改很多文件，reviewer 想先知道哪里最危险" data-en="AI changes many files and reviewers need risk prioritization">AI 一次改很多文件，reviewer 想先知道哪里最危险</li>
           <li data-zh="团队有权限、金额、状态机等业务规则需反复检查" data-en="Permission, money, or state-machine rules need repeated checks">团队有权限、金额、状态机等业务规则需反复检查</li>
@@ -381,7 +374,7 @@
         </ul>
       </div>
       <div class="col bad">
-        <h3>🚫 <span data-zh="不适合" data-en="Not a fit">不适合</span></h3>
+        <h3><span data-zh="不适合" data-en="Not a fit">不适合</span></h3>
         <ul>
           <li data-zh="替代单元测试、集成测试或人工 review" data-en="Replacing unit tests, integration tests, or human review">替代单元测试、集成测试或人工 review</li>
           <li data-zh="让模型自动改代码并无人确认地合并" data-en="Auto-merging model-generated fixes with no review">让模型自动改代码并无人确认地合并</li>
@@ -407,7 +400,7 @@
     <div class="install-grid">
       <div>
         <div class="codeblock">
-          <div class="cb-head"><span>① <span data-zh="安装" data-en="Install">安装</span> — Linux / macOS</div>
+          <div class="cb-head"><span>① <span data-zh="安装" data-en="Install">安装</span> — Linux / macOS</span>
             <button class="copy" data-copy="curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh" data-zh="复制" data-en="Copy">复制</button></div>
 <pre><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/\
     dengmengmian/ReviewGate/main/install.sh | sh</pre>
@@ -425,7 +418,7 @@
       </div>
       <div>
         <div class="codeblock">
-          <div class="cb-head"><span>② <span data-zh="全局配置 + 审查" data-en="Configure + review">全局配置 + 审查</span></div>
+          <div class="cb-head"><span>② <span data-zh="全局配置 + 审查" data-en="Configure + review">全局配置 + 审查</span></span>
             <button class="copy" data-copy='mkdir -p ~/.reviewgate
 cat > ~/.reviewgate/config.toml <<EOF
 provider = "deepseek"
@@ -497,7 +490,7 @@ EOF
           在 PR 上自动审查并回贴摘要 + 行内 suggestion，作者一键应用、人来把关。
         </p>
         <pre><span class="prompt">uses:</span> dengmengmian/ReviewGate/
-      integrations/github-action@v0.2.0</pre>
+      integrations/github-action@v0</pre>
       </div>
     </div>
   </div>
