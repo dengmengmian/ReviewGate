@@ -280,6 +280,32 @@ ReviewGate also ships built-in language rules for 45 languages. Custom `<languag
 
 Copy `integrations/github-action/example-workflow.yml` into `.github/workflows/`, configure the `REVIEWGATE_API_KEY` repository secret, and ReviewGate can review PRs, post summary comments, and block by confidence threshold.
 
+```yaml
+name: ReviewGate
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: dengmengmian/ReviewGate/integrations/github-action@v0.1.4
+        env:
+          REVIEWGATE_API_KEY: ${{ secrets.REVIEWGATE_API_KEY }}
+        with:
+          dimensions: all
+          fail-on: block
+          comment: "true"
+```
+
 ## Why It Is Trustworthy
 
 - Public evaluation notes are kept under [`docs/evals/`](docs/evals/): real PRs, revert gold sets, 45-language samples, large PRs, and intent-review checks.

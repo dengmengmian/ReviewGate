@@ -281,6 +281,32 @@ curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integr
 
 把 `integrations/github-action/example-workflow.yml` 放到 `.github/workflows/`，在仓库 Secrets 配置 `REVIEWGATE_API_KEY`。PR 上自动审查、发摘要评论、按置信度阻断合并。
 
+```yaml
+name: ReviewGate
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: dengmengmian/ReviewGate/integrations/github-action@v0.1.4
+        env:
+          REVIEWGATE_API_KEY: ${{ secrets.REVIEWGATE_API_KEY }}
+        with:
+          dimensions: all
+          fail-on: block
+          comment: "true"
+```
+
 ## 为什么可信
 
 - 有公开评测留痕：真实 PR、revert 金标准、45 语言样例、大 PR、意图评审结果都记录在 [`docs/evals/`](docs/evals/)。
