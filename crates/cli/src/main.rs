@@ -586,12 +586,24 @@ mod tests {
     #[test]
     fn exit_code_gate_and_fail_on_matrix() {
         // block + fail-on=block/warn → 1；fail-on=never → 0。
-        assert_eq!(exit_code(GateDecision::Block, false, false, FailOn::Block), 1);
-        assert_eq!(exit_code(GateDecision::Block, false, false, FailOn::Warn), 1);
-        assert_eq!(exit_code(GateDecision::Block, false, false, FailOn::Never), 0);
+        assert_eq!(
+            exit_code(GateDecision::Block, false, false, FailOn::Block),
+            1
+        );
+        assert_eq!(
+            exit_code(GateDecision::Block, false, false, FailOn::Warn),
+            1
+        );
+        assert_eq!(
+            exit_code(GateDecision::Block, false, false, FailOn::Never),
+            0
+        );
         // warn 只在 fail-on=warn 时非 0。
         assert_eq!(exit_code(GateDecision::Warn, false, false, FailOn::Warn), 1);
-        assert_eq!(exit_code(GateDecision::Warn, false, false, FailOn::Block), 0);
+        assert_eq!(
+            exit_code(GateDecision::Warn, false, false, FailOn::Block),
+            0
+        );
         // pass 永远 0。
         assert_eq!(exit_code(GateDecision::Pass, false, false, FailOn::Warn), 0);
     }
