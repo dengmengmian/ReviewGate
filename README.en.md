@@ -18,6 +18,20 @@
 
 ReviewGate runs before PRs are merged and gives AI-generated, or AI-heavy, code a second review pass. It does not replace human review. It pre-filters the work for reviewers by promoting high-risk findings and folding low-confidence noise by default.
 
+## Positioning
+
+ReviewGate is a pre-merge quality gate for teams that write code with AI: **catch security, logic, and business-rule risks first, while suppressing low-value review noise**.
+
+| Current pain | What ReviewGate gives you |
+|---|---|
+| AI changes code quickly, but reviewers do not know where the risk is | Parallel review by security, logic, performance, business rules, and other focused dimensions |
+| AI review is verbose, repetitive, or too speculative | Deduplication, counter-evidence judging, and confidence-based filtering |
+| Team rules live in people's heads | Permission, money, state-machine, and language rules can run on every PR |
+| You want a CI gate but cannot accept fake passes | Incomplete reviews, timeouts, and oversized context degrade to WARN instead of pretending to pass |
+
+**Best fit**: teams with heavy AI-assisted development, many PRs, review bottlenecks, and clear product/security rules.
+**Not a fit**: replacing tests, replacing human reviewers, or auto-merging model-generated fixes without review.
+
 ## Start In 30 Seconds
 
 You need three things: a git repository, an LLM API key, and the `reviewgate` command.
@@ -268,6 +282,9 @@ Copy `integrations/github-action/example-workflow.yml` into `.github/workflows/`
 
 ## Why It Is Trustworthy
 
+- Public evaluation notes are kept under [`docs/evals/`](docs/evals/): real PRs, revert gold sets, 45-language samples, large PRs, and intent-review checks.
+- The product bias is "less noise, no fake pass": low-confidence findings are folded by default; incomplete reviews, timeouts, and context overflow degrade to WARN.
+- The default review path is read-only. Except for explicit `--fix` with per-finding confirmation, ReviewGate does not write the worktree or run arbitrary shell commands.
 - Custom agent orchestration and LLM client, with no provider SDK dependency. ReviewGate uses `reqwest` directly and supports OpenAI-compatible and Anthropic protocols.
 - Read-only, structured tools instead of arbitrary shell or write access. `confine_path` keeps reads inside the repository.
 - Code context retrieval through tree-sitter symbol lookup and function-body extraction, with grep fallback.
