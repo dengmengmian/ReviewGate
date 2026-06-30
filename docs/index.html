@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh" data-lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReviewGate — AI 代码的合并前质量闸口</title>
+<meta name="description" content="ReviewGate：给 AI 生成代码准备的合并前质量闸口。按维度并行审查，优先拦截高风险问题，减少低价值 review 噪音，绝不把不完整审查伪装成 PASS。">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ReviewGate — 合并前质量闸口">
+<meta property="og:description" content="优先拦截高风险问题，减少低价值 review 噪音。CLI / Claude Skill / GitHub Action 三种形态接入。">
+<meta property="og:image" content="assets/logo.svg">
+<meta name="theme-color" content="#14B8A6">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --teal:#14B8A6; --teal-dark:#0F766E; --teal-light:#F0FDFA;
+    --slate:#94A3B8; --ink:#0B1220; --ink-2:#111a2e;
+    --bg:#ffffff; --muted:#64748B; --text:#1E293B; --border:#E2E8F0;
+    --red:#F43F5E; --amber:#F59E0B; --green:#10B981;
+    --radius:16px; --maxw:1120px;
+    --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:var(--font);color:var(--text);background:var(--bg);line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  section{padding:96px 0}
+  h2{font-size:34px;font-weight:800;letter-spacing:-.02em;color:var(--ink)}
+  .sec-head{text-align:center;max-width:680px;margin:0 auto 56px}
+  .sec-head p{color:var(--muted);font-size:17px;margin-top:14px}
+  .eyebrow{color:var(--teal-dark);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase}
+
+  /* lang toggle */
+  [data-lang="zh"] .en{display:none}
+  [data-lang="en"] .zh{display:none}
+
+  /* nav */
+  nav{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.82);backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--border)}
+  nav .wrap{display:flex;align-items:center;gap:28px;height:64px}
+  nav .brand img{height:30px;display:block}
+  nav .links{display:flex;gap:26px;margin-left:8px;font-size:15px;font-weight:500;color:var(--muted)}
+  nav .links a:hover{color:var(--ink)}
+  nav .right{margin-left:auto;display:flex;align-items:center;gap:14px}
+  .langbtn{font:inherit;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:#fff;color:var(--muted);padding:6px 12px;border-radius:9px}
+  .langbtn:hover{border-color:var(--teal);color:var(--teal-dark)}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:15px;padding:11px 20px;border-radius:11px;cursor:pointer;border:1px solid transparent;transition:.15s}
+  .btn-primary{background:var(--teal);color:#fff}
+  .btn-primary:hover{background:var(--teal-dark)}
+  .btn-ghost{background:#fff;color:var(--ink);border-color:var(--border)}
+  .btn-ghost:hover{border-color:var(--slate)}
+  nav .btn{padding:9px 16px;font-size:14px}
+  .links a, nav .langbtn{white-space:nowrap}
+
+  /* hero */
+  .hero{background:radial-gradient(1200px 600px at 70% -10%,rgba(20,184,166,.12),transparent 60%),linear-gradient(180deg,#fff,#f8fafc);padding:80px 0 72px;border-bottom:1px solid var(--border)}
+  .hero-grid{display:grid;grid-template-columns:1.05fr 1fr;gap:56px;align-items:center}
+  .pill{display:inline-flex;align-items:center;gap:8px;background:var(--teal-light);color:var(--teal-dark);font-weight:600;font-size:13px;padding:6px 13px;border-radius:999px;border:1px solid #ccfbf1}
+  .pill b{color:var(--teal-dark)}
+  h1{font-size:52px;line-height:1.08;font-weight:800;letter-spacing:-.03em;color:var(--ink);margin:22px 0 0}
+  h1 .accent{color:var(--teal)}
+  .lead{font-size:19px;color:var(--muted);margin-top:20px;max-width:540px}
+  .cta{display:flex;gap:14px;margin-top:32px;flex-wrap:wrap}
+  .trust{display:flex;gap:22px;flex-wrap:wrap;margin-top:30px;font-size:13.5px;color:var(--muted)}
+  .trust span{display:inline-flex;align-items:center;gap:7px}
+  .trust .dot{width:7px;height:7px;border-radius:50%;background:var(--teal)}
+
+  /* code one-liner */
+  .oneliner{margin-top:26px;display:flex;align-items:center;background:var(--ink);border-radius:12px;padding:4px 4px 4px 18px;max-width:560px;box-shadow:0 10px 30px rgba(11,18,32,.16)}
+  .oneliner code{font-family:var(--mono);font-size:13.5px;color:#cbd5e1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+  .oneliner code .prompt{color:var(--teal)}
+  .copy{font:inherit;font-size:12.5px;font-weight:600;color:#fff;background:#1f2c47;border:0;border-radius:9px;padding:9px 14px;cursor:pointer;white-space:nowrap}
+  .copy:hover{background:#28385a}
+  .copy.ok{background:var(--teal-dark)}
+
+  /* terminal */
+  .term{background:#0c1424;border-radius:14px;box-shadow:0 24px 60px rgba(11,18,32,.28);overflow:hidden;border:1px solid #1c2740}
+  .term-bar{display:flex;align-items:center;gap:8px;padding:13px 16px;background:#111c30;border-bottom:1px solid #1c2740}
+  .term-bar i{width:12px;height:12px;border-radius:50%;display:block}
+  .term-bar .r{background:#ff5f57}.term-bar .y{background:#febc2e}.term-bar .g{background:#28c840}
+  .term-bar span{margin-left:8px;color:#5b6b86;font-family:var(--mono);font-size:12px}
+  .term pre{margin:0;padding:18px 20px;font-family:var(--mono);font-size:12.5px;line-height:1.7;color:#cbd5e1;overflow-x:auto;tab-size:2}
+  .term .rule{color:#334866}
+  .term .block{color:var(--red);font-weight:700}
+  .term .sev{color:#fda4af}
+  .term .label{color:#7dd3fc;font-weight:700}
+  .term .file{color:#a5b4fc}
+  .term .del{color:#fb7185}
+  .term .add{color:#34d399}
+  .term .dim{color:#64748b}
+
+  /* feature cards */
+  .pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:30px;transition:.18s}
+  .card:hover{border-color:#bdeae3;box-shadow:0 14px 34px rgba(20,184,166,.10);transform:translateY(-2px)}
+  .card h3{font-size:19px;color:var(--ink);font-weight:700}
+  .card h3::before{content:"";display:block;width:30px;height:3px;border-radius:2px;background:var(--teal);margin-bottom:16px}
+  .card p{color:var(--muted);font-size:15px;margin-top:9px}
+
+  /* how it works */
+  .alt{background:linear-gradient(180deg,#f8fafc,#fff)}
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;counter-reset:s}
+  .step{position:relative;background:#fff;border:1px solid var(--border);border-radius:14px;padding:26px 22px}
+  .step::before{counter-increment:s;content:counter(s);position:absolute;top:-15px;left:22px;width:30px;height:30px;border-radius:9px;background:var(--teal);color:#fff;font-weight:700;display:grid;place-items:center;font-size:15px}
+  .step h3{font-size:16.5px;color:var(--ink);margin:8px 0 8px;font-weight:700}
+  .step p{font-size:14px;color:var(--muted)}
+
+  /* dimensions */
+  .dims{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .dim-card{padding:18px 20px;border:1px solid var(--border);border-left:3px solid var(--teal);border-radius:0 13px 13px 0;background:#fff}
+  .dim-card h4{font-family:var(--mono);font-size:14px;color:var(--teal-dark);font-weight:700}
+  .dim-card p{font-size:13.5px;color:var(--muted);margin-top:4px}
+
+  /* trust + when */
+  .trust-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  .col{border:1px solid var(--border);border-radius:var(--radius);padding:30px;background:#fff}
+  .col.good{border-color:#bbf0e7;background:linear-gradient(180deg,#f0fdfa,#fff)}
+  .col h3{font-size:18px;color:var(--ink);display:flex;align-items:center;gap:9px}
+  .col ul{list-style:none;margin-top:16px;display:flex;flex-direction:column;gap:12px}
+  .col li{font-size:15px;color:var(--text);display:flex;gap:10px;align-items:flex-start}
+  .col li::before{content:"";flex:none;width:18px;height:18px;border-radius:50%;margin-top:3px;background-size:contain}
+  .col.good li::before{background:var(--teal);-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M9 16.2l-3.5-3.5L4 14.2 9 19l11-11-1.5-1.5z'/%3E%3C/svg%3E") center/14px no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M9 16.2l-3.5-3.5L4 14.2 9 19l11-11-1.5-1.5z'/%3E%3C/svg%3E") center/14px no-repeat}
+  .col.bad li::before{background:var(--slate);-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z'/%3E%3C/svg%3E") center/13px no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z'/%3E%3C/svg%3E") center/13px no-repeat}
+
+  /* install */
+  .install-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start}
+  .codeblock{background:var(--ink);border-radius:14px;overflow:hidden;border:1px solid #1c2740}
+  .codeblock .cb-head{display:flex;align-items:center;justify-content:space-between;padding:11px 16px;border-bottom:1px solid #1c2740;background:#111c30}
+  .codeblock .cb-head span{font-family:var(--mono);font-size:12px;color:#7e8ca6}
+  .codeblock pre{margin:0;padding:18px 20px;font-family:var(--mono);font-size:13px;line-height:1.75;color:#cbd5e1;overflow-x:auto}
+  .codeblock .prompt{color:var(--teal)}.codeblock .cm{color:#64748b}.codeblock .k{color:#7dd3fc}
+  .cb-head .copy{padding:6px 11px;font-size:11.5px}
+  .note{font-size:14px;color:var(--muted);margin-top:14px}
+
+  /* integrations */
+  .ints{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  .int{border:1px solid var(--border);border-radius:var(--radius);padding:28px;background:#fff}
+  .int .tag{display:inline-block;font-size:12px;font-weight:700;color:var(--teal-dark);background:var(--teal-light);padding:4px 10px;border-radius:7px}
+  .int h3{font-size:18px;color:var(--ink);margin:14px 0 8px}
+  .int p{font-size:14.5px;color:var(--muted)}
+  .int pre{margin-top:14px;background:#0c1424;border-radius:10px;padding:12px 14px;font-family:var(--mono);font-size:12px;color:#cbd5e1;overflow-x:auto}
+  .int pre .prompt{color:var(--teal)}
+
+  /* cta band */
+  .band{background:linear-gradient(135deg,var(--teal-dark),var(--teal));border-radius:24px;padding:60px;text-align:center;color:#fff}
+  .band h2{color:#fff;font-size:32px}
+  .band p{color:#d7fbf4;margin:14px auto 28px;max-width:520px;font-size:17px}
+  .band .btn-primary{background:#fff;color:var(--teal-dark)}
+  .band .btn-primary:hover{background:#ecfeff}
+  .band .btn-ghost{background:transparent;color:#fff;border-color:rgba(255,255,255,.5)}
+  .band .btn-ghost:hover{border-color:#fff}
+
+  /* footer */
+  footer{border-top:1px solid var(--border);padding:48px 0;color:var(--muted);font-size:14px}
+  footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}
+  footer .fl{display:flex;gap:22px;flex-wrap:wrap}
+  footer a:hover{color:var(--ink)}
+
+  @media(max-width:880px){
+    section{padding:64px 0}
+    .hero-grid,.install-grid,.two{grid-template-columns:1fr}
+    .pillars,.steps,.dims,.trust-cards,.ints{grid-template-columns:1fr}
+    h1{font-size:38px}h2{font-size:27px}
+    nav .links{display:none}
+    .band{padding:40px 24px}
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="assets/logo.svg" alt="ReviewGate"></a>
+    <div class="links">
+      <a href="#features" data-zh="特性" data-en="Features">特性</a>
+      <a href="#how" data-zh="工作原理" data-en="How it works">工作原理</a>
+      <a href="#install" data-zh="安装" data-en="Install">安装</a>
+      <a href="#integrations" data-zh="接入" data-en="Integrations">接入</a>
+    </div>
+    <div class="right">
+      <button class="langbtn" id="lang" aria-label="切换语言">EN</button>
+      <a class="btn btn-primary" href="https://github.com/dengmengmian/ReviewGate" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="pill">MIT License · <b>Rust</b></span>
+      <h1>
+        <span data-zh="AI 代码的" data-en="A pre-merge ">AI 代码的</span><br>
+        <span class="accent" data-zh="合并前质量闸口" data-en="quality gate for AI code">合并前质量闸口</span>
+      </h1>
+      <p class="lead" data-zh="优先拦截高风险问题，减少低价值 review 噪音。它不替代测试和人工 review——在合并前先做一轮过滤：高危推到前面，低置信反馈默认折叠。"
+         data-en="Catch high-risk issues first, fold low-value review noise. It doesn't replace tests or human review — it filters PRs before merge: risks up front, low-confidence findings folded by default.">
+        优先拦截高风险问题，减少低价值 review 噪音。它不替代测试和人工 review——在合并前先做一轮过滤：高危推到前面，低置信反馈默认折叠。
+      </p>
+
+      <div class="oneliner">
+        <code><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh</code>
+        <button class="copy" data-copy="curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh" data-zh="复制" data-en="Copy">复制</button>
+      </div>
+
+      <div class="cta">
+        <a class="btn btn-primary" href="#install" data-zh="快速开始" data-en="Get started">快速开始</a>
+        <a class="btn btn-ghost" href="https://github.com/dengmengmian/ReviewGate" target="_blank" rel="noopener" data-zh="在 GitHub 查看" data-en="View on GitHub">在 GitHub 查看</a>
+      </div>
+
+      <div class="trust">
+        <span><i class="dot"></i><span data-zh="默认只读" data-en="Read-only by default">默认只读</span></span>
+        <span><i class="dot"></i><span data-zh="45 语言样例评测" data-en="45-language evals">45 语言样例评测</span></span>
+        <span><i class="dot"></i><span data-zh="revert 金标准留痕" data-en="revert gold set">revert 金标准留痕</span></span>
+      </div>
+    </div>
+
+    <div class="term" aria-hidden="true">
+      <div class="term-bar"><i class="r"></i><i class="y"></i><i class="g"></i><span>reviewgate review</span></div>
+<pre><span class="rule">━━ ReviewGate ━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+  <span class="block">✖ BLOCK</span>   1 files · 1 must-fix · 0 warn · <span class="dim">3 hidden</span>
+  <span class="dim">LLM 120k in (cache 88%) · 2.1k out</span>
+<span class="rule">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+
+<span class="label">▌ MUST FIX</span>
+
+  1  <span class="file">handler.rs:3</span>          <span class="sev">security · high · 100%</span>
+
+     SQL 注入：用户输入 req.user_id 通过
+     format! 直接拼接到 DELETE 语句。
+
+     Patch
+       <span class="del">- format!("DELETE FROM users WHERE id={}", id)</span>
+       <span class="add">+ "DELETE FROM users WHERE id = $1"</span>
+
+<span class="label">▌ NOT SHOWN</span>
+  <span class="dim">3 low-confidence findings hidden.</span></pre>
+    </div>
+  </div>
+</header>
+
+<!-- PILLARS -->
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow" data-zh="为什么用它" data-en="Why ReviewGate">为什么用它</span>
+      <h2 data-zh="三件事，做到位" data-en="Three jobs, done right">三件事，做到位</h2>
+      <p data-zh="不是又一个 AI reviewer，而是一道把高危推前、把噪音压下、不假装通过的闸口。"
+         data-en="Not another AI reviewer — a gate that promotes risk, suppresses noise, and refuses to fake a pass.">
+        不是又一个 AI reviewer，而是一道把高危推前、把噪音压下、不假装通过的闸口。
+      </p>
+    </div>
+    <div class="pillars">
+      <div class="card">
+        <h3 data-zh="拦高危" data-en="Catch high-risk">拦高危</h3>
+        <p data-zh="按安全、逻辑、性能、业务规则等维度并行审查，把 must-fix 放到最前面，reviewer 一眼看到最该处理的地方。"
+           data-en="Parallel review across security, logic, performance, and business-rule dimensions — must-fix issues surface first.">
+          按安全、逻辑、性能、业务规则等维度并行审查，把 must-fix 放到最前面，reviewer 一眼看到最该处理的地方。
+        </p>
+      </div>
+      <div class="card">
+        <h3 data-zh="降噪音" data-en="Cut the noise">降噪音</h3>
+        <p data-zh="跨维度去重、独立证伪、按置信度过滤，低价值反馈默认折叠——少一点“啰嗦但没用”的 review 评论。"
+           data-en="Cross-dimension dedup, counter-evidence judging, and confidence filtering fold low-value feedback by default.">
+          跨维度去重、独立证伪、按置信度过滤，低价值反馈默认折叠——少一点"啰嗦但没用"的 review 评论。
+        </p>
+      </div>
+      <div class="card">
+        <h3 data-zh="不假通过" data-en="No fake pass">不假通过</h3>
+        <p data-zh="超时、上下文过大、单元未审完都会降级 WARN 并让 CI 非 0 退出，绝不把不完整的审查伪装成 PASS。"
+           data-en="Timeouts, oversized context, and incomplete units degrade to WARN with a non-zero exit — never a fake PASS.">
+          超时、上下文过大、单元未审完都会降级 WARN 并让 CI 非 0 退出，绝不把不完整的审查伪装成 PASS。
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how" class="alt">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow" data-zh="工作原理" data-en="How it works">工作原理</span>
+      <h2 data-zh="从 diff 到闸口，四步" data-en="From diff to gate, in four steps">从 diff 到闸口，四步</h2>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <h3 data-zh="并行分维度审查" data-en="Parallel review">并行分维度审查</h3>
+        <p data-zh="多个 Agent 各自聚焦一个维度，并行扫你的改动，可按需跨文件追调用方与契约。"
+           data-en="Multiple agents each focus on one dimension and scan your diff in parallel, tracing callers across files as needed.">
+          多个 Agent 各自聚焦一个维度，并行扫你的改动，可按需跨文件追调用方与契约。
+        </p>
+      </div>
+      <div class="step">
+        <h3 data-zh="行号锚定校验" data-en="Line anchoring">行号锚定校验</h3>
+        <p data-zh="模型直接标注行号，引擎用代码片段锚点校验并兜底重定位，降低行号漂移。"
+           data-en="Models annotate line numbers; the engine validates and relocates them via code anchors to reduce drift.">
+          模型直接标注行号，引擎用代码片段锚点校验并兜底重定位，降低行号漂移。
+        </p>
+      </div>
+      <div class="step">
+        <h3 data-zh="去重 + 证伪 Judge" data-en="Dedup + judge">去重 + 证伪 Judge</h3>
+        <p data-zh="同处多维标记合并并加分；每条发现再被独立带证据裁决，证不掉才保留。"
+           data-en="Same-spot findings merge and gain confidence; each is then independently judged with evidence before it survives.">
+          同处多维标记合并并加分；每条发现再被独立带证据裁决，证不掉才保留。
+        </p>
+      </div>
+      <div class="step">
+        <h3 data-zh="置信度闸口" data-en="Confidence gate">置信度闸口</h3>
+        <p data-zh="高置信问题阻断合并（BLOCK），低置信默认折叠（仍可展开），未审完降级 WARN。"
+           data-en="High-confidence issues block (BLOCK), low-confidence folds by default, incomplete reviews degrade to WARN.">
+          高置信问题阻断合并（BLOCK），低置信默认折叠（仍可展开），未审完降级 WARN。
+        </p>
+      </div>
+    </div>
+
+    <div class="sec-head" style="margin-top:72px;margin-bottom:32px">
+      <h2 style="font-size:24px" data-zh="六个审查维度" data-en="Six review dimensions">六个审查维度</h2>
+    </div>
+    <div class="dims">
+      <div class="dim-card"><h4>security</h4><p data-zh="注入、越权、密钥泄露、不安全反序列化" data-en="injection, authz bypass, secret leaks, unsafe deserialization">注入、越权、密钥泄露、不安全反序列化</p></div>
+      <div class="dim-card"><h4>perf</h4><p data-zh="N+1、无谓拷贝、热路径复杂度、阻塞调用" data-en="N+1 queries, needless copies, hot-path complexity, blocking calls">N+1、无谓拷贝、热路径复杂度、阻塞调用</p></div>
+      <div class="dim-card"><h4>logic</h4><p data-zh="边界条件、空值、错误处理、并发竞态" data-en="edge cases, nulls, error paths, concurrency races">边界条件、空值、错误处理、并发竞态</p></div>
+      <div class="dim-card"><h4>style</h4><p data-zh="命名、可读性、重复代码" data-en="naming, readability, duplicated code">命名、可读性、重复代码</p></div>
+      <div class="dim-card"><h4>ai_smell</h4><p data-zh="幻觉 API、看似合理实则错误、假设漂移" data-en="hallucinated APIs, plausible-but-wrong code, assumption drift">幻觉 API、看似合理实则错误、假设漂移</p></div>
+      <div class="dim-card"><h4>business</h4><p data-zh="业务规则、权限边界、状态机、金额/订单/库存" data-en="business rules, permission boundaries, state machines, money/orders">业务规则、权限边界、状态机、金额/订单/库存</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- WHY TRUST -->
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow" data-zh="为什么可以信" data-en="Why trust it">为什么可以信</span>
+      <h2 data-zh="保守、可验证、不越权" data-en="Conservative, verifiable, scoped">保守、可验证、不越权</h2>
+    </div>
+    <div class="trust-cards">
+      <div class="card">
+        <h3 data-zh="公开评测留痕" data-en="Public eval logs">公开评测留痕</h3>
+        <p data-zh="真实 PR、revert 金标准、45 语言样例、大 PR、意图评审结果都记录在 docs/evals/，可复查。"
+           data-en="Real PRs, revert gold sets, 45-language samples, large PRs, and intent reviews are all logged under docs/evals/.">
+          真实 PR、revert 金标准、45 语言样例、大 PR、意图评审结果都记录在 docs/evals/，可复查。
+        </p>
+      </div>
+      <div class="card">
+        <h3 data-zh="默认只读" data-en="Read-only by default">默认只读</h3>
+        <p data-zh="除显式 --fix 且逐条确认外，审查链路不写工作区、不执行任意 shell 命令。"
+           data-en="Except for explicit --fix with per-finding confirmation, it never writes your worktree or runs arbitrary shell.">
+          除显式 --fix 且逐条确认外，审查链路不写工作区、不执行任意 shell 命令。
+        </p>
+      </div>
+      <div class="card">
+        <h3 data-zh="保守闸口" data-en="Conservative gate">保守闸口</h3>
+        <p data-zh="低置信默认折叠；超时、上下文超限、未审完一律降级 WARN，宁可保守也不漏审放行。"
+           data-en="Low-confidence folds by default; timeouts, overflow, and incomplete reviews degrade to WARN rather than wave a PR through.">
+          低置信默认折叠；超时、上下文超限、未审完一律降级 WARN，宁可保守也不漏审放行。
+        </p>
+      </div>
+    </div>
+
+    <div class="two" style="margin-top:40px">
+      <div class="col good">
+        <h3><span data-zh="适合" data-en="Good fit">适合</span></h3>
+        <ul>
+          <li data-zh="AI 一次改很多文件，reviewer 想先知道哪里最危险" data-en="AI changes many files and reviewers need risk prioritization">AI 一次改很多文件，reviewer 想先知道哪里最危险</li>
+          <li data-zh="团队有权限、金额、状态机等业务规则需反复检查" data-en="Permission, money, or state-machine rules need repeated checks">团队有权限、金额、状态机等业务规则需反复检查</li>
+          <li data-zh="想给 PR / CI 加一道高置信风险闸口" data-en="You want a high-confidence PR/CI gate">想给 PR / CI 加一道高置信风险闸口</li>
+          <li data-zh="想用 --intent 检查实现是否符合需求 / 设计" data-en="You want --intent to check implementation against requirements">想用 --intent 检查实现是否符合需求 / 设计</li>
+        </ul>
+      </div>
+      <div class="col bad">
+        <h3><span data-zh="不适合" data-en="Not a fit">不适合</span></h3>
+        <ul>
+          <li data-zh="替代单元测试、集成测试或人工 review" data-en="Replacing unit tests, integration tests, or human review">替代单元测试、集成测试或人工 review</li>
+          <li data-zh="让模型自动改代码并无人确认地合并" data-en="Auto-merging model-generated fixes with no review">让模型自动改代码并无人确认地合并</li>
+          <li data-zh="对误报零容忍、无法接受保守 WARN" data-en="Teams that cannot tolerate conservative WARNs">对误报零容忍、无法接受保守 WARN</li>
+          <li data-zh="没有 LLM API key，或不允许代码片段发给模型" data-en="No LLM API key, or code cannot be sent to a model">没有 LLM API key，或不允许代码片段发给模型</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INSTALL -->
+<section id="install" class="alt">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow" data-zh="快速开始" data-en="Quick start">快速开始</span>
+      <h2 data-zh="三样东西就能跑" data-en="Three things to get going">三样东西就能跑</h2>
+      <p data-zh="一个 git 仓库、一个 LLM API key、reviewgate 命令。不绑定模型，OpenAI 兼容或 Anthropic 端点都行。"
+         data-en="A git repo, an LLM API key, and the reviewgate command. Model-agnostic — any OpenAI-compatible or Anthropic endpoint.">
+        一个 git 仓库、一个 LLM API key、reviewgate 命令。不绑定模型，OpenAI 兼容或 Anthropic 端点都行。
+      </p>
+    </div>
+    <div class="install-grid">
+      <div>
+        <div class="codeblock">
+          <div class="cb-head"><span>① <span data-zh="安装" data-en="Install">安装</span> — Linux / macOS</span>
+            <button class="copy" data-copy="curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh" data-zh="复制" data-en="Copy">复制</button></div>
+<pre><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/\
+    dengmengmian/ReviewGate/main/install.sh | sh</pre>
+        </div>
+        <div class="codeblock" style="margin-top:16px">
+          <div class="cb-head"><span>Windows (PowerShell)</span>
+            <button class="copy" data-copy="irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex" data-zh="复制" data-en="Copy">复制</button></div>
+<pre><span class="prompt">PS&gt;</span> irm https://raw.githubusercontent.com/\
+     dengmengmian/ReviewGate/main/install.ps1 | iex</pre>
+        </div>
+        <p class="note" data-zh="不想直接跑远程脚本？可先下载 install.sh 审阅，或从 GitHub Releases 手动下载二进制。升级随时 reviewgate upgrade。"
+           data-en="Prefer not to pipe a remote script? Download install.sh to inspect, or grab the binary from GitHub Releases. Upgrade anytime with reviewgate upgrade.">
+          不想直接跑远程脚本？可先下载 install.sh 审阅，或从 GitHub Releases 手动下载二进制。升级随时 reviewgate upgrade。
+        </p>
+      </div>
+      <div>
+        <div class="codeblock">
+          <div class="cb-head"><span>② <span data-zh="全局配置 + 审查" data-en="Configure + review">全局配置 + 审查</span></span>
+            <button class="copy" data-copy='mkdir -p ~/.reviewgate
+cat > ~/.reviewgate/config.toml <<EOF
+provider = "deepseek"
+[providers.deepseek]
+protocol = "openai"
+base_url = "https://api.deepseek.com/v1"
+model = "deepseek-v4-pro"
+EOF
+export REVIEWGATE_API_KEY="your key"
+reviewgate llm test
+reviewgate review' data-zh="复制" data-en="Copy">复制</button></div>
+<pre><span class="cm"># 写一份全局配置，所有仓库通用</span>
+<span class="prompt">$</span> cat &gt; ~/.reviewgate/config.toml &lt;&lt;EOF
+provider = <span class="k">"deepseek"</span>
+[providers.deepseek]
+protocol = <span class="k">"openai"</span>
+base_url = <span class="k">"https://api.deepseek.com/v1"</span>
+model    = <span class="k">"deepseek-v4-pro"</span>
+EOF
+
+<span class="cm"># key 用环境变量注入，不写进文件</span>
+<span class="prompt">$</span> export REVIEWGATE_API_KEY=<span class="k">"your key"</span>
+
+<span class="prompt">$</span> reviewgate llm test     <span class="cm"># 确认能连</span>
+<span class="prompt">$</span> reviewgate review       <span class="cm"># 审查当前改动</span></pre>
+        </div>
+        <p class="note" data-zh="CI 里：reviewgate review --fail-on block。退出码 0 放行 · 1 被闸口拦截 · 2 工具自身出错（配置/网络），三态分明便于重试或告警。"
+           data-en="In CI: reviewgate review --fail-on block. Exit 0 pass · 1 blocked by the gate · 2 tool error (config/network) — distinct codes so CI can retry or alert.">
+          CI 里：reviewgate review --fail-on block。退出码 0 放行 · 1 被闸口拦截 · 2 工具自身出错（配置/网络），三态分明便于重试或告警。
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INTEGRATIONS -->
+<section id="integrations">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow" data-zh="接入方式" data-en="Integrations">接入方式</span>
+      <h2 data-zh="一个引擎，三种形态" data-en="One engine, three forms">一个引擎，三种形态</h2>
+      <p data-zh="CLI 为主，Skill 和 Action 都是调 CLI 的薄壳。" data-en="CLI at the core; the Skill and Action are thin shells over it.">CLI 为主，Skill 和 Action 都是调 CLI 的薄壳。</p>
+    </div>
+    <div class="ints">
+      <div class="int">
+        <span class="tag" data-zh="主形态" data-en="Primary">主形态</span>
+        <h3>CLI</h3>
+        <p data-zh="本地或 CI 直接跑。支持工作区 / commit / 分支范围、JSON 输出、--intent 技术评审。"
+           data-en="Run locally or in CI. Workspace / commit / branch range, JSON output, and --intent technical review.">
+          本地或 CI 直接跑。支持工作区 / commit / 分支范围、JSON 输出、--intent 技术评审。
+        </p>
+        <pre><span class="prompt">$</span> reviewgate review --from main --to HEAD</pre>
+      </div>
+      <div class="int">
+        <span class="tag">Claude</span>
+        <h3>Claude Skill</h3>
+        <p data-zh="装进项目当 Claude Code 的 skill，在对话里直接触发同一套审查引擎。"
+           data-en="Install into a project as a Claude Code skill and trigger the same engine from chat.">
+          装进项目当 Claude Code 的 skill，在对话里直接触发同一套审查引擎。
+        </p>
+        <pre><span class="prompt">$</span> integrations/claude-skill/
+    install-into-project.sh</pre>
+      </div>
+      <div class="int">
+        <span class="tag">CI</span>
+        <h3>GitHub Action</h3>
+        <p data-zh="在 PR 上自动审查并回贴摘要 + 行内 suggestion，作者一键应用、人来把关。"
+           data-en="Auto-review PRs and post a summary plus inline suggestions the author can apply in one click.">
+          在 PR 上自动审查并回贴摘要 + 行内 suggestion，作者一键应用、人来把关。
+        </p>
+        <pre><span class="prompt">uses:</span> dengmengmian/ReviewGate/
+      integrations/github-action@v0</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA BAND -->
+<section>
+  <div class="wrap">
+    <div class="band">
+      <h2 data-zh="给你的 PR 加一道闸口" data-en="Put a gate in front of your PRs">给你的 PR 加一道闸口</h2>
+      <p data-zh="开源、MIT、不绑定模型。建议先用 WARN / 评论模式跑一阵，稳了再开 BLOCK 强制。"
+         data-en="Open source, MIT, model-agnostic. Roll out in WARN / comment-only mode first, then enforce BLOCK once you trust it.">
+        开源、MIT、不绑定模型。建议先用 WARN / 评论模式跑一阵，稳了再开 BLOCK 强制。
+      </p>
+      <div class="cta" style="justify-content:center">
+        <a class="btn btn-primary" href="#install" data-zh="开始安装" data-en="Install now">开始安装</a>
+        <a class="btn btn-ghost" href="https://github.com/dengmengmian/ReviewGate" target="_blank" rel="noopener" data-zh="读文档" data-en="Read the docs">读文档</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <a class="brand" href="#top"><img src="assets/logo.svg" alt="ReviewGate" style="height:26px"></a>
+      <div style="margin-top:8px">© 2026 ReviewGate · MIT License</div>
+    </div>
+    <div class="fl">
+      <a href="https://github.com/dengmengmian/ReviewGate" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/dengmengmian/ReviewGate/releases/latest" target="_blank" rel="noopener" data-zh="下载" data-en="Releases">下载</a>
+      <a href="https://github.com/dengmengmian/ReviewGate/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+      <a href="https://github.com/dengmengmian/ReviewGate/tree/main/docs/evals" target="_blank" rel="noopener" data-zh="评测" data-en="Evals">评测</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // 语言切换：zh 默认，记忆到 localStorage
+  (function(){
+    var root=document.documentElement, btn=document.getElementById('lang');
+    function apply(lang){
+      root.setAttribute('data-lang',lang);
+      root.setAttribute('lang',lang);
+      btn.textContent = lang==='zh' ? 'EN' : '中';
+      // 带 data-zh/data-en 的元素直接替换文本
+      document.querySelectorAll('[data-zh][data-en]').forEach(function(el){
+        var t = el.getAttribute('data-'+lang);
+        if(t!==null) el.textContent = t;
+      });
+      try{localStorage.setItem('rg-lang',lang);}catch(e){}
+    }
+    var saved='zh';
+    try{saved=localStorage.getItem('rg-lang')||'zh';}catch(e){}
+    apply(saved);
+    btn.addEventListener('click',function(){
+      apply(root.getAttribute('data-lang')==='zh'?'en':'zh');
+    });
+  })();
+
+  // 一键复制
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click',function(){
+      var text=b.getAttribute('data-copy')||b.parentElement.querySelector('code,pre').innerText;
+      navigator.clipboard.writeText(text).then(function(){
+        var lang=document.documentElement.getAttribute('data-lang');
+        var old=b.textContent;
+        b.textContent= lang==='zh'?'已复制 ✓':'Copied ✓';
+        b.classList.add('ok');
+        setTimeout(function(){b.textContent=old;b.classList.remove('ok');},1600);
+      });
+    });
+  });
+</script>
+</body>
+</html>

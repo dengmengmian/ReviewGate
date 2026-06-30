@@ -14,7 +14,16 @@ fn dimension_focus(d: Dimension) -> &'static str {
         Dimension::Style => include_str!("../../prompts/dimensions/style.md").trim_end(),
         Dimension::Business => include_str!("../../prompts/dimensions/business.md").trim_end(),
         Dimension::AiSmell => include_str!("../../prompts/dimensions/ai_smell.md").trim_end(),
+        Dimension::Intent => include_str!("../../prompts/dimensions/intent.md").trim_end(),
     }
+}
+
+/// 意图/技术评审专用系统提示——鼓励跨文件探索、评估「实现 vs 意图」的完整性，
+/// 与 [`shared_system_prompt`]（缺陷向、抑制跨文件探索）形成对比。
+pub fn intent_system_prompt() -> String {
+    include_str!("../../prompts/intent_system.md")
+        .trim_end()
+        .to_string()
 }
 
 /// Dimension-independent shared system prompt.
@@ -29,9 +38,15 @@ pub fn shared_system_prompt() -> String {
 
 /// Dimension-specific focus block. It is placed after the shared user block.
 pub fn dimension_focus_block(d: Dimension) -> String {
+    // 意图维度用需求锚定的上报工具；其余维度用行锚的 report_finding。
+    let report_tool = if matches!(d, Dimension::Intent) {
+        "report_intent_finding (one verdict per acceptance criterion)"
+    } else {
+        "report_finding"
+    };
     format!(
         "## Review dimension\n\nYou are responsible for **only the `{dim}` dimension** in this run.\n\nFocus:\n{focus}\n\n\
-Review only this dimension. Report confirmed issues with report_finding. Call task_done when finished.\n\n\
+Review only this dimension. Report findings with {report_tool}. Call task_done when finished.\n\n\
 Output language: {lang}",
         dim = d.as_str(),
         focus = dimension_focus(d),

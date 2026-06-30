@@ -1,4 +1,4 @@
-# ReviewGate 配置示例。复制为 reviewgate.toml 并填入密钥（该文件已被 .gitignore）。
+# ReviewGate 配置示例。复制为 reviewgate.toml；密钥推荐用 REVIEWGATE_API_KEY 环境变量注入。
 
 # 默认 LLM 提供方
 provider = "deepseek"
@@ -6,7 +6,7 @@ provider = "deepseek"
 [providers.deepseek]
 protocol = "openai"          # OpenAI 兼容协议
 base_url = "https://api.deepseek.com/v1"   # 换成你的端点（OpenAI 兼容）
-api_key = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+# api_key = ""             # 可省略；推荐 export REVIEWGATE_API_KEY="你的 key"
 model = "deepseek-v4-pro"    # 1M context
 # max_input_tokens = 200000  # 输入上下文窗口预算（token）。大 diff 会按此切成多个审查单元，
                              # 并在发送前预检避免撞上限。缺省 200000；小窗 provider（如 64k/128k）请调小。
@@ -15,7 +15,7 @@ model = "deepseek-v4-pro"    # 1M context
 # [providers.anthropic]
 # protocol = "anthropic"
 # base_url = "https://api.anthropic.com"
-# api_key = "sk-ant-xxx"
+# api_key = ""             # 可省略；推荐 export REVIEWGATE_API_KEY="你的 key"
 # model = "claude-opus-4-8"
 
 # 闸口阈值

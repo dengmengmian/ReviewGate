@@ -1,57 +1,140 @@
 # Changelog
 
 本项目变更记录。格式参考 [Keep a Changelog](https://keepachangelog.com/)，版本遵循 SemVer。
+每条变更先中文、后英文。
+Changes are listed in Chinese first, then English.
 
-## [Unreleased]
+## [0.2.0] - 2026-06-30
+
+### Changed
+- 退出码语义更清晰：`0` 放行、`1` 被闸口拦截、`2` 工具自身出错（配置/网络/密钥等）。以前工具出错和「代码被拦」都返回 1，CI 无法区分该重试还是该当成 must-fix；现在两者分开。
+  Clearer exit codes: `0` pass, `1` blocked by the gate, `2` the tool itself errored (config/network/key). Previously tool errors and real blocks both returned 1, so CI couldn't tell a retryable failure from a must-fix; now they're distinct.
+
+### Fixed
+- `--fail-on` / `--format` 写错值时立即报错并列出可选值，不再被静默当成默认值——以前 `--fail-on blcok` 这类拼写错误会让闸口悄悄失效、永远放行。
+  Misspelled `--fail-on` / `--format` values now fail fast and list the valid choices instead of silently falling back to the default — previously a typo like `--fail-on blcok` could quietly disable the gate and pass everything.
+- 配置里拼错的字段名（如 `block_treshold`）现在在加载阶段直接报错，不再被静默忽略、让你以为调了阈值其实没生效。
+  Misspelled config keys (e.g. `block_treshold`) now error at load time instead of being silently ignored, so a mistyped threshold can no longer look applied when it isn't.
+- 修复 GitHub Action 示例入口：示例 workflow 现在指向实际的 `integrations/github-action` action 路径，并同步到当前发布版本，避免用户照抄后找不到 action。
+  Fixed the GitHub Action example entrypoint: the sample workflow now points to the real `integrations/github-action` action path and the current release version, so copy-paste setup works.
+
+### Docs
+- README 增加可直接复制的 GitHub Action workflow；配置样例改为环境变量注入密钥优先，避免把占位 `api_key` 当成真实配置。
+  README now includes a copy-paste GitHub Action workflow; the config example now prefers environment-injected secrets instead of an active placeholder `api_key`.
+- README 按运营漏斗重排：首屏聚焦核心价值，快速开始去掉 active key，前置输出示例和可信证据，长 CLI 参数与实现细节下沉。
+  README was reorganized around the user funnel: sharper first screen, no active key in quick config, earlier output/trust signals, and advanced CLI/design details moved lower.
+- README 状态说明从 Beta 改为“核心链路已可用于真实 PR 和 CI”，同时保留先 WARN/评论模式再强制 BLOCK 的接入建议。
+  README status now says the core path is ready for real PRs and CI, while still recommending WARN/comment-only rollout before enforcing BLOCK.
+
+## [0.1.4] - 2026-06-29
+
+### Changed
+- 评审报告和实时进度现在跟随你的语言：中文环境下，章节标题（必须修复 / 警告 / 后续步骤…）、状态（通过 / 警告 / 拦截）、计数行和进度提示都显示中文；其它语言自动回退英文。命令、维度名等保持英文，方便直接复制运行。
+  Review output now follows your language: under a Chinese locale the section titles, status, counts, and live progress all show in Chinese; other languages fall back to English. Commands and dimension names stay English so you can copy-paste them as-is.
+
+### Fixed
+- 修复在较窄终端里进度提示不断换行、刷满整屏的问题，现在稳定地在同一行原地刷新。
+  Fixed the live progress line wrapping and flooding the screen on narrower terminals; it now refreshes cleanly in place on a single line.
+
+## [0.1.3] - 2026-06-29
+
+### Added
+- 遇到服务商限流（429）或请求超时（408）会自动重试并尊重 `Retry-After`，偶发的一次限流不再把审查误标成「未审完」。
+  Automatically retries provider rate-limits (429) and request timeouts (408), honoring `Retry-After`, so a one-off limit no longer marks a review as "incomplete".
+- 大 PR 不再瞬间拉起几十路并发请求打满限流：并发数默认 6，可用 `--fanout-concurrency` 调整。
+  Large PRs no longer fire dozens of concurrent requests and trip rate limits — concurrency defaults to 6 and is tunable via `--fanout-concurrency`.
+- API key 错误（401/403）会被单独、如实地报出来，不再笼统说成「上下文溢出 / 未审完」。
+  Authentication errors (401/403) are now reported clearly and as-is, instead of being lumped into "context overflow / incomplete".
+- 配置里还留着模板占位 key（如 `YOUR_API_KEY`）时，加载阶段就直接报错，而不是发出去换回一条看不懂的服务端错误。
+  If the config still contains a placeholder key (e.g. `YOUR_API_KEY`), it now fails fast at load time instead of sending it and getting a cryptic server error back.
+- 输出配色尊重 `NO_COLOR`（关色）与 `FORCE_COLOR` / `CLICOLOR_FORCE`（在管道 / CI 里强制开色）。
+  Output honors `NO_COLOR` (disable color) and `FORCE_COLOR` / `CLICOLOR_FORCE` (force color in pipes/CI).
+
+### Changed
+- 文本结果更易读：加入分隔线、状态图标（`✓ PASS` / `⚠ WARN` / `✖ BLOCK`）、区块标记和语义化配色（must-fix 红、warn 黄），英文长词也不再被从中间断开。
+  More readable text output: separators, status icons (`✓ PASS` / `⚠ WARN` / `✖ BLOCK`), section markers, and color cues (must-fix red, warn yellow); long English words no longer break mid-word.
+- 中文等非 ASCII 文本的 token 估算更准，预算不再被低估。
+  More accurate token estimates for non-ASCII text (e.g. Chinese), so budgets are no longer under-counted.
+
+### Fixed
+- 修复低置信发现列表在极端情况下排序错乱的问题。
+  Fixed unstable ordering of the low-confidence findings list in edge cases.
+- 修复发现很多、且大多无法定位到具体行时去重变慢的问题。
+  Fixed slow de-duplication when there are many findings that can't be pinned to a specific line.
+
+### Docs
+- README 补全输出语言的优先级说明、`--fanout-concurrency` 用法和刷新后的输出示例。
+  README now documents output-language precedence, `--fanout-concurrency`, and refreshed output examples.
+
+## [0.1.2] - 2026-06-27
+
+### Added
+- 意图 / 技术评审：用 `reviewgate review --intent <文件|->`（或 `--intent-from-commit` 取提交信息）传入本次改动的需求 / 设计 / 验收标准，由一个独立 Agent 跨文件检查「实现是否符合意图」，报告缺失的需求、与意图不符之处、破坏既有行为和方案风险。不传 `--intent` 时行为完全不变。
+  Intent / spec review: pass your change's requirements / design / acceptance criteria with `reviewgate review --intent <file|->` (or `--intent-from-commit`), and a dedicated agent checks the implementation against intent across files — reporting missing requirements, deviations, broken behavior, and risky approaches. Behavior is unchanged when `--intent` is omitted.
+- 验收清单：意图评审按每条验收标准给出结论（满足 / 缺失 / 偏差 / 破坏 / 建议），在文本里以「验收清单」分组展示，JSON 也带相应字段；没有逐条核对的标准会如实标「未核对」并降级为 WARN，绝不伪装成通过。
+  Acceptance checklist: intent review gives a verdict per criterion (met / missing / deviation / breaking / suggestion), shown as a grouped checklist (and in JSON); any criterion left unchecked is honestly marked "not assessed" and downgrades to WARN rather than faking a PASS.
+- 实时进度：在终端里默认单行显示评审进度（当前在调的工具 / 文件、调用次数、耗时），长时间评审不再像「卡住没动」；在 JSON / 管道 / CI / `--verbose` 下不显示。
+  Live progress: a single-line progress display in the terminal (current tool/file, call count, elapsed) so long reviews no longer look stuck; hidden under JSON / pipes / CI / `--verbose`.
+
+### Changed
+- 意图评审与常规维度并行跑，整体更快——总耗时接近两者中较慢的一个，而不是相加。
+  Intent review now runs in parallel with the regular dimensions, so total time is closer to the slower of the two rather than their sum.
+- 大 diff 下采样固定为 1，避免成本成倍放大；`--samples` 的多采样只在普通单文件 PR 上生效。
+  On large diffs, sampling is fixed to 1 to avoid multiplying cost; `--samples` multi-sampling applies only to normal single-unit PRs.
+
+### Fixed
+- `api_key` 改为可选配置：此前省略它的配置会解析失败，让「密钥只放环境变量、不写进配置」的推荐用法无法工作；现在可省略，由 `REVIEWGATE_API_KEY` 提供。
+  `api_key` is now optional: previously omitting it failed to parse, breaking the recommended "keep the key in env only" setup; it can now be supplied via `REVIEWGATE_API_KEY`.
+- 修复大 diff 在较小 token 预算下「所有单元都超预算、什么都没审到」的问题（真实 PR 实测从 0 发现恢复为正常审查）。
+  Fixed large diffs hitting "every unit over budget, nothing reviewed" under smaller token budgets (a real PR went from 0 findings back to a full review).
 
 ## [0.1.1] - 2026-06-26
 
 ### Added
-- `reviewgate upgrade`：自更新到最新 release——按平台下载二进制并替换当前可执行文件（Windows 经 self-replace 处理运行中 exe）。
+- `reviewgate upgrade`：自更新到最新发布版本——按平台下载二进制并替换当前可执行文件。
+  `reviewgate upgrade`: self-update to the latest release — downloads the right binary for your platform and replaces the current executable.
 
 ### Fixed
-- `install.sh`：修复 macOS `sh`(bash 3.2) `set -u` 下 `$INSTALL_DIR` 紧跟中文全角括号导致的 `unbound variable` 安装崩溃（fallback 路径）。
-- GitHub Action：PR 事件按 `--from base --to head` 范围审（此前默认工作区 diff 为空、CI 上审不到任何东西）；新增 `--timeout` 防挂起。
-- Release workflow 加固：`fail-fast: false` + `CARGO_NET_RETRY`，单平台网络抖动不再毁掉整个发布。
+- 修复 macOS 自带 shell 下安装脚本可能崩溃的问题。
+  Fixed a possible install-script crash on macOS's built-in shell.
+- GitHub Action 在 PR 事件下改为审 base→head 的改动（此前在 CI 上常常什么都审不到），并加了超时防止挂起。
+  The GitHub Action now reviews base→head on PR events (previously it often reviewed nothing in CI) and adds a timeout to prevent hangs.
+- 发布流程更稳：单个平台的网络抖动不再拖垮整个发布。
+  More robust releases: a network blip on one platform no longer fails the whole release.
 
 ## [0.1.0] - 2026-06-26
 
-首个公开发布：给 AI 生成或 AI 大量参与的代码加一道合并前质检。高置信问题优先暴露，低置信噪音默认折叠；
-包含多 Agent 分维度审查、证伪 Judge、45 语言内置规则、大 PR 未审完不静默放行、只读安全边界，
-并用真实模型评测留痕（`docs/evals/`）。
+首个公开发布：给 AI 生成（或 AI 深度参与）的代码加一道合并前质检——高置信问题优先暴露，低置信噪音默认折叠。
+First public release: a pre-merge quality gate for AI-generated (or AI-heavy) code — high-confidence issues surface first, low-confidence noise is folded by default.
 
 ### Added
-- **45 语言内置起步规则**：常见+不常见 45 种语言（含仓颉/Zig/Nim/Crystal/OCaml/F#/Solidity/
-  COBOL/Fortran/Dockerfile/Terraform…）的公认陷阱清单随二进制内置，按改动语言注入；
-  `[business] builtin_language_rules`（默认 true）可整体关，用户 `rules_dir/<lang>.md` 可覆盖/追加。
-- **大 diff 自适应审查单元**：`plan_units` 按 token 预算切单元（N 默认=1，正常 PR 零退化；
-  放不下才按目录就近装箱以保跨文件推理）；`ProviderConfig.max_input_tokens`（默认 200k）。
-- **未审完不静默放行**：`GateConfig.fail_on_incomplete`（默认 true）+ `AgentExitReason` + 发送前 token 预检；
-  任何未审完（请求失败/上下文超限/超时/超大文件跳过）一律 PASS→WARN、CI 非 0 退出、输出醒目标注。
-- `--fix`：逐条确认后把 `suggestion_code` 应用到工作区，替换前用 `existing_code` 锚点校验（行号漂移则拒绝改错）。
-- `--exec-verify`：opt-in 弱隔离沙箱执行自包含 JS/Python 片段验证边界用例（默认关，仅可信环境用）。
-- `reachability`（可达性/latent）分级：latent 发现不阻断闸口。
-- 输出语言探测（`REVIEWGATE_OUTPUT_LANGUAGE` / locale）；system prompt 英文化以利国际化。
-- 端到端集成测试（mock LLM）：全链路编排 + `oversized_diff_never_silently_passes` 安全网守卫。
-- 业务规则注入：`[business].rules` + `rules_dir`（`<语言>.md` 按改动语言按需注入），
-  新增 `business` 审查维度（配置规则时自动启用），规则编号 `[B1]..` 可追溯。
-- `find_duplicate_functions` 工具：确定性检测改动文件内/间的重复函数（diff-scoped + 样板过滤），
-  候选交 Agent/Judge 判断。
-- `--timeout <秒>`：单维度墙钟超时兜底，超时跳过该维度并保留其余（CI 友好）。
-- `diff` 命令支持 `--commit` / `--from --to`（与 `review` 共用范围解析）。
-- 真实 PR 评测闭环：`scripts/eval-pr.sh`，结果留痕 `docs/evals/`。
-- CI 工作流：fmt + clippy（拒绝告警）+ test。
-- token 用量与**缓存命中率**观测（`--verbose`）。
-
-### Changed
-- prompt 缓存重排：`system` 通用化 + diff/文件大块挂 `cache_control`，跨维度/跨轮复用。
-- 证伪 Judge 改为带证据单次裁决，不确定才升级工具（`MAX_ROUNDS` 8→4）。
-- 模型直报标注行号，`relocate` 降为锚点校验/兜底。
-- 结果排序改为复合：未过滤 → severity → confidence。
+- 多维度并行审查 + 证伪复核：多个维度同时找问题，再由一个「先试着推翻它」的环节复核，显著降低误报。
+  Multi-dimension review with refutation: several dimensions find issues in parallel, then a "try to refute it first" pass re-checks them to cut false positives.
+- 45 种语言的内置起步规则，按改动文件的语言自动注入；可整体关闭，也可用你自己的规则覆盖或追加。
+  Built-in starter rules for 45 languages, auto-injected by the changed file's language; can be turned off entirely or overridden/extended with your own rules.
+- 大 PR 自适应切分：按 token 预算把大改动切成多个审查单元，普通 PR 不受影响。
+  Adaptive splitting for large PRs: big diffs are chunked into review units by token budget, with no impact on normal PRs.
+- 未审完绝不静默放行：任何没审完的情况（请求失败 / 超出上限 / 超时 / 跳过超大文件）都会把 PASS 降为 WARN、在 CI 里以非 0 退出，并在输出里醒目标注。
+  Never silently passes an incomplete review: any unfinished case (request failure / over-limit / timeout / skipped oversized file) downgrades PASS to WARN, exits non-zero in CI, and is clearly flagged in the output.
+- `--fix`：逐条确认后把建议补丁应用到工作区，替换前用原始代码做锚点校验，行号漂移就拒绝改错地方。
+  `--fix`: applies suggested patches to your working tree after per-item confirmation, validating against the original code so it refuses to patch the wrong place when line numbers drift.
+- `--exec-verify`：可选的弱隔离沙箱，运行自包含的 JS / Python 片段来验证边界用例（默认关闭，仅建议在可信环境使用）。
+  `--exec-verify`: an opt-in weak-isolation sandbox that runs self-contained JS / Python snippets to check edge cases (off by default; trusted environments only).
+- 业务规则：通过 `[business].rules` / `rules_dir` 注入你自己的规则（按语言按需加载），命中的发现带可追溯的规则编号。
+  Business rules: inject your own rules via `[business].rules` / `rules_dir` (loaded by language on demand); matching findings carry traceable rule IDs.
+- 重复函数检测：确定性地找出改动文件内部 / 之间的重复函数，交给评审判断。
+  Duplicate-function detection: deterministically finds repeated functions within and across changed files for the review to judge.
+- `--timeout <秒>`：给单个维度设墙钟超时，超时就跳过该维度并保留其余结果（对 CI 友好）。
+  `--timeout <seconds>`: a per-dimension wall-clock cap; on timeout it skips that dimension and keeps the rest (CI-friendly).
+- 输出语言探测（`REVIEWGATE_OUTPUT_LANGUAGE` / locale）；通过 `--verbose` 观察 token 用量与缓存命中率。
+  Output-language detection (`REVIEWGATE_OUTPUT_LANGUAGE` / locale); token usage and cache-hit rate visible via `--verbose`.
+- 真实模型评测留痕（`docs/evals/`）。
+  Real-model evaluations kept on record (`docs/evals/`).
 
 ### Security
-- `read_file` / `code_search` 接入 `confine_path`，挡住绝对路径与 `..` 穿越
-  （修复 workspace 模式下可读取仓库外文件的越界问题）。
+- 文件读取 / 搜索限定在仓库内，挡住绝对路径与 `..` 越界（修复了 workspace 模式下能读到仓库外文件的问题）。
+  File read/search is confined to the repository, blocking absolute paths and `..` traversal (fixes reading files outside the repo in workspace mode).
 
 ### Performance
-- 跨维度一致性加分；loop guard 防重复工具调用空转；工具结果 32 KiB 上限。
+- 提示词缓存复用、防止重复工具调用空转、工具结果大小上限等优化，让重复审查更快也更省 token。
+  Prompt-cache reuse, guards against repeated no-op tool calls, and a cap on tool-result size make repeated reviews faster and cheaper.
