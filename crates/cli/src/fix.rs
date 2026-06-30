@@ -25,17 +25,17 @@ pub fn apply_fixes(findings: &[Finding], repo_root: &Path) -> anyhow::Result<()>
         .collect();
 
     if fixable.is_empty() {
-        eprintln!("没有可一键应用的修复（需 suggestion_code + 已定位行号）。");
+        eprintln!("No auto-applicable fixes (need suggestion_code + a located line range).");
         return Ok(());
     }
     if !io::stdin().is_terminal() {
         eprintln!(
-            "--fix 需逐条人工确认；当前非终端（CI/管道），已跳过应用。修复代码见上方 diff 或 JSON 的 suggestion_code。"
+            "--fix needs interactive confirmation; not a terminal (CI/pipe), so application was skipped. See the diff above or suggestion_code in the JSON."
         );
         return Ok(());
     }
 
-    eprintln!("\n— 逐条确认应用修复（最终由你决定）—");
+    eprintln!("\n- Confirm each fix before applying (you decide) -");
     let mut by_path: BTreeMap<&str, Vec<&Finding>> = BTreeMap::new();
     for f in &fixable {
         by_path.entry(f.path.as_str()).or_default().push(f);
@@ -46,12 +46,12 @@ pub fn apply_fixes(findings: &[Finding], repo_root: &Path) -> anyhow::Result<()>
         let full = match confined_fix_path(repo_root, path) {
             Ok(p) => p,
             Err(e) => {
-                eprintln!("跳过 {path}（路径越界：{e}）");
+                eprintln!("skip {path} (path outside repo: {e})");
                 continue;
             }
         };
         let Ok(mut content) = std::fs::read_to_string(&full) else {
-            eprintln!("跳过 {path}（读不到文件）");
+            eprintln!("skip {path} (cannot read file)");
             continue;
         };
         // 自底向上应用：先改下面的行，上面的行号不受影响。
@@ -74,7 +74,7 @@ pub fn apply_fixes(findings: &[Finding], repo_root: &Path) -> anyhow::Result<()>
             for l in f.suggestion_code.lines() {
                 println!("  \x1b[92m+ {}\x1b[0m", l.trim_end());
             }
-            print!("应用此修复? [y/N] ");
+            print!("Apply this fix? [y/N] ");
             io::stdout().flush().ok();
             let mut ans = String::new();
             io::stdin().read_line(&mut ans).ok();
@@ -91,24 +91,24 @@ pub fn apply_fixes(findings: &[Finding], repo_root: &Path) -> anyhow::Result<()>
                         content = nc;
                         file_changed = true;
                         applied += 1;
-                        println!("✓ 已应用");
+                        println!("OK applied");
                     }
-                    Err(ApplyError::OutOfRange) => eprintln!("✗ 行号超出文件范围，跳过"),
+                    Err(ApplyError::OutOfRange) => eprintln!("x line out of range, skipped"),
                     Err(ApplyError::AnchorMismatch) => {
-                        eprintln!("✗ 该处代码与发现时不一致（行号可能已漂移），跳过以免改错")
+                        eprintln!("x code here differs from when it was found (lines may have drifted); skipped to avoid a wrong edit")
                     }
                 }
             } else {
-                println!("跳过");
+                println!("skipped");
             }
         }
         if file_changed {
             if let Err(e) = std::fs::write(&full, content) {
-                eprintln!("✗ 写入 {path} 失败：{e}");
+                eprintln!("x failed to write {path}: {e}");
             }
         }
     }
-    eprintln!("\n共应用 {applied} 处修复。建议改完再跑一遍 `reviewgate review` 复核。");
+    eprintln!("\nApplied {applied} fix(es). Re-run `reviewgate review` afterward to re-check.");
     Ok(())
 }
 

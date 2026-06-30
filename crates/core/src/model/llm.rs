@@ -66,10 +66,10 @@ impl Usage {
         }
     }
 
-    /// 人话摘要：用于 verbose 输出。
+    /// Human-readable summary for verbose output.
     pub fn summary(&self) -> String {
         format!(
-            "输入 {} tok（缓存命中 {}/{} = {}%）· 输出 {} tok",
+            "{} in tok (cache hit {}/{} = {}%) · {} out tok",
             self.total_input(),
             self.cache_read_input_tokens,
             self.total_input(),

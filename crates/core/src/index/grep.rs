@@ -43,7 +43,7 @@ impl GrepIndex {
     /// 该符号的全部词匹配引用。
     async fn references_raw(&self, symbol: &str) -> Result<Vec<SymbolLoc>> {
         if !is_identifier(symbol) {
-            anyhow::bail!("符号名非法：{symbol}");
+            anyhow::bail!("invalid symbol name: {symbol}");
         }
         let (code, stdout) =
             git::git_lenient(&["grep", "-nw", "-I", "--no-color", "-e", symbol]).await?;
@@ -51,7 +51,7 @@ impl GrepIndex {
             return Ok(Vec::new());
         }
         if code != 0 {
-            anyhow::bail!("git grep 退出码 {code}");
+            anyhow::bail!("git grep exited with code {code}");
         }
         let mut locs = Vec::new();
         for line in stdout.lines().take(MAX_RESULTS) {

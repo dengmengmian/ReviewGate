@@ -1,0 +1,22 @@
+# ReviewGate 评测数据集（最小版）—— 真实合并 PR 作 ground truth
+#
+# 列（Tab 分隔）：repo  pr  label  note
+#
+# label 含义：
+#   clean  —— 已被维护者审过并合并的「好 PR」，期望 0 must-fix、不 BLOCK。
+#            用来测**误报率/特异性**：在好代码上不该刷高危噪音。
+#
+# 评分规则（见 scripts/eval-batch.sh）：
+#   clean 且 incomplete=false 且 must-fix=0 且 decision≠block → PASS（无误报）
+#   clean 但出现 must-fix 或 BLOCK                          → FAIL（误报）
+#   incomplete=true                                        → INCOMPLETE（不计入分母，端点慢/超时所致）
+#
+# 来源：docs/evals/2026-06-29__frontend-real-pr-24.md（这 6 个均已逐条人工核对，0 误报）。
+#
+# repo            pr      label   note
+vitejs/vite       22771   clean   doc 24PR: 完整审完 + PASS，最可信子集
+vitejs/vite       22782   clean   doc 24PR: 完整审完 + PASS，最可信子集
+TanStack/query    10987   clean   doc 24PR: 完整审完 + PASS，最可信子集
+TanStack/query    10991   clean   doc 24PR: 完整审完 + WARN，1 条真 nit（style/low），无误报
+react-hook-form   13535   clean   doc 24PR: 完整审完 + WARN，1 条真 perf nit，无误报
+react-hook-form   13539   clean   doc 24PR: WARN，1 条真 style nit（跨文件重复），无误报

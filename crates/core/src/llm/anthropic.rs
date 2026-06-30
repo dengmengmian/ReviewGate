@@ -23,7 +23,7 @@ pub struct AnthropicClient {
 
 impl AnthropicClient {
     pub fn new(cfg: &ProviderConfig) -> Result<Self> {
-        let http = super::http::build_http_client()?;
+        let http = super::http::shared_http_client()?;
         let endpoint = format!("{}/v1/messages", cfg.base_url.trim_end_matches('/'));
         Ok(Self {
             http,
@@ -86,8 +86,8 @@ impl LlmClient for AnthropicClient {
         let text =
             super::http::post_json_with_retry(&self.http, &self.endpoint, &headers, &body).await?;
 
-        let parsed: MessagesResponse =
-            serde_json::from_str(&text).with_context(|| format!("解析 LLM 响应失败：{text}"))?;
+        let parsed: MessagesResponse = serde_json::from_str(&text)
+            .with_context(|| format!("failed to parse LLM response: {text}"))?;
 
         let mut content = Vec::new();
         for block in parsed.content {

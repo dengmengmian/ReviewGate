@@ -21,10 +21,13 @@ pub enum Protocol {
 
 /// 单个提供方配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProviderConfig {
     #[serde(default)]
     pub protocol: Protocol,
     pub base_url: String,
+    /// API 密钥。可留空/省略，改用 `REVIEWGATE_API_KEY` 环境变量注入（推荐，避免提交明文）。
+    #[serde(default)]
     pub api_key: String,
     pub model: String,
     /// 模型输入上下文窗口（token）预算。用于把大 diff 按预算切成多个审查单元，
@@ -47,6 +50,7 @@ impl ProviderConfig {
 
 /// 闸口阈值配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GateConfig {
     /// 置信度 ≥ 此值 → 阻断。
     #[serde(default = "default_block")]
@@ -83,6 +87,7 @@ fn default_true() -> bool {
 
 /// 业务/项目规则配置。注入到共享 prompt 块，供各维度参考。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BusinessConfig {
     /// 内联业务规则列表（最直接的形式）。
     #[serde(default)]
@@ -115,6 +120,7 @@ impl Default for BusinessConfig {
 
 /// 顶层配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     /// 默认提供方名（对应 `providers` 的 key）。
     pub provider: String,
@@ -131,17 +137,18 @@ pub struct Config {
 impl Config {
     /// 按发现顺序加载配置。
     pub fn load() -> Result<Config> {
-        let path = Self::discover()
-            .ok_or_else(|| anyhow!("未找到 reviewgate.toml（可设 REVIEWGATE_CONFIG 指定路径）"))?;
+        let path = Self::discover().ok_or_else(|| {
+            anyhow!("reviewgate.toml not found (set REVIEWGATE_CONFIG to point to it)")
+        })?;
         Self::from_path(&path)
     }
 
     /// 从指定路径加载。
     pub fn from_path(path: &Path) -> Result<Config> {
         let text = std::fs::read_to_string(path)
-            .with_context(|| format!("读取配置失败：{}", path.display()))?;
-        let cfg: Config =
-            toml::from_str(&text).with_context(|| format!("解析配置失败：{}", path.display()))?;
+            .with_context(|| format!("failed to read config: {}", path.display()))?;
+        let cfg: Config = toml::from_str(&text)
+            .with_context(|| format!("failed to parse config: {}", path.display()))?;
         Ok(cfg)
     }
 
@@ -149,7 +156,7 @@ impl Config {
     pub fn active_provider(&self) -> Result<&ProviderConfig> {
         self.providers
             .get(&self.provider)
-            .ok_or_else(|| anyhow!("配置里没有名为 `{}` 的提供方", self.provider))
+            .ok_or_else(|| anyhow!("no provider named `{}` in the config", self.provider))
     }
 
     /// 取默认提供方并应用环境变量覆盖（用于 CI 注入密钥等）。
@@ -171,6 +178,19 @@ impl Config {
             if !m.is_empty() {
                 p.model = m;
             }
+        }
+        let key = p.api_key.trim();
+        if key.is_empty() {
+            anyhow::bail!(
+                "no API key configured for provider '{}': set api_key under [providers.{}] in the config, or set the REVIEWGATE_API_KEY environment variable",
+                self.provider, self.provider
+            );
+        }
+        if is_placeholder_key(key) {
+            anyhow::bail!(
+                "the API key for provider '{}' is still the placeholder ('{}'): replace it with a real key under [providers.{}], or set the REVIEWGATE_API_KEY environment variable",
+                self.provider, key, self.provider
+            );
         }
         Ok(p)
     }
@@ -205,6 +225,19 @@ fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// 是否是模板占位符而非真 key。命中时提前拦下，给出明确指引，
+/// 而不是把占位串发给服务端换回一个看不懂的 400/401。
+fn is_placeholder_key(key: &str) -> bool {
+    let k = key.to_ascii_uppercase();
+    k.contains("REPLACE_WITH")
+        || k.contains("PLACEHOLDER")
+        || k.contains("YOUR_API_KEY")
+        || k.contains("YOUR-API-KEY")
+        || k == "CHANGEME"
+        || k == "TODO"
+        || (key.starts_with('<') && key.ends_with('>'))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,6 +258,17 @@ skills_dir = ".claude/skills"
 "#;
 
     #[test]
+    fn placeholder_keys_detected() {
+        assert!(is_placeholder_key("REPLACE_WITH_REVIEWGATE_API_KEY_OR_ENV"));
+        assert!(is_placeholder_key("your_api_key_here"));
+        assert!(is_placeholder_key("<your-key>"));
+        assert!(is_placeholder_key("changeme"));
+        // 真 key 不应误伤。
+        assert!(!is_placeholder_key("sk-abc123def456"));
+        assert!(!is_placeholder_key("AIzaSyD-1234567890"));
+    }
+
+    #[test]
     fn parses_and_defaults() {
         let cfg: Config = toml::from_str(TOML).unwrap();
         assert_eq!(cfg.provider, "qwen");
@@ -237,6 +281,24 @@ skills_dir = ".claude/skills"
         assert_eq!(cfg.gate.warn_threshold, 0.5);
         // business.skills_dir 解析到。
         assert_eq!(cfg.business.skills_dir.as_deref(), Some(".claude/skills"));
+    }
+
+    #[test]
+    fn unknown_key_is_rejected() {
+        // 拼错的阈值键名不能被静默忽略——否则用户以为调了闸口，实际还是默认值。
+        let typo = r#"
+provider = "q"
+[providers.q]
+base_url = "https://x/v1"
+model = "m"
+[gate]
+block_treshold = 0.95
+"#;
+        let err = toml::from_str::<Config>(typo).unwrap_err().to_string();
+        assert!(
+            err.contains("block_treshold") || err.contains("unknown field"),
+            "expected unknown-field error, got: {err}"
+        );
     }
 
     #[test]

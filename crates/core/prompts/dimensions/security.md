@@ -1,6 +1,8 @@
 Security vulnerabilities. Checklist:
 - Injection: SQL/command/path/template concatenation without parameterization or escaping.
 - Authentication and authorization: privilege bypass, missing authentication, trusting client-controlled data.
+- **Client-side authorization is not a security control**: gating a sensitive or destructive action (admin panel, delete/transfer, role-only buttons) purely on client-controlled state — a `role`/`isAdmin` flag from the API response, props, or local state — is bypassable via devtools or a crafted request. Such actions must be authorized server-side. Report a client-only gate on a sensitive action as a **security** issue (privilege escalation), not a style nit, even when the only visible symptom is a `==`/`===` role comparison.
+- **XSS**: rendering user-controlled data as raw HTML (`dangerouslySetInnerHTML`, `innerHTML`, `v-html`, `document.write`, template `| safe`) without sanitization; building DOM/URLs (`href`, `src`, `location`) from untrusted input.
 - Secrets: hardcoded keys, passwords, or tokens.
 - **SSRF**: requests to **user-controlled URLs, hosts, or IPs** (`http.Get`, `fetch`, `curl`, `requests`, `openConnection`, etc.) without allowlists, protocol checks, or private-network address checks. Pay special attention when this change removes an existing allowlist or validation.
 - Unsafe deserialization (`pickle`, `Marshal`, `ObjectInputStream`, etc. on untrusted data), XXE, and insecure randomness.
