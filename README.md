@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT">
 </p>
 
-ReviewGate 是给 AI 生成或 AI 大量参与代码准备的 **Beta** 质量闸口。它不替代测试和人工 review，而是在 PR 合并前先做一轮过滤：高风险问题推到前面，低置信反馈默认折叠。
+ReviewGate 是给 AI 生成或 AI 大量参与代码准备的合并前质量闸口。核心链路已可用于真实 PR 和 CI；它不替代测试和人工 review，而是在合并前先做一轮过滤：高风险问题推到前面，低置信反馈默认折叠。
 
 | 核心价值 | 对团队的意义 |
 |---|---|
@@ -93,7 +93,7 @@ irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 |
 |---|---|
 | AI 一次改很多文件，reviewer 想先知道哪里最危险 | 替代单元测试、集成测试或人工 review |
 | 团队有权限、金额、状态机等业务规则需要反复检查 | 让模型自动改代码并无人确认地合并 |
-| 想给 PR/CI 加一道高置信风险闸口 | 对误报零容忍、无法接受 Beta 工具的保守 WARN |
+| 想给 PR/CI 加一道高置信风险闸口 | 对误报零容忍、无法接受保守 WARN |
 | 想用 `--intent` 检查实现是否符合需求/设计 | 完全没有 LLM API key 或不允许代码片段发给模型 |
 
 ## 为什么可以信
@@ -345,7 +345,7 @@ jobs:
 
 ## 当前状态
 
-ReviewGate 目前处于 **Beta**，适合在个人仓库、团队 PR 或 CI 里试用；建议先以 `WARN` / 评论模式观察一段时间，再把 `BLOCK` 接入强制合并闸口。
+ReviewGate 核心链路已可用于真实 PR 和 CI。团队接入时建议先以 `WARN` / 评论模式观察一段时间，再把 `BLOCK` 接入强制合并闸口。
 
 | 状态 | 说明 |
 |---|---|

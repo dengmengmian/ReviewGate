@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT">
 </p>
 
-ReviewGate is a **Beta** quality gate for AI-generated, or AI-heavy, code. It does not replace tests or human review. It filters PRs before merge: high-risk findings are promoted, and low-confidence noise is folded by default.
+ReviewGate is a pre-merge quality gate for AI-generated, or AI-heavy, code. The core path is ready for real PRs and CI. It does not replace tests or human review; it filters PRs before merge by promoting high-risk findings and folding low-confidence noise by default.
 
 | Core value | What it means for teams |
 |---|---|
@@ -91,7 +91,7 @@ irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 |
 |---|---|
 | AI changes many files and reviewers need risk prioritization | Replacing unit tests, integration tests, or human review |
 | Permission, money, state-machine, or product rules need repeated checks | Auto-merging model-generated fixes without review |
-| You want a high-confidence PR/CI gate | Teams that cannot tolerate conservative WARNs from a Beta tool |
+| You want a high-confidence PR/CI gate | Teams that cannot tolerate conservative WARNs |
 | You want `--intent` to check implementation against requirements/design | Environments without an LLM API key or permission to send code context to a model |
 
 ## Why Trust It
@@ -343,7 +343,7 @@ See [`docs/evals/`](docs/evals/) for details, [`docs/BIG_PR_HANDLING.md`](docs/B
 
 ## Current Status
 
-ReviewGate is currently in **Beta**. It is ready to try in personal repositories, team PRs, and CI; for shared repositories, start with `WARN` / comment-only mode before making `BLOCK` a required merge gate.
+ReviewGate's core path is ready for real PRs and CI. For shared repositories, start with `WARN` / comment-only mode before making `BLOCK` a required merge gate.
 
 | Status | Notes |
 |---|---|

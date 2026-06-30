@@ -15,6 +15,8 @@ Changes are listed in Chinese first, then English.
   README now includes a copy-paste GitHub Action workflow; the config example now prefers environment-injected secrets instead of an active placeholder `api_key`.
 - README 按运营漏斗重排：首屏聚焦核心价值，快速开始去掉 active key，前置输出示例和可信证据，长 CLI 参数与实现细节下沉。
   README was reorganized around the user funnel: sharper first screen, no active key in quick config, earlier output/trust signals, and advanced CLI/design details moved lower.
+- README 状态说明从 Beta 改为“核心链路已可用于真实 PR 和 CI”，同时保留先 WARN/评论模式再强制 BLOCK 的接入建议。
+  README status now says the core path is ready for real PRs and CI, while still recommending WARN/comment-only rollout before enforcing BLOCK.
 
 ## [0.1.4] - 2026-06-29
 
