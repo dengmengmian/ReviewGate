@@ -193,7 +193,7 @@ rules = [
 
 ## Ways To Use It
 
-ReviewGate has one core engine and three thin wrappers: CLI, Claude Code Skill, and GitHub Action.
+ReviewGate has one core engine and several wrappers, all of which just call the same `reviewgate` CLI. **CLI is primary and the GitHub Action is for PR/CI** — both are exercised in real use. **The Claude Code Skill and Codex are thinner agent-instruction shells (experimental)**: calibrated to the current JSON schema, but less battle-tested than the first two.
 
 ### CLI
 
@@ -262,7 +262,7 @@ reviewgate agent --dimension logic
 
 ### Claude Code Skill
 
-Personal use: copy `integrations/claude-skill/SKILL.md` to `~/.claude/skills/reviewgate/`, then ask Claude Code to review your changes.
+Personal use: copy `integrations/claude-skill/SKILL.md` to `~/.claude/skills/reviewgate/` (then reload Claude Code). **Trigger it explicitly with `/reviewgate`** — a plain "review my changes" may be picked up by Claude Code's built-in generic code-review instead.
 
 Team setup:
 
@@ -310,6 +310,16 @@ jobs:
 ```
 
 > **Versioning**: use `@v0` to track compatible 0.x Action updates. The Action downloads the latest CLI by default, so CLI releases usually need no workflow change; for reproducible CI, set `with: { version: "v0.2.0" }` to pin the CLI engine.
+
+### 4. Codex (AGENTS.md, experimental)
+
+OpenAI Codex CLI reads `AGENTS.md` at the repo root. Merge ReviewGate's usage into it idempotently (existing content is preserved):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integrations/codex/install-into-project.sh | sh
+```
+
+It appends a ReviewGate section to `./AGENTS.md` and creates `reviewgate.toml` + `.reviewgate/rules/` templates. Then tell Codex to "review my changes with ReviewGate". Same source and JSON schema as the Claude Skill.
 
 ## Design Details
 
