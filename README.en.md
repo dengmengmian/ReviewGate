@@ -300,7 +300,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: dengmengmian/ReviewGate/integrations/github-action@v0.2.0
+      - uses: dengmengmian/ReviewGate/integrations/github-action@v0
         env:
           REVIEWGATE_API_KEY: ${{ secrets.REVIEWGATE_API_KEY }}
         with:
@@ -308,6 +308,8 @@ jobs:
           fail-on: block
           comment: "true"
 ```
+
+> **Pinning**: `@v0` tracks compatible 0.x updates without jumping to a breaking major — this is the recommended pin. The action downloads the engine at runtime (`latest` by default), so a new CLI release needs **no workflow change**; teams that want reproducibility can add `with: { version: "0.2.0" }` to pin the engine to a specific version.
 
 ## Design Details
 

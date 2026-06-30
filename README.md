@@ -299,7 +299,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: dengmengmian/ReviewGate/integrations/github-action@v0.2.0
+      - uses: dengmengmian/ReviewGate/integrations/github-action@v0
         env:
           REVIEWGATE_API_KEY: ${{ secrets.REVIEWGATE_API_KEY }}
         with:
@@ -307,6 +307,8 @@ jobs:
           fail-on: block
           comment: "true"
 ```
+
+> **版本固定**：`@v0` 会随 0.x 的兼容更新自动跟进、但不会跳到破坏性大版本，是推荐的 pin 法。Action 的引擎在运行时按 `latest` 下载，所以 CLI 发新版你**不用改 workflow**；想要可复现的团队可加 `with: { version: "0.2.0" }` 把引擎钉死到指定版本。
 
 ## 设计细节
 

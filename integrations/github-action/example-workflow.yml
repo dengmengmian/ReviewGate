@@ -15,7 +15,7 @@ jobs:
         with:
           fetch-depth: 0   # 需要完整历史以计算 diff
 
-      - uses: dengmengmian/ReviewGate/integrations/github-action@v0.2.0
+      - uses: dengmengmian/ReviewGate/integrations/github-action@v0   # 随 0.x 兼容更新；版本固定见下
         env:
           # 在仓库 Secrets 里配置 LLM 密钥，避免提交到代码
           REVIEWGATE_API_KEY: ${{ secrets.REVIEWGATE_API_KEY }}
