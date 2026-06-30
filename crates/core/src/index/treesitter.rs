@@ -45,7 +45,7 @@ impl TreeSitterIndex {
             return Ok(Vec::new());
         }
         if code != 0 {
-            anyhow::bail!("git grep -l 退出码 {code}");
+            anyhow::bail!("git grep -l exited with code {code}");
         }
         Ok(stdout
             .lines()
@@ -56,7 +56,7 @@ impl TreeSitterIndex {
 
     async fn collect(&self, symbol: &str, mode: Mode) -> Result<Vec<SymbolLoc>> {
         if !is_identifier(symbol) {
-            anyhow::bail!("符号名非法：{symbol}");
+            anyhow::bail!("invalid symbol name: {symbol}");
         }
         let mut out = Vec::new();
         for path in self.candidate_files(symbol).await? {

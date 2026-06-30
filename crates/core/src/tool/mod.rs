@@ -14,7 +14,7 @@ pub use exec_check::RunCheck;
 pub use index_tools::{FindCallers, FindDefinition, FindReferences};
 
 use crate::diff::Diff;
-use crate::index::{CodeIndex, GrepIndex, TreeSitterIndex};
+use crate::index::{CachingIndex, CodeIndex, GrepIndex, TreeSitterIndex};
 use crate::model::ToolDef;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -64,12 +64,15 @@ impl ToolContext {
     }
 
     /// 用 TreeSitterIndex 构造（v1 AST 精确，不支持的语言内部回退按行匹配）。
+    /// 外面再套一层结果缓存：并发维度 Agent 常重复查同一批改动符号，命中即免去
+    /// 重复的 `git grep` 子进程 + AST 解析。
     pub fn with_treesitter_index(
         diff: Arc<Diff>,
         repo_root: impl Into<PathBuf>,
         new_ref: Option<String>,
     ) -> Self {
-        Self::new(diff, repo_root, new_ref, Arc::new(TreeSitterIndex::new()))
+        let index = Arc::new(CachingIndex::new(Arc::new(TreeSitterIndex::new())));
+        Self::new(diff, repo_root, new_ref, index)
     }
 }
 
