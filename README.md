@@ -299,7 +299,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: dengmengmian/ReviewGate/integrations/github-action@v0.1.4
+      - uses: dengmengmian/ReviewGate/integrations/github-action@v0.2.0
         env:
           REVIEWGATE_API_KEY: ${{ secrets.REVIEWGATE_API_KEY }}
         with:
