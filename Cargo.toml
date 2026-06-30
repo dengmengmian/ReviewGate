@@ -3,10 +3,11 @@ resolver = "2"
 members = ["crates/core", "crates/cli"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/dengmengmian/ReviewGate"
+homepage = "https://dengmengmian.github.io/ReviewGate/"
 description = "A pre-merge quality gate for AI-generated code."
 
 [workspace.dependencies]

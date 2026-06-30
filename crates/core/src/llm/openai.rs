@@ -20,7 +20,7 @@ pub struct OpenAiClient {
 
 impl OpenAiClient {
     pub fn new(cfg: &ProviderConfig) -> Result<Self> {
-        let http = super::http::build_http_client()?;
+        let http = super::http::shared_http_client()?;
         let endpoint = format!("{}/chat/completions", cfg.base_url.trim_end_matches('/'));
         Ok(Self {
             http,
@@ -129,13 +129,13 @@ impl LlmClient for OpenAiClient {
         let text =
             super::http::post_json_with_retry(&self.http, &self.endpoint, &headers, &body).await?;
 
-        let parsed: ChatResponse =
-            serde_json::from_str(&text).with_context(|| format!("解析 LLM 响应失败：{text}"))?;
+        let parsed: ChatResponse = serde_json::from_str(&text)
+            .with_context(|| format!("failed to parse LLM response: {text}"))?;
         let choice = parsed
             .choices
             .into_iter()
             .next()
-            .context("LLM 响应没有 choices")?;
+            .context("LLM response has no choices")?;
 
         let mut content = Vec::new();
         if let Some(t) = choice.message.content {

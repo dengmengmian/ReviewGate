@@ -337,7 +337,7 @@ mod tests {
                     stop_reason: StopReason::ToolUse,
                     usage: Usage::default(),
                 }),
-                None => anyhow::bail!("judge 请求失败"),
+                None => anyhow::bail!("judge request failed"),
             }
         }
         fn model(&self) -> &str {
@@ -394,6 +394,8 @@ mod tests {
             reachability: crate::model::Reachability::default(),
             filtered: false,
             agreed_dimensions: 1,
+            criterion: None,
+            intent_status: None,
         }
     }
 

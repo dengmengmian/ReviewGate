@@ -1,14 +1,16 @@
 //! ReviewGate CLI —— 主形态。
 
 mod fix;
+mod i18n;
 mod render;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+use std::io::IsTerminal;
 
 #[derive(Parser)]
 #[command(
     name = "reviewgate",
-    about = "给 AI 生成的代码加一道合并前质检：优先暴露高风险问题，折叠低置信噪音",
+    about = "A pre-merge quality gate for AI-generated code: surface high-risk issues first, fold low-confidence noise",
     version = reviewgate_core::version(),
 )]
 struct Cli {
@@ -18,47 +20,47 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// 审查当前 git diff
+    /// Review the current git diff
     Review(ReviewArgs),
-    /// LLM 连通性自检
+    /// LLM connectivity self-check
     Llm {
         #[command(subcommand)]
         cmd: LlmCmd,
     },
-    /// 打印解析后的 diff 摘要（调试用）。支持 --commit / --from --to，缺省为工作区。
+    /// Print the parsed diff summary (debug). Supports --commit / --from --to; defaults to the working tree.
     Diff(DiffArgs),
-    /// 调用单个工具（调试用）：reviewgate tool <name> '<json>'
+    /// Invoke a single tool (debug): reviewgate tool <name> '<json>'
     Tool {
         name: String,
         #[arg(default_value = "{}")]
         input: String,
     },
-    /// 跑单维度 Agent（调试用）：reviewgate agent --dimension logic
+    /// Run a single-dimension agent (debug): reviewgate agent --dimension logic
     Agent {
-        /// 维度：security | perf | logic | style | ai_smell
+        /// Dimension: security | perf | logic | style | ai_smell | business
         #[arg(long, default_value = "logic")]
         dimension: String,
     },
-    /// 自更新到最新 release（下载对应平台二进制并替换当前可执行文件）
+    /// Self-update to the latest release (download the platform binary and replace the current executable)
     Upgrade,
 }
 
 #[derive(Subcommand)]
 enum LlmCmd {
-    /// 向默认提供方发一次最小请求，验证连通性
+    /// Send one minimal request to the default provider to verify connectivity
     Test,
 }
 
 /// diff 范围选择（review 与 diff 共用）。
 #[derive(Parser)]
 struct DiffArgs {
-    /// 审查单个 commit 引入的改动
+    /// Review the changes introduced by a single commit
     #[arg(long)]
     commit: Option<String>,
-    /// 范围起点（与 --to 配合，自 merge-base 起）
+    /// Range start (used with --to, from the merge-base)
     #[arg(long)]
     from: Option<String>,
-    /// 范围终点（与 --from 配合）
+    /// Range end (used with --from)
     #[arg(long)]
     to: Option<String>,
 }
@@ -77,79 +79,156 @@ fn resolve_mode(
             to: t.clone(),
         },
         (_, Some(_), None) | (_, None, Some(_)) => {
-            anyhow::bail!("--from 与 --to 必须同时提供")
+            anyhow::bail!("--from and --to must be provided together")
         }
         _ => DiffMode::Workspace,
     })
 }
 
+/// 解析意图文本：优先 `--intent`（文件路径，或 `-` 读 stdin）；否则 `--intent-from-commit` 用提交信息。
+/// 这是「意图作为每次不同的输入」的入口——与常驻的 `business.rules` 正交。
+fn resolve_intent(args: &ReviewArgs) -> anyhow::Result<Option<String>> {
+    use anyhow::Context;
+    let normalize = |s: String| {
+        let t = s.trim().to_string();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t)
+        }
+    };
+    if let Some(src) = &args.intent {
+        let text = if src == "-" {
+            use std::io::Read;
+            let mut buf = String::new();
+            std::io::stdin()
+                .read_to_string(&mut buf)
+                .context("failed to read intent from stdin")?;
+            buf
+        } else {
+            std::fs::read_to_string(src)
+                .with_context(|| format!("failed to read intent file: {src}"))?
+        };
+        return Ok(normalize(text));
+    }
+    if args.intent_from_commit {
+        let Some(sha) = &args.commit else {
+            anyhow::bail!("--intent-from-commit requires --commit");
+        };
+        let out = std::process::Command::new("git")
+            .args(["log", "-1", "--format=%B", sha])
+            .output()
+            .context("failed to run git to read the commit message")?;
+        if !out.status.success() {
+            anyhow::bail!("failed to read commit message for {sha}");
+        }
+        return Ok(normalize(String::from_utf8_lossy(&out.stdout).to_string()));
+    }
+    Ok(None)
+}
+
+/// Output format. Invalid values are rejected at parse time (not silently coerced to text).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum OutputFormat {
+    Text,
+    Json,
+}
+
+/// Which verdict triggers a non-zero exit code. Invalid values are rejected at parse time,
+/// so a typo (e.g. `--fail-on blcok`) can never silently disable the gate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum FailOn {
+    Block,
+    Warn,
+    Never,
+}
+
 #[derive(Parser)]
 struct ReviewArgs {
-    /// 输出格式：text | json
-    #[arg(long, default_value = "text")]
-    format: String,
-    /// 审查维度：all 或逗号分隔 security,perf,logic,style,ai_smell
+    /// Output format
+    #[arg(long, value_enum, default_value = "text")]
+    format: OutputFormat,
+    /// Review dimensions: all, or a comma-separated list of security,perf,logic,style,ai_smell,business
     #[arg(long, default_value = "all")]
     dimensions: String,
-    /// 审查单个 commit 引入的改动
+    /// Review the changes introduced by a single commit
     #[arg(long)]
     commit: Option<String>,
-    /// 范围审查起点（与 --to 配合，自 merge-base 起）
+    /// Range review start (used with --to, from the merge-base)
     #[arg(long)]
     from: Option<String>,
-    /// 范围审查终点（与 --from 配合）
+    /// Range review end (used with --from)
     #[arg(long)]
     to: Option<String>,
-    /// 跳过证伪 Judge（更快，但误报更多）
+    /// Skip the counter-evidence judge (faster, but more false positives)
     #[arg(long)]
     no_judge: bool,
-    /// 展开被过滤的低置信项
+    /// Show filtered low-confidence findings
     #[arg(long)]
     show_filtered: bool,
-    /// 何种判定导致非 0 退出码：block | warn | never
-    #[arg(long, default_value = "block")]
-    fail_on: String,
-    /// 在 GitHub PR 上发布摘要评论（用于 GitHub Action）
+    /// Which verdict triggers a non-zero exit code
+    #[arg(long, value_enum, default_value = "block")]
+    fail_on: FailOn,
+    /// Post a summary comment on the GitHub PR (for GitHub Action)
     #[arg(long)]
     comment: bool,
-    /// 打印每个维度每轮的进度到 stderr
+    /// Print per-dimension, per-round progress to stderr
     #[arg(long, short)]
     verbose: bool,
-    /// 单维度墙钟超时（秒，0=不限）。超时跳过该维度、保留其余，适合 CI 兜底。
+    /// Per-dimension wall-clock timeout (seconds, 0=unlimited). On timeout, skip that dimension and keep the rest; useful as a CI fallback.
     #[arg(long, default_value = "0")]
     timeout: u64,
-    /// 每维度采样次数（默认 1）。>1 取并集提升对 flaky 漏报（如 SSRF）的召回稳定性，成本 ×N。
+    /// Samples per dimension (default 1). >1 unions the results to stabilize recall of flaky misses (e.g. SSRF), at N× cost.
     #[arg(long, default_value = "1")]
     samples: usize,
-    /// Judge 并发上限，避免候选过多时触发 provider 限流。
+    /// Judge concurrency limit, to avoid provider rate limits when there are many candidates.
     #[arg(long, default_value = "4")]
     judge_concurrency: usize,
-    /// 逐条 y/N 确认后，把 suggestion_code 应用到工作区文件（非终端不应用）。
+    /// Fan-out concurrency limit (units × dimensions × samples), to avoid provider rate limits on large PRs.
+    #[arg(long, default_value = "6")]
+    fanout_concurrency: usize,
+    /// After per-finding y/N confirmation, apply suggestion_code to working-tree files (not applied when non-interactive).
     #[arg(long)]
     fix: bool,
-    /// 开启 run_check 沙箱执行（logic 维度可真正运行边界用例验证细微算法）。
-    /// 会执行模型生成的自包含 JS/Python 片段——仅在可信/CI 沙箱环境使用。默认关闭。
+    /// Enable run_check sandboxed execution (lets the logic dimension actually run edge cases to verify subtle algorithms).
+    /// Runs model-generated self-contained JS/Python snippets — use only in trusted/CI sandbox environments. Off by default.
     #[arg(long)]
     exec_verify: bool,
+    /// Path to an intent/reference doc (requirement/design/acceptance criteria); `-` reads stdin. When set, runs a separate "implementation vs intent" technical review.
+    #[arg(long)]
+    intent: Option<String>,
+    /// Use this commit's message as the intent (only in --commit mode; --intent takes precedence if both are given).
+    #[arg(long)]
+    intent_from_commit: bool,
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() {
     let cli = Cli::parse();
-    match cli.command {
-        Command::Review(args) => {
-            let code = review(&args).await?;
-            std::process::exit(code);
+    match run(cli).await {
+        Ok(code) => std::process::exit(code),
+        // 操作性错误（配置缺失/网络失败/密钥未配…）用退出码 2，与「闸口 BLOCK」的 1 区分：
+        // CI 才能分辨「PR 有 must-fix」(1) 和「工具自身出错，应重试/告警」(2)。
+        Err(e) => {
+            eprintln!("error: {e:#}");
+            std::process::exit(2);
         }
-        Command::Llm { cmd } => match cmd {
-            LlmCmd::Test => llm_test().await?,
-        },
-        Command::Diff(args) => diff_summary(&args).await?,
-        Command::Tool { name, input } => tool_call(&name, &input).await?,
-        Command::Agent { dimension } => agent_run(&dimension).await?,
-        Command::Upgrade => upgrade().await?,
     }
-    Ok(())
+}
+
+/// 分发子命令，返回进程退出码。只有 `review` 走闸口语义（0=放行 / 1=拦截）；
+/// 其余成功即 0，错误统一冒泡到 `main` 记为 2。
+async fn run(cli: Cli) -> anyhow::Result<i32> {
+    match cli.command {
+        Command::Review(args) => review(&args).await,
+        Command::Llm { cmd } => match cmd {
+            LlmCmd::Test => llm_test().await.map(|()| 0),
+        },
+        Command::Diff(args) => diff_summary(&args).await.map(|()| 0),
+        Command::Tool { name, input } => tool_call(&name, &input).await.map(|()| 0),
+        Command::Agent { dimension } => agent_run(&dimension).await.map(|()| 0),
+        Command::Upgrade => upgrade().await.map(|()| 0),
+    }
 }
 
 /// 当前平台对应的 release 资产名（与 `install.sh` 命名一致）。
@@ -158,12 +237,12 @@ fn release_asset(os: &str, arch: &str) -> anyhow::Result<String> {
         "linux" => "linux",
         "macos" => "darwin",
         "windows" => "windows",
-        other => anyhow::bail!("不支持的系统：{other}"),
+        other => anyhow::bail!("unsupported OS: {other}"),
     };
     let a = match arch {
         "x86_64" => "x64",
         "aarch64" => "arm64",
-        other => anyhow::bail!("不支持的架构：{other}"),
+        other => anyhow::bail!("unsupported arch: {other}"),
     };
     let ext = if o == "windows" { ".exe" } else { "" };
     Ok(format!("reviewgate-{o}-{a}{ext}"))
@@ -175,36 +254,36 @@ async fn upgrade() -> anyhow::Result<()> {
     let asset = release_asset(std::env::consts::OS, std::env::consts::ARCH)?;
     let url =
         format!("https://github.com/dengmengmian/ReviewGate/releases/latest/download/{asset}");
-    eprintln!("下载最新版本：{asset} …");
+    eprintln!("Downloading latest release: {asset} ...");
     let resp = reqwest::Client::new()
         .get(&url)
         .send()
         .await
-        .with_context(|| format!("下载失败：{url}"))?;
+        .with_context(|| format!("download failed: {url}"))?;
     if !resp.status().is_success() {
-        anyhow::bail!("下载失败：HTTP {}（{url}）", resp.status());
+        anyhow::bail!("download failed: HTTP {} ({url})", resp.status());
     }
     let bytes = resp.bytes().await?;
 
     // 写临时文件 → 自替换当前可执行文件（self_replace 处理 Windows 运行中 exe 的替换）。
     let tmp = std::env::temp_dir().join(format!("reviewgate-upgrade-{}", std::process::id()));
-    std::fs::write(&tmp, &bytes).context("写入临时文件失败")?;
+    std::fs::write(&tmp, &bytes).context("failed to write temp file")?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))?;
     }
-    self_replace::self_replace(&tmp).context("替换当前可执行文件失败")?;
+    self_replace::self_replace(&tmp).context("failed to replace the current executable")?;
     let _ = std::fs::remove_file(&tmp);
 
     // 用新二进制打印版本确认。
     if let Ok(exe) = std::env::current_exe() {
         if let Ok(out) = std::process::Command::new(&exe).arg("--version").output() {
-            eprint!("✓ 已升级到：{}", String::from_utf8_lossy(&out.stdout));
+            eprint!("OK Upgraded to: {}", String::from_utf8_lossy(&out.stdout));
             return Ok(());
         }
     }
-    eprintln!("✓ 已升级。");
+    eprintln!("OK Upgraded.");
     Ok(())
 }
 
@@ -217,7 +296,7 @@ fn parse_dimension(s: &str) -> anyhow::Result<reviewgate_core::model::Dimension>
         "style" => Style,
         "ai_smell" => AiSmell,
         "business" => Business,
-        other => anyhow::bail!("未知维度：{other}"),
+        other => anyhow::bail!("unknown dimension: {other}"),
     })
 }
 
@@ -244,7 +323,7 @@ async fn agent_run(dimension: &str) -> anyhow::Result<()> {
     let root = diff::git::repo_root().await?;
     let d = Arc::new(diff::collect(&DiffMode::Workspace).await?);
     if d.files.is_empty() {
-        eprintln!("没有检测到改动。");
+        eprintln!("{}", crate::i18n::Lang::detect().no_changes());
         return Ok(());
     }
     // 只传共享大块；维度聚焦块由 run_agent 注入（见 review 路径说明）。
@@ -257,7 +336,11 @@ async fn agent_run(dimension: &str) -> anyhow::Result<()> {
     }
 
     let agent_cfg = AgentConfig::for_dimension(dim);
-    eprintln!("跑维度 [{}]，模型 {} …", dim, client.model());
+    eprintln!(
+        "Running dimension [{}] with model {} ...",
+        dim,
+        client.model()
+    );
     let mut findings = run_agent(&*client, &reg, &ctx, &agent_cfg, user_prompt).await?;
 
     // M1.9 行号重定位。
@@ -265,7 +348,7 @@ async fn agent_run(dimension: &str) -> anyhow::Result<()> {
         .await;
 
     println!("{}", serde_json::to_string_pretty(&findings)?);
-    eprintln!("共 {} 条发现。", findings.len());
+    eprintln!("{} findings.", findings.len());
     Ok(())
 }
 
@@ -290,7 +373,6 @@ async fn tool_call(name: &str, input: &str) -> anyhow::Result<()> {
 
 async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     use reviewgate_core::config::Config;
-    use reviewgate_core::gate::GateDecision;
     use reviewgate_core::review::{run_review, ReviewOptions};
 
     let dims = parse_dimensions(&args.dimensions)?;
@@ -305,17 +387,26 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     let agents = effective_dims * samples;
 
     let mode = resolve_mode(&args.commit, &args.from, &args.to)?;
-    eprintln!(
-        "ReviewGate 审查中（基础维度 {} 个：{}{}；samples={}；实际 Agent {} 个）…",
-        dims.len(),
-        names.join(", "),
-        if auto_business {
-            "；自动加入 business"
+    let etty = std::io::stderr().is_terminal();
+    let dim = |s: &str| {
+        if etty {
+            format!("\x1b[2m{s}\x1b[0m")
         } else {
-            ""
-        },
-        samples,
-        agents
+            s.to_string()
+        }
+    };
+    let business = if auto_business { " + business" } else { "" };
+    let samples_note = if samples > 1 {
+        format!(" · samples={samples}")
+    } else {
+        String::new()
+    };
+    eprintln!(
+        "ReviewGate {} {}{} {}",
+        dim("reviewing"),
+        names.join(", "),
+        business,
+        dim(&format!("· {agents} agents{samples_note}")),
     );
 
     let mut opts = ReviewOptions::new(mode, dims);
@@ -327,21 +418,82 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     }
     opts.samples = samples;
     opts.judge_concurrency = args.judge_concurrency.max(1);
+    opts.fanout_concurrency = args.fanout_concurrency.max(1);
     opts.exec_verify = args.exec_verify;
+    opts.intent = resolve_intent(args)?;
+    if opts.intent.is_some() {
+        eprintln!("  + Intent review: intent loaded; running the implementation-vs-intent pass.");
+    }
+
+    // 实时进度：仅在终端、非 JSON、非 --verbose 时开。单行就地刷新，结束清行并给紧凑摘要；
+    // JSON/管道/CI/verbose 下不渲染（避免污染输出/与详细日志打架）。
+    let live =
+        std::io::stderr().is_terminal() && args.format != OutputFormat::Json && !args.verbose;
+    let progress = live.then(|| std::sync::Arc::new(reviewgate_core::progress::Progress::new()));
+    opts.progress = progress.clone();
+    let render = progress.clone().map(|p| {
+        let t = i18n::Lang::detect();
+        tokio::spawn(async move {
+            const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+            // 整行可见宽度上限，与文本渲染保持一致：超出会被终端折行，导致 \r\x1b[2K
+            // 只清当前物理行、残留前面的折行 → 刷屏。把「整行」（含前后缀）压进预算即可。
+            // 宽度按显示列算（CJK 记 2 列），否则中文文案会撑破预算。
+            const LINE_WIDTH: usize = 60;
+            let reviewing = t.reviewing();
+            let start = std::time::Instant::now();
+            let mut i = 0usize;
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+                let (n, last) = p.snapshot();
+                let s = start.elapsed().as_secs();
+                // 可见骨架：`⠋ {reviewing} · ` + last + ` · {n} calls · M:SS`。
+                // 先给前后缀留位，剩下的预算分给 last，保证整行不超过 LINE_WIDTH。
+                let suffix = format!(" · {} · {}:{:02}", t.calls(n), s / 60, s % 60);
+                // 1(spinner)+1(空格)+reviewing+1(空格)+2("· ") 为前缀可见宽。
+                let fixed = 5 + render::display_width(reviewing) + render::display_width(&suffix);
+                let budget = LINE_WIDTH.saturating_sub(fixed);
+                let last = render::truncate_to_width(&last, budget);
+                eprint!(
+                    "\r\x1b[2K\x1b[36m{}\x1b[0m {reviewing} \x1b[2m·\x1b[0m {last}\x1b[2m{suffix}\x1b[0m",
+                    FRAMES[i % FRAMES.len()],
+                );
+                let _ = std::io::Write::flush(&mut std::io::stderr());
+                i += 1;
+            }
+        })
+    });
+
+    let started = std::time::Instant::now();
     let outcome = run_review(&cfg, &opts).await?;
 
-    match args.format.as_str() {
-        "json" => println!("{}", render::render_json(&outcome)?),
-        _ => print!("{}", render::render_text(&outcome, args.show_filtered)),
+    if let Some(h) = render {
+        h.abort();
+        let t = i18n::Lang::detect();
+        let (n, _) = progress.as_ref().unwrap().snapshot();
+        let s = started.elapsed().as_secs();
+        // 清掉进度行，留一行紧凑完成摘要（细节收起）。
+        eprint!("\r\x1b[2K");
+        eprintln!(
+            "\x1b[32m✓\x1b[0m {} \x1b[2m· {} · {}:{:02}\x1b[0m",
+            t.review_complete(),
+            t.tool_calls(n),
+            s / 60,
+            s % 60
+        );
+    }
+
+    match args.format {
+        OutputFormat::Json => println!("{}", render::render_json(&outcome)?),
+        OutputFormat::Text => print!("{}", render::render_text(&outcome, args.show_filtered)),
     }
 
     // 可选：在 GitHub PR 上发摘要评论 + 行内 suggestion（作者一键应用，人把关）。
     if args.comment {
         if let Err(e) = reviewgate_core::github::post_summary(&outcome).await {
-            eprintln!("发布摘要评论失败：{e}");
+            eprintln!("failed to post summary comment: {e}");
         }
         if let Err(e) = reviewgate_core::github::post_inline_suggestions(&outcome).await {
-            eprintln!("发布行内评论失败：{e}");
+            eprintln!("failed to post inline comments: {e}");
         }
     }
 
@@ -351,17 +503,31 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
         fix::apply_fixes(&outcome.findings, std::path::Path::new(&root))?;
     }
 
-    // 退出码语义（供 CI 闸口）。
-    // 未审完 + fail_on_incomplete：无论 --fail-on 取值，一律非 0——杜绝"漏审却放行"。
-    if outcome.incomplete && cfg.gate.fail_on_incomplete {
-        return Ok(1);
+    Ok(exit_code(
+        outcome.decision,
+        outcome.incomplete,
+        cfg.gate.fail_on_incomplete,
+        args.fail_on,
+    ))
+}
+
+/// CI 闸口退出码语义（纯函数，便于单测覆盖各组合）。
+/// 未审完 + `fail_on_incomplete`：无论 `--fail-on` 取值一律非 0——杜绝"漏审却放行"。
+fn exit_code(
+    decision: reviewgate_core::gate::GateDecision,
+    incomplete: bool,
+    fail_on_incomplete: bool,
+    fail_on: FailOn,
+) -> i32 {
+    use reviewgate_core::gate::GateDecision;
+    if incomplete && fail_on_incomplete {
+        return 1;
     }
-    let code = match (outcome.decision, args.fail_on.as_str()) {
-        (GateDecision::Block, "block") | (GateDecision::Block, "warn") => 1,
-        (GateDecision::Warn, "warn") => 1,
+    match (decision, fail_on) {
+        (GateDecision::Block, FailOn::Block) | (GateDecision::Block, FailOn::Warn) => 1,
+        (GateDecision::Warn, FailOn::Warn) => 1,
         _ => 0,
-    };
-    Ok(code)
+    }
 }
 
 async fn diff_summary(args: &DiffArgs) -> anyhow::Result<()> {
@@ -369,7 +535,7 @@ async fn diff_summary(args: &DiffArgs) -> anyhow::Result<()> {
 
     let mode = resolve_mode(&args.commit, &args.from, &args.to)?;
     let d = diff::collect(&mode).await?;
-    println!("改动文件数：{}", d.files.len());
+    println!("Files changed: {}", d.files.len());
     for f in &d.files {
         println!(
             "  [{:?}{}] {}  (+{} -{}, {} hunks)",
@@ -392,28 +558,72 @@ async fn llm_test() -> anyhow::Result<()> {
     let cfg = Config::load()?;
     let provider = cfg.active_provider_resolved()?;
     println!(
-        "提供方：{}（{:?}）  模型：{}  端点：{}",
+        "Provider: {} ({:?})  Model: {}  Endpoint: {}",
         cfg.provider, provider.protocol, provider.model, provider.base_url
     );
 
     let client = build_client(&provider)?;
-    let messages = vec![Message::user("用一句话回复：连接正常。")];
+    let messages = vec![Message::user("Reply in one sentence: connection OK.")];
     let resp = client
-        .complete("你是连通性自检助手，请简短回复。", &messages, &[])
+        .complete(
+            "You are a connectivity self-check assistant. Reply briefly.",
+            &messages,
+            &[],
+        )
         .await?;
 
-    println!("---\n回复：{}", resp.text().trim());
-    println!(
-        "停止原因：{:?}  用量：in={} out={}",
-        resp.stop_reason, resp.usage.input_tokens, resp.usage.output_tokens
-    );
-    println!("✅ LLM 连通正常");
+    println!("---\nReply: {}", resp.text().trim());
+    println!("LLM connectivity OK");
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::release_asset;
+    use super::{exit_code, parse_dimensions, release_asset, FailOn};
+    use reviewgate_core::gate::GateDecision;
+    use reviewgate_core::model::Dimension;
+
+    #[test]
+    fn exit_code_gate_and_fail_on_matrix() {
+        // block + fail-on=block/warn → 1；fail-on=never → 0。
+        assert_eq!(
+            exit_code(GateDecision::Block, false, false, FailOn::Block),
+            1
+        );
+        assert_eq!(
+            exit_code(GateDecision::Block, false, false, FailOn::Warn),
+            1
+        );
+        assert_eq!(
+            exit_code(GateDecision::Block, false, false, FailOn::Never),
+            0
+        );
+        // warn 只在 fail-on=warn 时非 0。
+        assert_eq!(exit_code(GateDecision::Warn, false, false, FailOn::Warn), 1);
+        assert_eq!(
+            exit_code(GateDecision::Warn, false, false, FailOn::Block),
+            0
+        );
+        // pass 永远 0。
+        assert_eq!(exit_code(GateDecision::Pass, false, false, FailOn::Warn), 0);
+    }
+
+    #[test]
+    fn exit_code_incomplete_overrides_when_configured() {
+        // 未审完 + fail_on_incomplete：即便 PASS / fail-on=never 也非 0（杜绝漏审放行）。
+        assert_eq!(exit_code(GateDecision::Pass, true, true, FailOn::Never), 1);
+        assert_eq!(exit_code(GateDecision::Warn, true, true, FailOn::Block), 1);
+        // 未审完但未开 fail_on_incomplete：回到常规闸口语义。
+        assert_eq!(exit_code(GateDecision::Pass, true, false, FailOn::Block), 0);
+    }
+
+    #[test]
+    fn parse_dimensions_all_and_list_and_invalid() {
+        assert_eq!(parse_dimensions("all").unwrap(), Dimension::ALL.to_vec());
+        let list = parse_dimensions("security,logic").unwrap();
+        assert_eq!(list, vec![Dimension::Security, Dimension::Logic]);
+        assert!(parse_dimensions("security,bogus").is_err());
+    }
 
     #[test]
     fn release_asset_maps_platforms() {

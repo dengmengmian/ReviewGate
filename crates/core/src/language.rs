@@ -6,7 +6,7 @@
 /// 1. `REVIEWGATE_OUTPUT_LANGUAGE` for explicit control.
 /// 2. Locale environment (`LC_ALL`, `LC_MESSAGES`, `LANG`).
 /// 3. English fallback for portable CI defaults.
-pub(crate) fn output_language() -> String {
+pub fn output_language() -> String {
     detect_output_language_from(std::env::vars())
 }
 
