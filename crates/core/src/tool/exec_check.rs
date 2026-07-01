@@ -87,6 +87,10 @@ async fn run_sandboxed(bin: &str, args: &[&str], ext: &str, code: &str) -> Resul
         .env_clear()
         .env("PATH", path_env)
         .stdin(std::process::Stdio::null())
+        // 必须显式 piped：否则子进程继承父 fd，片段输出会泄漏到 ReviewGate 的
+        // stdout（破坏 --format json），且 wait_with_output 拿不到、反给模型「(no output)」。
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
 
     let result = match cmd.spawn() {
@@ -164,5 +168,26 @@ mod tests {
             .await
             .unwrap();
         assert!(out.contains("not enabled"));
+    }
+
+    // 回归：子进程 stdout/stderr 必须被捕获进返回值（喂给模型），
+    // 而不是继承父进程 fd 泄漏到 ReviewGate 自己的 stdout（会破坏 --format json）。
+    #[tokio::test]
+    async fn captures_child_stdout_instead_of_leaking() {
+        use crate::diff::Diff;
+        use std::sync::Arc;
+        let mut ctx = ToolContext::with_grep_index(Arc::new(Diff::default()), ".", None);
+        ctx.allow_exec = true;
+        let out = RunCheck
+            .call(
+                &json!({"language":"python","code":"print('RG_MARKER_7788')"}),
+                &ctx,
+            )
+            .await
+            .unwrap();
+        assert!(
+            out.contains("RG_MARKER_7788"),
+            "child stdout must be captured into the tool result, got: {out:?}"
+        );
     }
 }
