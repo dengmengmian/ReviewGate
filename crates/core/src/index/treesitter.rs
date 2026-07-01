@@ -383,6 +383,30 @@ fn lang_spec(path: &str) -> Option<(tree_sitter::Language, LangSpec)> {
                 call_fn_field: "function",
             },
         )),
+        Lang::Java => Some((
+            tree_sitter_java::LANGUAGE.into(),
+            LangSpec {
+                def_kinds: &[
+                    "method_declaration",
+                    "constructor_declaration",
+                    "class_declaration",
+                    "interface_declaration",
+                    "enum_declaration",
+                    "record_declaration",
+                    "annotation_type_declaration",
+                ],
+                type_kinds: &[
+                    "class_declaration",
+                    "interface_declaration",
+                    "enum_declaration",
+                    "record_declaration",
+                    "annotation_type_declaration",
+                ],
+                var_kinds: &[],
+                call_kinds: &["method_invocation"],
+                call_fn_field: "name",
+            },
+        )),
         Lang::JavaScript | Lang::TypeScript => Some((
             tree_sitter_javascript::LANGUAGE.into(),
             LangSpec {
@@ -476,5 +500,40 @@ mod tests {
         let callers = scan("a.py", src, "greet", Mode::Caller);
         assert_eq!(callers.len(), 1);
         assert_eq!(callers[0].line, 3);
+    }
+
+    // "login" 出现在注释(1)、方法定义(3)、字符串(4)、调用(6)。
+    const JAVA: &str = "// login is great\nclass User {\n    void login(int id) {\n        String s = \"login string\";\n        audit(id);\n        login(id);\n    }\n}\n";
+
+    #[test]
+    fn java_definition_precise() {
+        let d = scan("a.java", JAVA, "login", Mode::Definition);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].line, 3);
+        assert_eq!(d[0].kind, SymbolKind::Function);
+    }
+
+    #[test]
+    fn java_class_is_type() {
+        let d = scan("a.java", JAVA, "User", Mode::Definition);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].kind, SymbolKind::Type);
+    }
+
+    #[test]
+    fn java_callers_skip_comment_and_string() {
+        let c = scan("a.java", JAVA, "login", Mode::Caller);
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].line, 6);
+    }
+
+    #[test]
+    fn java_references_skip_comment_and_string() {
+        let r = scan("a.java", JAVA, "login", Mode::Reference);
+        let lines: Vec<u32> = r.iter().map(|l| l.line).collect();
+        assert!(lines.contains(&3), "命中定义名");
+        assert!(lines.contains(&6), "命中调用");
+        assert!(!lines.contains(&1), "不应命中注释");
+        assert!(!lines.contains(&4), "不应命中字符串");
     }
 }

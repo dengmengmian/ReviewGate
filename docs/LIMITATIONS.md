@@ -25,7 +25,7 @@ ReviewGate 是**静态 LLM 质量闸口**，不执行代码。以下边界来自
 - **缓解**：dedup + 证伪 judge 收敛；`--samples N` 取并集 + 保留最高置信度，稳定 flaky 闸口判定。
 
 ## 4. 未支持语言的精确工具降级
-- tree-sitter 仅覆盖 rust/cpp/python/go/js/ts；其它语言（含仓颉等）**LLM 审查照常可用**，但
+- tree-sitter 仅覆盖 rust/cpp/python/go/js/ts/java；其它语言（含仓颉等）**LLM 审查照常可用**，但
   `find_definition/callers/references` 走 grep 词法兜底、`find_duplicate_functions` 不可用、
   `<lang>.md` per-language 规则不路由。补一种语言＝加 tree-sitter grammar + 扩展名映射。
 

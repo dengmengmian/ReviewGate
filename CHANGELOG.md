@@ -4,6 +4,12 @@
 每条变更先中文、后英文。
 Changes are listed in Chinese first, then English.
 
+## [Unreleased]
+
+### Added
+- Java 现在也走精确的代码检索：`find_definition` / `find_callers` / `find_references` / `find_duplicate_functions` 由 tree-sitter AST 解析（能跳过注释和字符串里的同名文本），不再退回按行 grep。
+  Java now uses precise code lookup: `find_definition` / `find_callers` / `find_references` / `find_duplicate_functions` are backed by tree-sitter AST parsing (skipping same-name text in comments and strings) instead of falling back to line-based grep.
+
 ## [0.2.1] - 2026-06-30
 
 ### Added
