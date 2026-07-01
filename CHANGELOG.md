@@ -4,7 +4,7 @@
 每条变更先中文、后英文。
 Changes are listed in Chinese first, then English.
 
-## [Unreleased]
+## [0.4.0] - 2026-07-01
 
 ### Added
 - 新增 `--fix-all`：跳过逐条 y/N 确认，一次应用全部可自动修复项。与 `--fix` 不同，它**可在非交互环境运行**（CI/脚本），仍保留改前的 `existing_code` 锚点校验以防改错行。
