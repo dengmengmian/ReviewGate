@@ -1,5 +1,9 @@
 # 业务 review：真实用户 issue + 修复 PR 验证
 
+> **勘误（2026-07-01）**：下方"big.js #125 进位漏报"系**误标**（实为非 bug），
+> "addBusinessDays 仍漏报"已**过时**（静态即命中）。故末尾"1 漏 + 1 部分"的汇总不再准确。
+> 详见 `2026-07-01__exec-verify-runcheck-fix.md`。相关行已就地标注。
+
 方法：找**用户提的 issue（ground truth）+ 解决它的 PR**，`git revert` 修复以重新引入用户报告的 bug，
 审查能否命中。比合成用例更真实——bug 是真实世界发生过、被用户报告过的。
 
@@ -8,7 +12,7 @@
 | date-fns #972/#992（DST，PR #1003） | 时区/DST 日期计算错误 | **WARN**（ai_smell 0.79，命中区域但未定性） | **BLOCK**（logic high 0.76/0.81）✅ **恢复** |
 | date-fns #1228（parseISO 24:00，PR #1229） | 解析 `24:00` 时间错误（边界值） | — | **BLOCK**（logic 0.81，命中 parseISO 时间解析行）✅ |
 | date-fns #692（differenceIn… 负零，PR #739） | 计算结果出现 `-0`（应为 `0`） | — | **BLOCK**（8 条命中各 differenceIn* 函数）✅ |
-| date-fns #1584（addBusinessDays，PR #1588） | 周末加 1 业务日 off-by-one（周六+1 应得周一却得周二） | **PASS（漏报）** | **PASS（仍漏报）** ❌ |
+| date-fns #1584（addBusinessDays，PR #1588） | 周末加 1 业务日 off-by-one（周六+1 应得周一却得周二） | **PASS（漏报）** | ~~PASS（仍漏报）~~ → **已过时**：2026-07-01 复测静态即 block/warn 命中（见 `2026-07-01__exec-verify-runcheck-fix.md`） |
 
 ## 跨域扩展（非日期领域的真实 issue）
 
@@ -19,7 +23,7 @@
 | moment #5580 | 状态副作用：`.format()` 改写了原 moment 实例（违反不可变） | **BLOCK**（era.js/format.js，logic+ai_smell）✅ |
 
 | sequelize #14903 | ORM 事务生命周期：afterCommit 钩子在**失败事务**上仍执行 | **BLOCK**（logic 0.99，命中 transaction.ts）✅ |
-| big.js #125（PR #126） | 大数运算 base-10 进位错误（`c[j]=(c[j]+b)%10`） | **WARN**（命中 big.js:848 但仅 ai_smell low）⚠ 部分 |
+| big.js #125（PR #126） | ~~大数运算 base-10 进位错误~~ **勘误：非 bug**（issue 是简化提问，两写法可证等价，20 万随机+全 9 对抗 0 差异，见 `2026-07-01__exec-verify-runcheck-fix.md`） | **WARN**（ai_smell 判"等价/冗余"——**判对了**，非漏报） |
 
 | go-cache #64 | 并发/数据竞态：`janitor.stop` 在 goroutine 内创建、与 stopJanitor 并发读 | **BLOCK**（logic 0.92，命中 janitor 区）✅ |
 | currency.js #262 | 金额：`fromCents` 系列方法返回值不正确 | **BLOCK**（7 条 logic 0.99，命中 fromCents 区）✅ |

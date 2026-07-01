@@ -6,6 +6,10 @@ Changes are listed in Chinese first, then English.
 
 ## [Unreleased]
 
+### Fixed
+- 修复 `--exec-verify` 的 `run_check`：子进程输出此前会泄漏到 ReviewGate 自身 stdout（在 `--format json` 下产出非法 JSON、CI 解析失败），且执行结果从未回传给模型（一律显示「无输出」）。现在输出被正确捕获、喂回模型，`--format json` 也不再被污染。
+  Fixed `run_check` under `--exec-verify`: the snippet's output leaked into ReviewGate's own stdout (producing invalid JSON under `--format json` and breaking CI parsing), and the execution result was never returned to the model (always shown as "no output"). Output is now captured and fed back to the model, and `--format json` is no longer corrupted.
+
 ### Added
 - Java 现在也走精确的代码检索：`find_definition` / `find_callers` / `find_references` / `find_duplicate_functions` 由 tree-sitter AST 解析（能跳过注释和字符串里的同名文本），不再退回按行 grep。
   Java now uses precise code lookup: `find_definition` / `find_callers` / `find_references` / `find_duplicate_functions` are backed by tree-sitter AST parsing (skipping same-name text in comments and strings) instead of falling back to line-based grep.
