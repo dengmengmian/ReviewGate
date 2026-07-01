@@ -4,7 +4,7 @@
 每条变更先中文、后英文。
 Changes are listed in Chinese first, then English.
 
-## [Unreleased]
+## [0.3.0] - 2026-07-01
 
 ### Fixed
 - 修复 `--exec-verify` 的 `run_check`：子进程输出此前会泄漏到 ReviewGate 自身 stdout（在 `--format json` 下产出非法 JSON、CI 解析失败），且执行结果从未回传给模型（一律显示「无输出」）。现在输出被正确捕获、喂回模型，`--format json` 也不再被污染。
