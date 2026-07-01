@@ -4,6 +4,12 @@
 每条变更先中文、后英文。
 Changes are listed in Chinese first, then English.
 
+## [Unreleased]
+
+### Added
+- `--fix` 新增 `--fix-branch [名字]`：应用修复前先从当前 HEAD 新建并切到一个分支，让原分支保持干净。给名字就用它，留空则自动生成（`reviewgate-fix-<时间戳>`）。分支只在确有可应用修复且处于交互终端时才创建，不会留下空分支。
+  Added `--fix-branch [name]` to `--fix`: create and switch to a new branch off the current HEAD before applying fixes, keeping your original branch clean. Provide a name or leave it blank to auto-generate (`reviewgate-fix-<timestamp>`). The branch is created only when there is at least one applicable fix and the session is interactive, so no empty branch is left behind.
+
 ## [0.3.0] - 2026-07-01
 
 ### Fixed

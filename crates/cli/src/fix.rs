@@ -12,8 +12,45 @@ fn confined_fix_path(repo_root: &Path, path: &str) -> anyhow::Result<PathBuf> {
     confine_path(repo_root, path)
 }
 
+/// 解析 `--fix-branch` 的分支名：显式给名就用它，留空则按时间戳自动生成。
+fn resolve_branch_name(explicit: &str) -> String {
+    let e = explicit.trim();
+    if !e.is_empty() {
+        return e.to_string();
+    }
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("reviewgate-fix-{secs}")
+}
+
+/// 从当前 HEAD 新建分支并切过去（保留工作区改动）。失败即返回错误，绝不带着
+/// 未落地的意图继续在原分支上应用修复。
+fn create_and_switch_branch(repo_root: &Path, name: &str) -> anyhow::Result<()> {
+    let out = std::process::Command::new("git")
+        .current_dir(repo_root)
+        .args(["checkout", "-b", name])
+        .output()
+        .map_err(|e| anyhow::anyhow!("failed to run git checkout -b: {e}"))?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "git checkout -b {name} failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
 /// 交互式应用修复。仅处理：已定位（start_line>0）、有 suggestion_code、未被过滤的发现。
-pub fn apply_fixes(findings: &[Finding], repo_root: &Path) -> anyhow::Result<()> {
+///
+/// `fix_branch`：`Some("")` 表示新建自动命名的分支，`Some(name)` 用指定名，`None` 改当前分支。
+/// 分支仅在「确有可应用的修复且处于交互终端」时才创建，避免留下空分支。
+pub fn apply_fixes(
+    findings: &[Finding],
+    repo_root: &Path,
+    fix_branch: Option<&str>,
+) -> anyhow::Result<()> {
     let fixable: Vec<&Finding> = findings
         .iter()
         .filter(|f| {
@@ -33,6 +70,15 @@ pub fn apply_fixes(findings: &[Finding], repo_root: &Path) -> anyhow::Result<()>
             "--fix needs interactive confirmation; not a terminal (CI/pipe), so application was skipped. See the diff above or suggestion_code in the JSON."
         );
         return Ok(());
+    }
+
+    // 可选：先在新分支上应用，保持原分支干净。仅在确有可应用修复时才建（见上方 early return）。
+    if let Some(explicit) = fix_branch {
+        let name = resolve_branch_name(explicit);
+        create_and_switch_branch(repo_root, &name)?;
+        eprintln!(
+            "Created and switched to branch '{name}'. Fixes apply here; your original branch stays untouched."
+        );
     }
 
     eprintln!("\n- Confirm each fix before applying (you decide) -");
@@ -115,6 +161,18 @@ pub fn apply_fixes(findings: &[Finding], repo_root: &Path) -> anyhow::Result<()>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolve_branch_name_uses_explicit_or_generates() {
+        assert_eq!(resolve_branch_name("my-fixes"), "my-fixes");
+        assert_eq!(resolve_branch_name("  spaced  "), "spaced");
+        let gen = resolve_branch_name("");
+        assert!(gen.starts_with("reviewgate-fix-"), "got {gen}");
+        assert!(
+            gen.len() > "reviewgate-fix-".len(),
+            "should append a timestamp"
+        );
+    }
 
     #[test]
     fn confined_fix_path_rejects_escape_paths() {

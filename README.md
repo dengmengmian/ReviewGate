@@ -217,6 +217,7 @@ reviewgate review --show-filtered        # 展开被过滤的低置信项
 reviewgate review --timeout 120          # 单维度墙钟上限（秒）
 reviewgate review --samples 3            # 每维度多采样取并集
 reviewgate review --fix                  # 逐条 y/N 确认后应用建议代码
+reviewgate review --fix --fix-branch     # 同上，但先新建分支再改，保持原分支干净（可选跟分支名）
 reviewgate review --judge-concurrency 4  # 限制 Judge 并发
 reviewgate review --fanout-concurrency 6 # 限制 fan-out 并发
 reviewgate review --verbose              # 打印 token/缓存/轮数

@@ -215,6 +215,7 @@ reviewgate review --show-filtered
 reviewgate review --timeout 120
 reviewgate review --samples 3
 reviewgate review --fix
+reviewgate review --fix --fix-branch      # apply fixes on a new branch (optionally named), keeping the current one clean
 reviewgate review --judge-concurrency 4
 reviewgate review --fanout-concurrency 6
 reviewgate review --verbose

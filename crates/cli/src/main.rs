@@ -190,6 +190,10 @@ struct ReviewArgs {
     /// After per-finding y/N confirmation, apply suggestion_code to working-tree files (not applied when non-interactive).
     #[arg(long)]
     fix: bool,
+    /// With --fix, apply the fixes on a new git branch instead of the current one.
+    /// Optionally name it; omit the value to auto-generate (reviewgate-fix-<timestamp>).
+    #[arg(long, num_args = 0..=1, default_missing_value = "")]
+    fix_branch: Option<String>,
     /// Enable run_check sandboxed execution (lets the logic dimension actually run edge cases to verify subtle algorithms).
     /// Runs model-generated self-contained JS/Python snippets — use only in trusted/CI sandbox environments. Off by default.
     #[arg(long)]
@@ -376,6 +380,9 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     use reviewgate_core::review::{run_review, ReviewOptions};
 
     let dims = parse_dimensions(&args.dimensions)?;
+    if args.fix_branch.is_some() && !args.fix {
+        anyhow::bail!("--fix-branch only applies with --fix");
+    }
     let cfg = Config::load()?;
     let names: Vec<&str> = dims.iter().map(|d| d.as_str()).collect();
     let auto_business = (!cfg.business.rules.is_empty()
@@ -500,7 +507,11 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     // 可选：逐条确认后把 suggestion_code 应用到工作区文件。
     if args.fix {
         let root = reviewgate_core::diff::git::repo_root().await?;
-        fix::apply_fixes(&outcome.findings, std::path::Path::new(&root))?;
+        fix::apply_fixes(
+            &outcome.findings,
+            std::path::Path::new(&root),
+            args.fix_branch.as_deref(),
+        )?;
     }
 
     Ok(exit_code(
