@@ -190,7 +190,10 @@ struct ReviewArgs {
     /// After per-finding y/N confirmation, apply suggestion_code to working-tree files (not applied when non-interactive).
     #[arg(long)]
     fix: bool,
-    /// With --fix, apply the fixes on a new git branch instead of the current one.
+    /// Apply all auto-applicable fixes without per-finding confirmation. Unlike --fix, works non-interactively (CI/scripts).
+    #[arg(long)]
+    fix_all: bool,
+    /// With --fix/--fix-all, apply the fixes on a new git branch instead of the current one.
     /// Optionally name it; omit the value to auto-generate (reviewgate-fix-<timestamp>).
     #[arg(long, num_args = 0..=1, default_missing_value = "")]
     fix_branch: Option<String>,
@@ -380,8 +383,8 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     use reviewgate_core::review::{run_review, ReviewOptions};
 
     let dims = parse_dimensions(&args.dimensions)?;
-    if args.fix_branch.is_some() && !args.fix {
-        anyhow::bail!("--fix-branch only applies with --fix");
+    if args.fix_branch.is_some() && !(args.fix || args.fix_all) {
+        anyhow::bail!("--fix-branch only applies with --fix or --fix-all");
     }
     let cfg = Config::load()?;
     let names: Vec<&str> = dims.iter().map(|d| d.as_str()).collect();
@@ -504,13 +507,14 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
         }
     }
 
-    // 可选：逐条确认后把 suggestion_code 应用到工作区文件。
-    if args.fix {
+    // 可选：把 suggestion_code 应用到工作区文件（--fix 逐条确认；--fix-all 全部应用）。
+    if args.fix || args.fix_all {
         let root = reviewgate_core::diff::git::repo_root().await?;
         fix::apply_fixes(
             &outcome.findings,
             std::path::Path::new(&root),
             args.fix_branch.as_deref(),
+            args.fix_all,
         )?;
     }
 

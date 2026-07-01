@@ -42,14 +42,17 @@ fn create_and_switch_branch(repo_root: &Path, name: &str) -> anyhow::Result<()> 
     Ok(())
 }
 
-/// 交互式应用修复。仅处理：已定位（start_line>0）、有 suggestion_code、未被过滤的发现。
+/// 应用修复。仅处理：已定位（start_line>0）、有 suggestion_code、未被过滤的发现。
 ///
 /// `fix_branch`：`Some("")` 表示新建自动命名的分支，`Some(name)` 用指定名，`None` 改当前分支。
-/// 分支仅在「确有可应用的修复且处于交互终端」时才创建，避免留下空分支。
+/// 分支仅在「确有可应用的修复」时才创建，避免留下空分支。
+/// `assume_yes`（`--fix-all`）：跳过逐条 y/N，直接全部应用，且**不要求交互终端**（供 CI/脚本批量用）；
+/// 为 false 时是逐条确认的交互模式，需要终端。
 pub fn apply_fixes(
     findings: &[Finding],
     repo_root: &Path,
     fix_branch: Option<&str>,
+    assume_yes: bool,
 ) -> anyhow::Result<()> {
     let fixable: Vec<&Finding> = findings
         .iter()
@@ -65,9 +68,9 @@ pub fn apply_fixes(
         eprintln!("No auto-applicable fixes (need suggestion_code + a located line range).");
         return Ok(());
     }
-    if !io::stdin().is_terminal() {
+    if !assume_yes && !io::stdin().is_terminal() {
         eprintln!(
-            "--fix needs interactive confirmation; not a terminal (CI/pipe), so application was skipped. See the diff above or suggestion_code in the JSON."
+            "--fix needs interactive confirmation; not a terminal (CI/pipe), so application was skipped. Use --fix-all to apply without prompts, or see the diff above / suggestion_code in the JSON."
         );
         return Ok(());
     }
@@ -81,7 +84,14 @@ pub fn apply_fixes(
         );
     }
 
-    eprintln!("\n- Confirm each fix before applying (you decide) -");
+    if assume_yes {
+        eprintln!(
+            "\n- Applying all {} auto-applicable fix(es) without confirmation (--fix-all) -",
+            fixable.len()
+        );
+    } else {
+        eprintln!("\n- Confirm each fix before applying (you decide) -");
+    }
     let mut by_path: BTreeMap<&str, Vec<&Finding>> = BTreeMap::new();
     for f in &fixable {
         by_path.entry(f.path.as_str()).or_default().push(f);
@@ -120,11 +130,16 @@ pub fn apply_fixes(
             for l in f.suggestion_code.lines() {
                 println!("  \x1b[92m+ {}\x1b[0m", l.trim_end());
             }
-            print!("Apply this fix? [y/N] ");
-            io::stdout().flush().ok();
-            let mut ans = String::new();
-            io::stdin().read_line(&mut ans).ok();
-            if ans.trim().eq_ignore_ascii_case("y") {
+            let approved = if assume_yes {
+                true
+            } else {
+                print!("Apply this fix? [y/N] ");
+                io::stdout().flush().ok();
+                let mut ans = String::new();
+                io::stdin().read_line(&mut ans).ok();
+                ans.trim().eq_ignore_ascii_case("y")
+            };
+            if approved {
                 // 安全：替换前用 existing_code 锚点核对目标行未漂移，不匹配则拒绝以免改错代码。
                 match apply_fix(
                     &content,
@@ -172,6 +187,48 @@ mod tests {
             gen.len() > "reviewgate-fix-".len(),
             "should append a timestamp"
         );
+    }
+
+    fn mk_finding(path: &str, line: u32, existing: &str, suggestion: &str) -> Finding {
+        use reviewgate_core::model::{Dimension, Reachability, Severity};
+        Finding {
+            dimension: Dimension::Logic,
+            confidence: 0.9,
+            severity: Severity::High,
+            path: path.into(),
+            start_line: line,
+            end_line: line,
+            message: "test".into(),
+            existing_code: existing.into(),
+            evidence: String::new(),
+            suggestion: None,
+            suggestion_code: suggestion.into(),
+            reachability: Reachability::default(),
+            filtered: false,
+            agreed_dimensions: 1,
+            criterion: None,
+            intent_status: None,
+        }
+    }
+
+    // --fix-all（assume_yes=true）非交互直接落地：无需 stdin，文件应被改写。
+    #[test]
+    fn fix_all_applies_without_prompt() {
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!("rg_fixall_{}_{}", std::process::id(), secs));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("t.txt");
+        std::fs::write(&file, "line1\nBAD\nline3\n").unwrap();
+
+        let findings = vec![mk_finding("t.txt", 2, "BAD", "GOOD")];
+        apply_fixes(&findings, &dir, None, true).unwrap();
+
+        let got = std::fs::read_to_string(&file).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(got, "line1\nGOOD\nline3\n", "fix-all should apply the fix");
     }
 
     #[test]
