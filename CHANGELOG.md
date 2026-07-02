@@ -4,6 +4,12 @@
 每条变更先中文、后英文。
 Changes are listed in Chinese first, then English.
 
+## [Unreleased]
+
+### Added
+- 新增**路径规则**：`[[business.path_rules]]` 用 glob 把定向规则路由到改动文件（如 `migrations/**` → 迁移必须可回滚），命中才注入、带 `[P1]` 编号可追溯；非法 glob 在加载时告警而非静默忽略。另附两组**内置路径规则**（默认开，`builtin_path_rules = false` 可关）：`.github/workflows/*` 命中 GitHub Actions 安全清单（`pull_request_target`+PR head 检出、`${{ }}` 注入、密钥外泄、过宽权限、未钉死的第三方 action）；无扩展名的 `Dockerfile` 现在也能命中镜像规则（此前按扩展名路由会漏掉）。
+  Added **path rules**: `[[business.path_rules]]` routes targeted rules to changed files by glob (e.g. `migrations/**` → migrations must be reversible), injected only on match with traceable `[P1]` ids; invalid globs warn at load instead of being silently ignored. Two **built-in path rules** ship enabled by default (disable with `builtin_path_rules = false`): `.github/workflows/*` triggers a GitHub Actions security checklist (`pull_request_target` + PR-head checkout, `${{ }}` injection, secret exposure, over-broad permissions, unpinned third-party actions), and extensionless `Dockerfile` files now get the image rules (previously missed by extension-based routing).
+
 ## [0.5.0] - 2026-07-02
 
 ### Added

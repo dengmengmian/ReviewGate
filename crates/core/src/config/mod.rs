@@ -105,6 +105,24 @@ pub struct BusinessConfig {
     /// 默认 true；置 false 可完全关闭。用户 `rules_dir/<lang>.md` 会**补充**而非替换。
     #[serde(default = "default_true")]
     pub builtin_language_rules: bool,
+    /// 是否默认注入**内置路径规则**（按改动文件路径自动注入，如 `.github/workflows/*` 的
+    /// Actions 安全清单、无扩展名 `Dockerfile` 的镜像规则）。默认 true。
+    #[serde(default = "default_true")]
+    pub builtin_path_rules: bool,
+    /// 用户自定义**路径规则**：glob 命中本次改动文件时注入对应规则文本。
+    /// 例：`[[business.path_rules]] pattern = "migrations/**" rule = "迁移必须可回滚"`。
+    #[serde(default)]
+    pub path_rules: Vec<PathRule>,
+}
+
+/// 一条按路径 glob 路由的项目规则。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PathRule {
+    /// glob 模式（相对仓库根），如 `migrations/**`、`**/api/**/*.rs`。
+    pub pattern: String,
+    /// 命中时注入的规则文本。
+    pub rule: String,
 }
 
 impl Default for BusinessConfig {
@@ -114,6 +132,8 @@ impl Default for BusinessConfig {
             rules_dir: None,
             skills_dir: None,
             builtin_language_rules: true,
+            builtin_path_rules: true,
+            path_rules: Vec::new(),
         }
     }
 }
@@ -255,6 +275,9 @@ api_key = "a"
 model = "claude"
 [business]
 skills_dir = ".claude/skills"
+[[business.path_rules]]
+pattern = "migrations/**"
+rule = "迁移必须可回滚"
 "#;
 
     #[test]
@@ -281,6 +304,10 @@ skills_dir = ".claude/skills"
         assert_eq!(cfg.gate.warn_threshold, 0.5);
         // business.skills_dir 解析到。
         assert_eq!(cfg.business.skills_dir.as_deref(), Some(".claude/skills"));
+        // path_rules 解析到，且 builtin_path_rules 缺省 true。
+        assert_eq!(cfg.business.path_rules.len(), 1);
+        assert_eq!(cfg.business.path_rules[0].pattern, "migrations/**");
+        assert!(cfg.business.builtin_path_rules);
     }
 
     #[test]

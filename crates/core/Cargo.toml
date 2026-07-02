@@ -20,6 +20,7 @@ thiserror.workspace = true
 async-trait.workspace = true
 futures.workspace = true
 toml.workspace = true
+globset = "0.4.18"
 tree-sitter = "0.26.9"
 tree-sitter-rust = "0.24.2"
 tree-sitter-cpp = "0.23.4"

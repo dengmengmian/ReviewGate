@@ -349,7 +349,7 @@ It creates `.atomcode/skills/reviewgate/SKILL.md` + `reviewgate.toml` + `.review
 
 - **LLM providers**: `LlmClient` trait plus OpenAI-compatible and Anthropic protocols.
 - **Code index backends**: `CodeIndex` trait, with `GrepIndex` and `TreeSitterIndex`.
-- **Rules**: built-in language rules, `rules_dir/<language>.md`, `skills_dir`, and inline `[business].rules`.
+- **Rules**: built-in language rules, built-in path rules (GitHub Actions workflow security, extensionless `Dockerfile`; disable with `builtin_path_rules=false`), glob-targeted `[[business.path_rules]]` (e.g. `migrations/**` → must be reversible), `rules_dir/<language>.md`, `skills_dir`, and inline `[business].rules`.
 - **Optional external tools**: `git` is the only hard dependency. Tools such as ripgrep, linters, and type checkers are used only when detected.
 - **Execution verification**: `--exec-verify` is opt-in and disabled by default.
 - **Thin wrappers**: CLI, Claude Code Skill, and GitHub Action all call the same core engine.

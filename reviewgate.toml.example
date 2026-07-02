@@ -35,3 +35,13 @@ model = "deepseek-v4-pro"    # 1M context
 # 规则目录：<语言>.md（如 rust.md）仅在该语言被改动时注入；business.md / security.md 始终注入。
 # 可从 crates/core/prompts/languages/ 复制起步语言规则，再按组织约定调整。
 # rules_dir = ".reviewgate/rules"
+
+# 路径规则：glob 命中本次改动文件时注入对应规则（比语言路由更细的定向规则）。
+# 另有内置路径规则默认开启（.github/workflows/* 的 Actions 安全清单、无扩展名 Dockerfile
+# 的镜像规则），可用 builtin_path_rules = false 关闭。
+# [[business.path_rules]]
+# pattern = "migrations/**"
+# rule = "数据库迁移必须可回滚，禁止直接 DROP COLUMN"
+# [[business.path_rules]]
+# pattern = "**/api/**"
+# rule = "公开 API 变更必须保持向后兼容，破坏性变更需要版本号升级"

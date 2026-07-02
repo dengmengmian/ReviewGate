@@ -351,7 +351,7 @@ curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integr
 
 - **LLM 提供方**：`LlmClient` trait + 双协议（OpenAI 兼容 / Anthropic）。配置即切换 DeepSeek / Kimi / GLM / 通义 / Claude 等，无需改代码。
 - **代码检索后端**：`CodeIndex` trait —— `GrepIndex`（默认、即用）/ `TreeSitterIndex`（AST 精确）。`find_definition/callers/references` 的**工具签名不变**，换后端 Agent 那层不动；未支持语言自动回退按行匹配。
-- **规则分层可叠加**：45 种**内置语言规则**（`builtin_language_rules` 可整体关）＋ `rules_dir/<语言>.md`（覆盖/追加，优先级更高）＋ `skills_dir`（直接吃组织已有的 review skill）＋ `[business].rules` 内联业务规则。
+- **规则分层可叠加**：45 种**内置语言规则**（`builtin_language_rules` 可整体关）＋**内置路径规则**（`.github/workflows/*` 的 Actions 安全清单、无扩展名 `Dockerfile`；`builtin_path_rules` 可关）＋ `[[business.path_rules]]` 按 glob 定向注入（如 `migrations/**` → 迁移必须可回滚）＋ `rules_dir/<语言>.md`（覆盖/追加，优先级更高）＋ `skills_dir`（直接吃组织已有的 review skill）＋ `[business].rules` 内联业务规则。
 - **外部程序可选可插拔**：`git` 是唯一硬依赖；ripgrep / linter / 类型检查器等**检测到才用，缺了降级为纯 LLM**——绝不强制用户装一堆。
 - **执行验证 opt-in**：`--exec-verify` 的沙箱 `run_check` 默认关闭，保留只读信任边界。
 - **三形态薄壳**：CLI / Claude Skill / GitHub Action 都是同一 core 引擎的薄包装。

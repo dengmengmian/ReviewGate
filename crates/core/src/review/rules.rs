@@ -180,6 +180,46 @@ fn builtin_language_rule(lang: &str) -> Option<&'static str> {
     })
 }
 
+/// 改动文件路径列表（新路径优先，删除文件用旧路径）。
+fn changed_paths(diff: &Diff) -> Vec<&str> {
+    diff.files
+        .iter()
+        .filter_map(|f| f.new_path.as_deref().or(f.old_path.as_deref()))
+        .collect()
+}
+
+/// 内置路径规则：按改动文件**路径**（而非扩展名）命中时注入。
+/// 目前覆盖：GitHub Actions workflow 的安全清单；无扩展名 `Dockerfile`（语言路由按 ext 会漏掉）。
+fn builtin_path_rules_for(diff: &Diff) -> Vec<(&'static str, &'static str)> {
+    let mut hit_workflows = false;
+    let mut hit_dockerfile = false;
+    for p in changed_paths(diff) {
+        let lower = p.to_ascii_lowercase();
+        if lower.starts_with(".github/workflows/")
+            && (lower.ends_with(".yml") || lower.ends_with(".yaml"))
+        {
+            hit_workflows = true;
+        }
+        let base = lower.rsplit('/').next().unwrap_or(&lower);
+        if base.starts_with("dockerfile") {
+            hit_dockerfile = true;
+        }
+    }
+    let mut out = Vec::new();
+    if hit_workflows {
+        out.push((
+            "GitHub Actions workflows",
+            include_str!("../../prompts/paths/github-workflows.md"),
+        ));
+    }
+    if hit_dockerfile {
+        if let Some(body) = builtin_language_rule("dockerfile") {
+            out.push(("Dockerfile", body));
+        }
+    }
+    out
+}
+
 /// 本次改动涉及的语言集合。
 fn changed_languages(diff: &Diff) -> BTreeSet<&'static str> {
     diff.files
@@ -230,6 +270,47 @@ pub fn build_rules_section_with_warnings(
                     out.push_str(&format!("## Built-in language rules: {lang}\n\n{body}\n\n"));
                 }
             }
+        }
+    }
+
+    // 内置路径规则：按改动文件路径注入（如 workflow 安全清单、无扩展名 Dockerfile）。
+    if business.builtin_path_rules {
+        for (title, body) in builtin_path_rules_for(diff) {
+            let body = body.trim();
+            if !body.is_empty() {
+                out.push_str(&format!("## Built-in path rules: {title}\n\n{body}\n\n"));
+            }
+        }
+    }
+
+    // 用户路径规则：glob 命中改动文件时注入（编号 P1/P2… 供 finding 引用）。
+    if !business.path_rules.is_empty() {
+        let paths = changed_paths(diff);
+        let mut hits: Vec<&str> = Vec::new();
+        for pr in &business.path_rules {
+            match globset::Glob::new(&pr.pattern) {
+                Ok(g) => {
+                    let m = g.compile_matcher();
+                    let rule = pr.rule.trim();
+                    if !rule.is_empty() && paths.iter().any(|p| m.is_match(p)) {
+                        hits.push(rule);
+                    }
+                }
+                Err(e) => {
+                    warnings.push(format!("invalid path_rules pattern `{}`: {e}", pr.pattern))
+                }
+            }
+        }
+        if !hits.is_empty() {
+            out.push_str(
+                "## Path rules\n\nThese project rules apply to files changed in this diff. \
+                 **Report only when the change clearly violates a rule**. Prefix the finding message \
+                 with the rule id, for example `[P1] ...`:\n",
+            );
+            for (i, r) in hits.iter().enumerate() {
+                out.push_str(&format!("- [P{}] {r}\n", i + 1));
+            }
+            out.push('\n');
         }
     }
 
@@ -388,12 +469,112 @@ mod tests {
     }
 
     #[test]
+    fn workflow_files_get_builtin_actions_rules() {
+        let b = BusinessConfig::default();
+        let s = build_rules_section(
+            &b,
+            &diff_with(&[".github/workflows/ci.yml"]),
+            Path::new("/tmp"),
+        );
+        assert!(s.contains("GitHub Actions"), "{s}");
+        assert!(s.contains("pull_request_target"), "{s}");
+        // .yaml 后缀同样命中。
+        let s2 = build_rules_section(
+            &b,
+            &diff_with(&[".github/workflows/release.yaml"]),
+            Path::new("/tmp"),
+        );
+        assert!(s2.contains("pull_request_target"), "{s2}");
+    }
+
+    #[test]
+    fn dockerfile_without_extension_gets_builtin_rules() {
+        // `Dockerfile` 无扩展名，语言路由（按 ext）漏掉它；路径规则按 basename 兜住。
+        let b = BusinessConfig::default();
+        let s = build_rules_section(&b, &diff_with(&["deploy/Dockerfile"]), Path::new("/tmp"));
+        assert!(s.contains("[DOCK1]"), "{s}");
+        // Dockerfile.prod 也命中。
+        let s2 = build_rules_section(&b, &diff_with(&["Dockerfile.prod"]), Path::new("/tmp"));
+        assert!(s2.contains("[DOCK1]"), "{s2}");
+    }
+
+    #[test]
+    fn no_builtin_path_rules_without_matching_files() {
+        let b = BusinessConfig::default();
+        let s = build_rules_section(&b, &diff_with(&["src/main.rs"]), Path::new("/tmp"));
+        assert!(!s.contains("pull_request_target"), "{s}");
+        assert!(!s.contains("[DOCK1]"), "{s}");
+    }
+
+    #[test]
+    fn builtin_path_rules_can_be_disabled() {
+        let b = BusinessConfig {
+            builtin_path_rules: false,
+            ..Default::default()
+        };
+        let s = build_rules_section(
+            &b,
+            &diff_with(&[".github/workflows/ci.yml", "Dockerfile"]),
+            Path::new("/tmp"),
+        );
+        assert!(!s.contains("pull_request_target"), "{s}");
+        assert!(!s.contains("[DOCK1]"), "{s}");
+    }
+
+    #[test]
+    fn user_path_rules_match_globs() {
+        use crate::config::PathRule;
+        let b = BusinessConfig {
+            path_rules: vec![
+                PathRule {
+                    pattern: "migrations/**".into(),
+                    rule: "迁移必须可回滚，禁止直接 DROP COLUMN".into(),
+                },
+                PathRule {
+                    pattern: "**/api/**/*.rs".into(),
+                    rule: "公开 API 变更需保持向后兼容".into(),
+                },
+            ],
+            ..Default::default()
+        };
+        // 命中第一条：编号 [P1]。
+        let s = build_rules_section(
+            &b,
+            &diff_with(&["migrations/0001_init.sql"]),
+            Path::new("/tmp"),
+        );
+        assert!(s.contains("[P1] 迁移必须可回滚"), "{s}");
+        assert!(!s.contains("向后兼容"), "未命中的规则不注入：{s}");
+        // 都不命中 → 无路径规则段。
+        let s2 = build_rules_section(&b, &diff_with(&["docs/README.md"]), Path::new("/tmp"));
+        assert!(!s2.contains("迁移必须可回滚"), "{s2}");
+        assert!(!s2.contains("Path rules"), "{s2}");
+    }
+
+    #[test]
+    fn invalid_user_glob_warns_instead_of_silently_ignoring() {
+        use crate::config::PathRule;
+        let b = BusinessConfig {
+            path_rules: vec![PathRule {
+                pattern: "[bad".into(),
+                rule: "x".into(),
+            }],
+            ..Default::default()
+        };
+        let sec = build_rules_section_with_warnings(&b, &diff_with(&["a.rs"]), Path::new("/tmp"));
+        assert!(
+            sec.warnings.iter().any(|w| w.contains("[bad")),
+            "非法 glob 必须出告警：{:?}",
+            sec.warnings
+        );
+    }
+
+    #[test]
     fn inline_rules_rendered() {
         let b = BusinessConfig {
             rules: vec!["金额用整数分".into(), "  ".into(), "校验 owner_id".into()],
-            rules_dir: None,
-            skills_dir: None,
             builtin_language_rules: false,
+            ..Default::default()
         };
         let s = build_rules_section(&b, &diff_with(&["a.rs"]), Path::new("/tmp"));
         assert!(s.contains("## Project business rules"));
@@ -501,6 +682,7 @@ mod tests {
             rules_dir: Some("rules".into()),
             skills_dir: Some("skills".into()),
             builtin_language_rules: false,
+            ..Default::default()
         };
 
         let section = build_rules_section_with_warnings(&b, &diff_with(&["src/a.rs"]), &root);
