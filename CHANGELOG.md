@@ -7,6 +7,8 @@ Changes are listed in Chinese first, then English.
 ## [Unreleased]
 
 ### Added
+- GitHub Action 新增 `intent` 输入：`intent: "auto"` 自动把 PR 标题+描述作为 `--intent` 做「实现 vs 意图」评审（也可传固定意图文档路径）。用于覆盖「每个 hunk 都自洽、但整体没做到 PR 声称的事」这类缺陷向审查抓不到的问题。默认关闭：标题含糊会产生「未核对」项并降级 WARN。
+  The GitHub Action gained an `intent` input: `intent: "auto"` automatically feeds the PR title + description to `--intent` for an "implementation vs intent" review (a fixed intent-document path also works). It covers the class of issue defect-oriented review can't see — every hunk looks consistent, but the change doesn't do what the PR claims. Off by default: vague titles produce "not assessed" items and downgrade to WARN.
 - TypeScript 换用专用语法解析：`interface` / `type` 别名 / `enum` / `abstract class` 现在能被 `find_definition` 等精确工具识别为定义（此前 TS 复用 JS 语法，这些构造会被漏掉或解析错位）；`.tsx` 用 JSX 感知的语法解析。
   TypeScript now uses its dedicated grammar: `interface` / `type` aliases / `enum` / `abstract class` are recognized as definitions by `find_definition` and friends (previously TS reused the JS grammar, which missed or mis-parsed these constructs); `.tsx` is parsed with the JSX-aware grammar.
 

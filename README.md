@@ -315,6 +315,8 @@ jobs:
 
 > **版本策略**：推荐用 `@v0` 跟随 0.x 兼容更新。Action 默认下载最新 CLI，CLI 发版通常不用改 workflow；需要可复现 CI 时，用 `with: { version: "v0.2.0" }` 钉死 CLI 引擎版本。
 
+> **意图评审（可选）**：加 `with: { intent: "auto" }` 后，Action 会自动把 **PR 标题+描述**作为 `--intent` 做「实现 vs 意图」评审并输出验收清单——正好覆盖「每个 hunk 都自洽、但整体没做到 PR 声称的事」这类缺陷向审查抓不到的问题。PR 描述写得越像验收标准效果越好；标题含糊会产生「未核对」项并降级 WARN，故默认关闭。也可传路径指向固定意图文档。
+
 ### 4. Codex（AGENTS.md，experimental）
 
 OpenAI Codex CLI 读项目根的 `AGENTS.md`。一键把 ReviewGate 用法幂等并入（不覆盖已有内容）：

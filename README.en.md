@@ -316,6 +316,8 @@ jobs:
 
 > **Versioning**: use `@v0` to track compatible 0.x Action updates. The Action downloads the latest CLI by default, so CLI releases usually need no workflow change; for reproducible CI, set `with: { version: "v0.2.0" }` to pin the CLI engine.
 
+> **Intent review (optional)**: with `with: { intent: "auto" }` the Action automatically feeds the **PR title + description** to `--intent`, running an "implementation vs intent" review with an acceptance checklist — exactly the class of issue defect-oriented review can't see (every hunk looks consistent, but the change doesn't do what the PR claims). The more your PR description reads like acceptance criteria, the better it works; vague titles produce "not assessed" items and downgrade to WARN, hence off by default. You can also pass a path to a fixed intent document.
+
 ### 4. Codex (AGENTS.md, experimental)
 
 OpenAI Codex CLI reads `AGENTS.md` at the repo root. Merge ReviewGate's usage into it idempotently (existing content is preserved):

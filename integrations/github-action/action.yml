@@ -29,6 +29,10 @@ inputs:
     description: "ReviewGate 版本（默认 latest）"
     required: false
     default: "latest"
+  intent:
+    description: "意图/技术评审：auto = 自动用 PR 标题+描述作为 --intent（描述写得越像验收标准效果越好；模糊标题可能产生「未核对」项并降级 WARN）；off = 不做意图评审；或填意图文档路径。默认 off"
+    required: false
+    default: "off"
 
 runs:
   using: "composite"
@@ -46,6 +50,10 @@ runs:
       env:
         GITHUB_TOKEN: ${{ github.token }}
         REVIEWGATE_CONFIG: ${{ inputs.config }}
+        # PR 标题/描述经 env 传入（而非直接插进 shell），避免恶意标题里的 $()/反引号被执行。
+        PR_TITLE: ${{ github.event.pull_request.title }}
+        PR_BODY: ${{ github.event.pull_request.body }}
+        INTENT_MODE: ${{ inputs.intent }}
       run: |
         ARGS="--dimensions ${{ inputs.dimensions }} --fail-on ${{ inputs.fail-on }} --timeout ${{ inputs.timeout }}"
         if [ "${{ inputs.comment }}" = "true" ]; then ARGS="$ARGS --comment"; fi
@@ -56,4 +64,15 @@ runs:
         if [ -n "$BASE" ] && [ -n "$HEAD" ]; then
           ARGS="$ARGS --from $BASE --to $HEAD"
         fi
+        # 意图评审：auto = 用 PR 标题+描述；off = 关闭；其它值当作意图文档路径。
+        case "$INTENT_MODE" in
+          auto)
+            if [ -n "$BASE" ] && [ -n "$PR_TITLE" ]; then
+              printf '%s\n\n%s\n' "$PR_TITLE" "$PR_BODY" > "$RUNNER_TEMP/reviewgate-intent.md"
+              ARGS="$ARGS --intent $RUNNER_TEMP/reviewgate-intent.md"
+            fi
+            ;;
+          off|"") ;;
+          *) ARGS="$ARGS --intent $INTENT_MODE" ;;
+        esac
         reviewgate review $ARGS
