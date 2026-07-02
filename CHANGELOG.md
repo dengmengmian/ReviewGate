@@ -4,7 +4,7 @@
 每条变更先中文、后英文。
 Changes are listed in Chinese first, then English.
 
-## [Unreleased]
+## [0.5.0] - 2026-07-02
 
 ### Added
 - GitHub Action 新增 `intent` 输入：`intent: "auto"` 自动把 PR 标题+描述作为 `--intent` 做「实现 vs 意图」评审（也可传固定意图文档路径）。用于覆盖「每个 hunk 都自洽、但整体没做到 PR 声称的事」这类缺陷向审查抓不到的问题。默认关闭：标题含糊会产生「未核对」项并降级 WARN。
