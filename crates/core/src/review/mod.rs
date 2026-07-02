@@ -7,6 +7,7 @@ mod aggregate;
 mod context;
 mod dedup;
 mod intent;
+mod prefetch;
 mod rules;
 mod units;
 
@@ -203,6 +204,7 @@ pub async fn run_review_with_client(
         &rules_body,
         budget,
         overhead,
+        &*ctx.index,
         &mut warnings,
         &mut incomplete,
     )
@@ -379,6 +381,9 @@ pub async fn run_review_with_client(
 
 /// 为每个单元预构造 prompt：先带文件全文上下文；超预算则退化为 diff-only；
 /// 仍超则跳过（oversized 告警 + 标记未审完，绝不静默放行）。返回与 `units` 对齐的 `Option<String>`。
+///
+/// 预取块（改动符号的调用点，本地计算）会附加在 prompt 末尾以省 Agent 的取数往返；
+/// 它参与预算估算，若因它超预算则**退回无预取版本**——预取只加分，绝不把临界单元挤成 oversized。
 #[allow(clippy::too_many_arguments)]
 async fn build_unit_prompts(
     diff: &Diff,
@@ -388,18 +393,37 @@ async fn build_unit_prompts(
     rules_body: &str,
     budget: usize,
     overhead: usize,
+    index: &dyn crate::index::CodeIndex,
     warnings: &mut Vec<ReviewWarning>,
     incomplete: &mut bool,
 ) -> Vec<Option<String>> {
     let mut unit_prompts: Vec<Option<String>> = Vec::with_capacity(units.len());
     for (ui, unit) in units.iter().enumerate() {
+        let prefetched = prefetch::render_prefetch(index, diff, &unit.files).await;
+        let with_prefetch = |mut p: String| {
+            if !prefetched.is_empty() {
+                p.push_str("\n\n");
+                p.push_str(&prefetched);
+            }
+            p
+        };
         let full = build_unit_prompt(diff, &unit.files, true, root, new_ref, rules_body).await;
+        let full_pf = with_prefetch(full.clone());
+        if estimate_tokens(&full_pf) + overhead <= budget {
+            unit_prompts.push(Some(full_pf));
+            continue;
+        }
         if estimate_tokens(&full) + overhead <= budget {
             unit_prompts.push(Some(full));
             continue;
         }
         let diff_only =
             build_unit_prompt(diff, &unit.files, false, root, new_ref, rules_body).await;
+        let diff_only_pf = with_prefetch(diff_only.clone());
+        if estimate_tokens(&diff_only_pf) + overhead <= budget {
+            unit_prompts.push(Some(diff_only_pf));
+            continue;
+        }
         if estimate_tokens(&diff_only) + overhead <= budget {
             unit_prompts.push(Some(diff_only));
             continue;

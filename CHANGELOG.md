@@ -13,6 +13,8 @@ Changes are listed in Chinese first, then English.
   TypeScript now uses its dedicated grammar: `interface` / `type` aliases / `enum` / `abstract class` are recognized as definitions by `find_definition` and friends (previously TS reused the JS grammar, which missed or mis-parsed these constructs); `.tsx` is parsed with the JSX-aware grammar.
 
 ### Changed
+- 评审开始前，改动符号的调用点现在会被本地预取（git/AST，毫秒级）并随 diff 一起提供给评审 Agent——模型开局就能看到「谁在用这段被改的代码」，省掉最贵的取数往返。跨维度共享同一块、可被 prompt 缓存摊薄；有严格上限防注意力稀释；若因它超输入预算会自动退回无预取版本。召回评测无回归（date-fns off-by-one 用例从 warn 升到 block）；墙钟收益受服务商延迟噪声影响，未定量宣称。
+  Call sites of changed symbols are now prefetched locally (git/AST, milliseconds) and provided to review agents alongside the diff — the model sees "who uses this changed code" from turn one, skipping its most expensive lookup round-trips. The block is shared across dimensions (prompt-cache friendly), strictly capped to avoid attention dilution, and automatically dropped if it would exceed the input budget. Recall evals show no regression (the date-fns off-by-one case moved from warn to block); wall-clock gains are not quantified due to provider latency noise.
 - 评审 Agent 现在会把互不依赖的查询（读多个文件、追多个符号）合并到一轮里发起，同样时间预算内多看 ~40-55% 的上下文（实测于 19 文件大 diff，logic 维度）。大 PR 单维度审不完的根本瓶颈仍在（见 LIMITATIONS），此项是缓解不是根治。
   Review agents now batch independent lookups (multiple file reads, multiple symbol traces) into a single turn, covering ~40-55% more context within the same time budget (measured on a 19-file diff, logic dimension). The underlying bottleneck for very large PRs remains (see LIMITATIONS); this is mitigation, not a cure.
 
