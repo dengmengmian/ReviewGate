@@ -29,7 +29,9 @@ for a in "$@"; do
 done
 WORK="${TMPDIR:-/tmp}/reviewgate-eval-recall"
 DATE="$(date +%Y-%m-%d)"
-SUMMARY="$EVAL_DIR/${DATE}__recall-summary.md"
+# 汇总文件名带数据集名，避免同日跑不同数据集互相覆盖。
+DS_TAG="$(basename "$DATASET" .tsv | tr -c 'a-zA-Z0-9_-' '-' | sed 's/-*$//')"
+SUMMARY="$EVAL_DIR/${DATE}__recall-summary--${DS_TAG}.md"
 TIMEOUT="${REVIEWGATE_EVAL_TIMEOUT:-300}"
 
 for bin in git jq cargo; do
