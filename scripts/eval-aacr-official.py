@@ -73,25 +73,44 @@ def ensure_repo(repo: str) -> Path:
     raise RuntimeError(f"clone failed: {repo}")
 
 
+def _commits_present(repo_dir: Path, *shas) -> bool:
+    """确认 commit 对象已在本地（blobless clone 下按需 fetch 可能未落地）。"""
+    for sha in shas:
+        if subprocess.run(["git", "cat-file", "-e", f"{sha}^{{commit}}"],
+                          cwd=repo_dir, capture_output=True).returncode != 0:
+            return False
+    return True
+
+
 def fetch(repo_dir: Path, *shas):
-    for _ in range(3):
-        if subprocess.run(["git", "fetch", "--quiet", "origin", *shas],
-                          cwd=repo_dir, capture_output=True).returncode == 0:
+    # 拉两个 commit 的完整树（--filter=tree:0 只延迟 blob；但 diff 需要 blob，
+    # 故这里不加 filter，确保 diff 所需对象都在本地，避免运行 RG 时按需 fetch 撞网络抖动）。
+    for _ in range(4):
+        subprocess.run(["git", "fetch", "--quiet", "origin", *shas],
+                       cwd=repo_dir, capture_output=True)
+        if _commits_present(repo_dir, *shas):
             return
-    raise RuntimeError(f"fetch failed: {shas}")
+    raise RuntimeError(f"fetch failed (commits not present): {shas}")
 
 
 def run_rg(repo_dir: Path, source: str, target: str) -> dict:
     env = os.environ.copy()
     env["REVIEWGATE_CONFIG"] = str(CONFIG)
-    proc = subprocess.run(
-        [str(RG_BIN), "review", "--from", source, "--to", target,
-         "--format", "json", "--timeout", str(TIMEOUT)],
-        cwd=repo_dir, capture_output=True, text=True, env=env, timeout=TIMEOUT * 6,
-    )
-    if proc.returncode not in (0, 1):
-        raise RuntimeError(f"rg exited {proc.returncode}: {proc.stderr[-400:]}")
-    return json.loads(proc.stdout)
+    cmd = [str(RG_BIN), "review", "--from", source, "--to", target,
+           "--format", "json", "--timeout", str(TIMEOUT)]
+    last = ""
+    # RG 退出码 2 = 工具自身出错；若是 git 类瞬时错（按需 fetch blob 抖动），重试一次。
+    for attempt in range(2):
+        proc = subprocess.run(cmd, cwd=repo_dir, capture_output=True, text=True,
+                              env=env, timeout=TIMEOUT * 6)
+        if proc.returncode in (0, 1):
+            return json.loads(proc.stdout)
+        last = proc.stderr[-400:]
+        if proc.returncode == 2 and "git" in last and attempt == 0:
+            fetch(repo_dir, source, target)  # 重新确保对象在本地
+            continue
+        break
+    raise RuntimeError(f"rg exited non-0/1: {last}")
 
 
 def rg_findings_to_generated(rg_result: dict) -> list[dict]:
@@ -149,17 +168,26 @@ def main():
     print(f"judge: {os.environ.get('LLM_MODEL')} @ {os.environ.get('LLM_MODEL_URL')}")
     print(f"PRs: {len(picked)}\n")
 
+    resdir = EVAL_DIR / "aacr-bench-results"
+    resdir.mkdir(parents=True, exist_ok=True)
     for e in picked:
         url = e["githubPrUrl"].rstrip("/")
         parts = url.split("/")
         repo = f"{parts[-4]}/{parts[-3]}"
         key = f"{repo}#{parts[-1]}"
+        slug = f"{repo.replace('/', '_')}__pr{parts[-1]}"
         good = e.get("comments", [])
         print(f"▶ {key} [{e.get('project_main_language')}] good={len(good)}")
         try:
             rd = ensure_repo(repo)
             fetch(rd, e["source_commit"], e["target_commit"])
-            rg = run_rg(rd, e["source_commit"], e["target_commit"])
+            # 缓存 RG 原始输出：重评/诊断时零 RG 成本（只重跑 judge）。RG_NOCACHE=1 可强制重审。
+            rg_cache = resdir / f"{slug}.rg.json"
+            if rg_cache.exists() and not os.environ.get("RG_NOCACHE"):
+                rg = json.loads(rg_cache.read_text())
+            else:
+                rg = run_rg(rd, e["source_commit"], e["target_commit"])
+                rg_cache.write_text(json.dumps(rg, ensure_ascii=False, indent=2))
             gen = rg_findings_to_generated(rg)
             res = asyncio.run(get_evaluator_ans_from_json(
                 github_pr_url=url, generated_comments=gen, good_comments=good, config=cfg,
@@ -168,6 +196,8 @@ def main():
             ))
             if "error" in res:
                 raise RuntimeError(res["error"])
+            # 存完整 evaluator 结果（含 match_details / llm_comparisons）供诊断 precision/recall。
+            (resdir / f"{slug}.eval.json").write_text(json.dumps(res, ensure_ascii=False, indent=2))
             m = res.get("positive_match_nums", 0)
             tg = res.get("total_generated_nums", 0)
             pe = res.get("positive_expected_nums", 0)
@@ -199,8 +229,6 @@ def main():
            "micro": {"prs": len(ok), "generated": tg, "good": tgood, "semantic_match": tm,
                      "precision": round(P, 4), "recall": round(R, 4), "f1": round(F1, 4)},
            "rows": rows}
-    resdir = EVAL_DIR / "aacr-bench-results"
-    resdir.mkdir(parents=True, exist_ok=True)
     (resdir / "official-summary.json").write_text(json.dumps(out, ensure_ascii=False, indent=2))
     print(f"\n✓ {resdir / 'official-summary.json'}")
 
