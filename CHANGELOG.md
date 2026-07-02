@@ -6,6 +6,10 @@ Changes are listed in Chinese first, then English.
 
 ## [Unreleased]
 
+### Changed
+- 默认审查维度由 5 个收敛为 4 个缺陷维度（security / perf / logic / ai_smell）；**`style` 移出默认集、改为 opt-in**（`--dimensions style` 或 `...,style`）。作为合并前质量闸口，纯风格/格式问题属噪声、该交给 linter/formatter——在 AACR-Bench 官方语义评测里 style 命中真缺陷≈0 却把精度从 57% 拉低到 33%。默认少一个维度也更快更省；需要风格审查照旧可显式开启。
+  The default review dimension set shrank from 5 to the 4 defect dimensions (security / perf / logic / ai_smell); **`style` moved out of the default set to opt-in** (`--dimensions style` or `...,style`). As a pre-merge quality gate, pure style/formatting is noise best left to linters/formatters — on the official AACR-Bench semantic eval, style matched ≈0 real defects yet dragged precision from 57% down to 33%. One fewer default dimension is also faster and cheaper; style review is unchanged when explicitly enabled.
+
 ### Added
 - 新增**路径规则**：`[[business.path_rules]]` 用 glob 把定向规则路由到改动文件（如 `migrations/**` → 迁移必须可回滚），命中才注入、带 `[P1]` 编号可追溯；非法 glob 在加载时告警而非静默忽略。另附两组**内置路径规则**（默认开，`builtin_path_rules = false` 可关）：`.github/workflows/*` 命中 GitHub Actions 安全清单（`pull_request_target`+PR head 检出、`${{ }}` 注入、密钥外泄、过宽权限、未钉死的第三方 action）；无扩展名的 `Dockerfile` 现在也能命中镜像规则（此前按扩展名路由会漏掉）。
   Added **path rules**: `[[business.path_rules]]` routes targeted rules to changed files by glob (e.g. `migrations/**` → migrations must be reversible), injected only on match with traceable `[P1]` ids; invalid globs warn at load instead of being silently ignored. Two **built-in path rules** ship enabled by default (disable with `builtin_path_rules = false`): `.github/workflows/*` triggers a GitHub Actions security checklist (`pull_request_target` + PR-head checkout, `${{ }}` injection, secret exposure, over-broad permissions, unpinned third-party actions), and extensionless `Dockerfile` files now get the image rules (previously missed by extension-based routing).

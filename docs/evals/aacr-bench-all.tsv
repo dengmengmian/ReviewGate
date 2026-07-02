@@ -1,0 +1,357 @@
+# AACR-Bench -> ReviewGate 评测清单
+# 数据来源：阿里巴巴开源数据集 alibaba/aacr-bench
+# 原始描述：200 real Pull Requests from 50 active open-source projects, 10 languages,
+#          human-LLM collaborative annotation, 1,505 review comments as ground truth.
+# 列（Tab 分隔）：repo	pr	source_commit	target_commit	label	language	category	change_line_count	note
+# source_commit = PR base, target_commit = PR head
+FreeCAD/FreeCAD	19411	0c65673a6fd2421be8fbe613116077120adea068	a050e422e23ce3eaee960b75ceff236b34f369b9	positive	C++	Code Refactoring / Architectural Improvement	862	C++ | Code Refactoring / Architectural Improvement | 19 comments
+FreeCAD/FreeCAD	21257	17e56f6570a97aa9803b502b23cf27dc8be1da70	eb761fd69cf1fb9c674e385bb1d419814526ba5a	positive	C++	Bug Fix	672	C++ | Bug Fix | 19 comments
+FreeCAD/FreeCAD	22744	ab225f5672cbe45404299437d1613c308b68900b	82fef4a22503dd3affdd39e7120b6f71e9423f86	positive	C++	Security Patches / Vulnerability Fixes	41	C++ | Security Patches / Vulnerability Fixes | 3 comments
+FreeCAD/FreeCAD	20612	79008331b30d098b2c32e59752e24e0705b350bc	ec3da2e93e3fd8f69f113ca14abf892dfb86c11b	positive	C++	Code Refactoring / Architectural Improvement	80	C++ | Code Refactoring / Architectural Improvement | 3 comments
+FreeCAD/FreeCAD	18688	abb50a4daa43abee9e6b263dd82e5e876c978c6a	a440ff7e4138c20ed2ac66977a199ebbf295e493	positive	C++	Documentation Update	297	C++ | Documentation Update | 6 comments
+FreeCAD/FreeCAD	22235	730e07db5d2acafe7723eb89c83641375c375bc3	f8cd64328c49510285490dfd9872253ce7a53040	positive	C++	Documentation Update	85	C++ | Documentation Update | 6 comments
+FreeCAD/FreeCAD	20336	16968aa3ee1bc7f2caf4ce592d13066aa8755a80	290bdc79d1ad92669431458a62205d694522586e	positive	C++	Bug Fix	98	C++ | Bug Fix | 8 comments
+FreeCAD/FreeCAD	20825	01241245a1d92a8db69fab0db4c2053b5e1227c1	870d7f5385af5d377994479ce6ad017465bdad3d	positive	C++	New Feature Additions	776	C++ | New Feature Additions | 32 comments
+FreeCAD/FreeCAD	19977	b59cd794274c8c007b2ef16c3a06fecf30c0aef1	39c5968bdc6c0b20d94d4a629cd43eafee1e56d0	positive	C++	Code Style, Linting, Formatting Fixes	306	C++ | Code Style, Linting, Formatting Fixes | 5 comments
+FreeCAD/FreeCAD	20156	382720b82e4c6c81f7e1cdd3a33272047d7a3642	699b45c086f53858897aa8c688bbedaf570c644f	positive	C++	Code Style, Linting, Formatting Fixes	56	C++ | Code Style, Linting, Formatting Fixes | 16 comments
+FreeCAD/FreeCAD	19426	f001b8a10ac2206458f7db457a45c9b2853e7bff	e59692501d1a08e7306189fed5c31b02553f7746	positive	C++	New Feature Additions	725	C++ | New Feature Additions | 23 comments
+microsoft/typescript-go	1354	15def0236938e25ec7822755444f4d58c68045be	ae447d3b2a6db00072941e1992a09981b6096061	positive	Go	Code Refactoring / Architectural Improvement	176	Go | Code Refactoring / Architectural Improvement | 2 comments
+microsoft/typescript-go	831	bc3195e0f2727d11a48ed9fc61f37a90c9b7deb4	b970689fe86e0b6ef4f5285b18343ddf16b294eb	positive	Go	Bug Fix	933	Go | Bug Fix | 15 comments
+microsoft/typescript-go	1446	a9efe52c52001ea5b49d2ae8d7b0fa32ec8339f3	892b4a3f6b701352047ceb019fc0683ab1146bb3	positive	Go	Test Suite / CI Enhancements	80	Go | Test Suite / CI Enhancements | 13 comments
+microsoft/typescript-go	691	da4e121142cd3f891785b573a194b9caaaa01d55	1a84d8d5705df98fd1e1f81d9d3115a7a203509d	positive	Go	Performance Optimizations	92	Go | Performance Optimizations | 3 comments
+microsoft/typescript-go	1000	af2ba7365ad3e2f572ddb95a439b0220eccc06b1	45c0de96a08812aff07974b859bc2327e7fe25ed	positive	Go	New Feature Additions	47	Go | New Feature Additions | 1 comments
+microsoft/typescript-go	698	3a3ff237cf7ad91bcdb604271f6135762aed9365	100dbc5127e723c4108efc02a179d9aec5fce32a	positive	Go	Documentation Update	829	Go | Documentation Update | 6 comments
+PowerShell/PowerShell	24910	2259f56c0786574cbde8624d031e778028352372	ec952ce3b70c87885ed756ffca2bec128f07c51b	positive	C#	Bug Fix	23	C# | Bug Fix | 5 comments
+PowerShell/PowerShell	25780	ce76ae1def6d5b00fff0d855ec01575121268ef3	ea07b93a40f64274505e3a070c1fd91684ff2959	positive	C#	Bug Fix	44	C# | Bug Fix | 4 comments
+libsdl-org/SDL	12964	71303b41bf89c4bb68dbe1bed12fd2ee1dc0dd41	15267271865f73c996719238425f1604fc2fa205	positive	C	New Feature Additions	48	C | New Feature Additions | 7 comments
+libsdl-org/SDL	12718	ab34ea5a2684766e510de1daf8ae44c41b6af704	96dfef35c4b0b89f2f8d9c2ecc4f5e3a25d3e7a0	positive	C	Bug Fix	161	C | Bug Fix | 8 comments
+gofr-dev/gofr	1681	d0300073f685bb1154f7437f3172799d31bfddbe	c1a26ade6db7da96622c9bdca7674ef7094c122f	positive	Go	Bug Fix	217	Go | Bug Fix | 5 comments
+gofr-dev/gofr	1617	ba0316277a22f508ed645951705f53d151552916	49ab39432cf4892ee84569099b8065dfe45fae92	positive	Go	Bug Fix	554	Go | Bug Fix | 5 comments
+gofr-dev/gofr	1325	7f1760b083ea23ffd95fdf83467bdfa21735df81	b9cdcbb2b9fc78499d15d51ffbb7c861592b0efe	positive	Go	New Feature Additions	215	Go | New Feature Additions | 2 comments
+gofr-dev/gofr	1355	44e3eeb2786ad4d333dc1f528fb104236693d060	dc0b3e630423b72cb9b2f273fdc18a5c11d12984	positive	Go	Security Patches / Vulnerability Fixes	309	Go | Security Patches / Vulnerability Fixes | 6 comments
+gofr-dev/gofr	1395	c2ab1eb3308afa4f29842f0a982751bf65c059d0	2c0c0997cad66a1ee1e47f95db6a830394157c00	positive	Go	Test Suite / CI Enhancements	348	Go | Test Suite / CI Enhancements | 8 comments
+gofr-dev/gofr	1696	de79ab765d0d34d78a42ebdd50a21a6f26841b7f	5e284aec0447be34c96a252e959067c8bcd9cd4c	positive	Go	New Feature Additions	356	Go | New Feature Additions | 4 comments
+comfyanonymous/ComfyUI	7952	924d771e18000f4cb223575189daa6d2c6c5a9c1	4936d01872b8719ede33f9a11dc8e898c33d39e4	positive	Python	New Feature Additions	323	Python | New Feature Additions | 5 comments
+comfyanonymous/ComfyUI	8446	c7b25784b141a298d8ee5f0d830a29da6e8a3d54	4dcd698e489da69294ee01de0350a9a02e3e4b41	positive	Python	New Feature Additions	971	Python | New Feature Additions | 18 comments
+comfyanonymous/ComfyUI	6033	6c0377f43e7b6ed58d48ae05cff9bc45b52ef5e0	0bb60235132cc72daea81427107a40ba1ccb5ddf	positive	Python	Code Style, Linting, Formatting Fixes	30	Python | Code Style, Linting, Formatting Fixes | 7 comments
+comfyanonymous/ComfyUI	9560	a86aaa430183068e2a264495c802c81d05eb350a	cfc312296c0b9f255bba6b4b2789ac7bbc66a7cb	positive	Python	Bug Fix	319	Python | Bug Fix | 6 comments
+comfyanonymous/ComfyUI	6542	832e3f5ca3c357e527fdf811502357bd2798425e	b55c2247654476fbc744e572ba7a834fd9378745	positive	Python	Bug Fix	15	Python | Bug Fix | 2 comments
+mrdoob/three.js	31402	de413e2112ff1ae80599f145b101354a1476976c	b55b9e97f6d0f5829e4d8fc364949e72b0d9e98c	positive	JavaScript	New Feature Additions	210	JavaScript | New Feature Additions | 10 comments
+mrdoob/three.js	30076	1fc010cb7bd1e17d94c1a33ba8dacdf9e34193cb	7388f600209ce8a98f7211cd0e93a170b6e98d61	positive	JavaScript	Code Style, Linting, Formatting Fixes	151	JavaScript | Code Style, Linting, Formatting Fixes | 17 comments
+mrdoob/three.js	30750	bf4e6fcb64a1d6bdbaf975528595ac6873051641	96ab0720fc65368e32ee3f2389cb192f96d8adff	positive	JavaScript	Bug Fix	61	JavaScript | Bug Fix | 4 comments
+CherryHQ/cherry-studio	5540	f258f5b2cb4a4cf9012e106837aba409b383e367	83a25941859179b635105c9b4fd79d5542e3701e	positive	TypeScript	New Feature Additions	345	TypeScript | New Feature Additions | 19 comments
+CherryHQ/cherry-studio	5637	636c788e2ba413d21a5fd385c3ea4cc7e134e1be	5644b00b87e07fa1acd84d4ec93f9f2fb1205090	positive	TypeScript	Code Refactoring / Architectural Improvement	687	TypeScript | Code Refactoring / Architectural Improvement | 23 comments
+opencv/opencv	26815	459bb12466abdade062607ae54f3267adaef8063	e3e45c86baa3c51def49961f5d77201ee97e4385	positive	C++	Security Patches / Vulnerability Fixes	11	C++ | Security Patches / Vulnerability Fixes | 4 comments
+opencv/opencv	27297	16a3d37dc159dbcaaf8ee74cf63669f0203f9655	e546382fc1cbb61a7679c0511303729844a70111	positive	C++	Bug Fix	48	C++ | Bug Fix | 1 comments
+opencv/opencv	27284	868fc5c581228f8f47bf4bc3ee84427acc99226a	79afad939ecfaa332af0541db473fa94f8f425b6	positive	C++	New Feature Additions	307	C++ | New Feature Additions | 14 comments
+nextcloud/server	52846	4aa4972550bec08faf477113f223475f7fb3e5d2	51b5ea92ccb5f4683b0f52840a01031e1ed0baa3	positive	PHP	Code Refactoring / Architectural Improvement	165	PHP | Code Refactoring / Architectural Improvement | 2 comments
+lvgl/lvgl	8164	344ba9fe99b487f7f5164900679d56acf2d8bff2	9cce37c219f95701fecc44f74595aa9c6effbdba	positive	C	New Feature Additions	67	C | New Feature Additions | 5 comments
+lvgl/lvgl	8129	d2ed41dda1618049a037df2639b9d28578847195	4a57db33476f1caf3e85726a6b1e189c68c1f36b	positive	C	Performance Optimizations	29	C | Performance Optimizations | 5 comments
+lvgl/lvgl	8689	244b3b996e0b331468cf5967c937029535af569c	e526b2a1faa4672eeb3610b466ecc25b1abb220b	positive	C	Code Style, Linting, Formatting Fixes	804	C | Code Style, Linting, Formatting Fixes | 33 comments
+lvgl/lvgl	7602	5f41926f0414c02f70547c50329969f7fe6a4b8d	a0067e3984cc95bb3ed0dce9abb664ee6a01a199	positive	C	Bug Fix	109	C | Bug Fix | 2 comments
+cline/cline	5177	a1bf1f95a30ca95581d9811488636aec42dd2f80	419534ccd4241fc11827741eb0d76ba0c9d21277	positive	TypeScript	Bug Fix	33	TypeScript | Bug Fix | 2 comments
+cline/cline	5955	b3abbd886e7e693c48b31a0af8046035bf014118	f098af0f52bf1cdb7eb561c380caef5746b58d40	positive	TypeScript	New Feature Additions	165	TypeScript | New Feature Additions | 8 comments
+cline/cline	4676	0262e13ac48bbbc29f6c76b6b9a72e7e2ed2eb4b	d0a8db831cbe657faf792f00c0e3325de0b75fb4	positive	TypeScript	Performance Optimizations	179	TypeScript | Performance Optimizations | 15 comments
+cline/cline	2347	07d20574868b2ebb51c95c30a7a81b3793f0f07e	7d18fb9df620c61420c6939df22fb6f7af836bb2	positive	TypeScript	Bug Fix	63	TypeScript | Bug Fix | 9 comments
+cline/cline	4786	398bc87a64800e021966868243be2f09be72e73c	2195a689b787a963bdacc35d348f4590c30a2692	positive	TypeScript	Security Patches / Vulnerability Fixes	69	TypeScript | Security Patches / Vulnerability Fixes | 7 comments
+cline/cline	5524	8f4c6038dd70ce02caaf7ae924dc28d5be63968e	ca7f02b8cf8cd36d832a63e1c9ad892356c7df66	positive	TypeScript	Code Refactoring / Architectural Improvement	333	TypeScript | Code Refactoring / Architectural Improvement | 9 comments
+cline/cline	1808	4d8bdf29458db722a2bce1dfacc50771959b32fa	cb4d5c90460885942cbbae0298b95f4ee5682086	positive	TypeScript	New Feature Additions	11	TypeScript | New Feature Additions | 3 comments
+browser-use/browser-use	1482	fa461585f1fc2d4a430e68e6c115a12f4936fe73	0b21e50ca640581ecd46990475c8b223eaa05045	positive	Python	New Feature Additions	133	Python | New Feature Additions | 2 comments
+browser-use/browser-use	857	515b94225aa86c40dc2c20034055ab8bcc88c6ae	aab7b3bb54e2b15ee3b32ad7de74c91fc8b22f52	positive	Python	New Feature Additions	95	Python | New Feature Additions | 2 comments
+browser-use/browser-use	3172	e85a547378b236c9788802d28e816f10940a7e53	72f1585f9add5b72e829eaee3b5bff684e0b08d3	positive	Python	Performance Optimizations	324	Python | Performance Optimizations | 2 comments
+electron/electron	46982	9f8a629126a31224f6b1aa90d650cdc61f7568f2	c4864570586f4c2f019797d3b0a9c4c76e93396b	positive	C++	Code Refactoring / Architectural Improvement	190	C++ | Code Refactoring / Architectural Improvement | 5 comments
+electron/electron	47361	a42afaa8665b6d1b3a344918c60853184a97060e	6084595c5608226e961d251bfb5ec138de8022ca	positive	C++	Bug Fix	64	C++ | Bug Fix | 6 comments
+electron/electron	46660	7083419361385dfcd762656f0227581aedc4f514	100ad244b742d221ad129e96bef934e8128403a9	positive	C++	Bug Fix	6	C++ | Bug Fix | 2 comments
+electron/electron	45671	d6f4982522efd5917b44d1ceed418e4a0ee7824e	2cc56562e22cd36c70f0b632c3297d62c3c58b06	positive	C++	Code Refactoring / Architectural Improvement	82	C++ | Code Refactoring / Architectural Improvement | 7 comments
+nodejs/node	56185	6cd1805364f457b19ebecb38b8f909146f968354	b2255442712cb6db83d112deb6ba61197d06a5f3	positive	JavaScript	Bug Fix	62	JavaScript | Bug Fix | 4 comments
+nodejs/node	57691	18b9120435287eafb1865102c6c4dc6a7cff5ede	e8b6c183d46c41b2992c4f5cafceb7f9c6f8710d	positive	JavaScript	Test Suite / CI Enhancements	169	JavaScript | Test Suite / CI Enhancements | 2 comments
+sveltejs/svelte	15250	e4987d2a9f36b33f3934725723f9c4cc998ef278	4bf1f915d3374721f8a1655b1a151c1c423b1a3c	positive	JavaScript	Performance Optimizations	105	JavaScript | Performance Optimizations | 14 comments
+sveltejs/svelte	16232	2af7ba21563f1b7f011ffa9f0c08e4acb473eef3	44bec4c8b172a47ff300f754463555bbb694bb05	positive	JavaScript	Bug Fix	326	JavaScript | Bug Fix | 5 comments
+alibaba/spring-ai-alibaba	869	76c06b58a4d9e8ee3fe3c0269a046987ad0502e5	3555a95e7b888335d9f72e432eb4f9fb9640e8cd	positive	Java	Bug Fix	140	Java | Bug Fix | 4 comments
+alibaba/spring-ai-alibaba	903	71e7eeb27dfe42c5a805da413ef6e9faf84fe9d0	4bc73055c7b33f53433d9725eab5010b85a59632	positive	Java	Bug Fix	118	Java | Bug Fix | 10 comments
+google-gemini/gemini-cli	4828	de968877895a8ae5f0edb83a43b37fa190cc8ec9	77ea28a234023019ddda3f4a5f7a81b3514d3eb8	positive	TypeScript	New Feature Additions	861	TypeScript | New Feature Additions | 24 comments
+google-gemini/gemini-cli	8797	6e4236bf7681b2a2cba5630a8dd0a0d5a200a0df	d64b61ef89f01ecdc0e095a995d47522245a0065	positive	TypeScript	Bug Fix	436	TypeScript | Bug Fix | 5 comments
+google-gemini/gemini-cli	4163	7ffe8038efaa5bf263a2a933819bcd4badd37dc2	e7ed0a410ae510cda8b53ea20f3d758bd90a0f00	positive	TypeScript	Code Refactoring / Architectural Improvement	275	TypeScript | Code Refactoring / Architectural Improvement | 3 comments
+google-gemini/gemini-cli	5793	53f8617b249c9f0443f5082a293a30504a118030	4c150ab4befb2a727b493d732d8d3d01f388e492	positive	TypeScript	Bug Fix	262	TypeScript | Bug Fix | 3 comments
+google-gemini/gemini-cli	9177	809b933d8150c29154062e4d596cd916258022fc	c6e624883852318b71baa2a060c933bb5de591ef	positive	TypeScript	Test Suite / CI Enhancements	103	TypeScript | Test Suite / CI Enhancements | 7 comments
+google-gemini/gemini-cli	5819	4e49ee4c734f53a705df72efda2d076cb0acf44e	6fd82699700fc19ea30a7b29a059f392ccfbb2cc	positive	TypeScript	New Feature Additions	300	TypeScript | New Feature Additions | 14 comments
+google-gemini/gemini-cli	8154	5a05fb0dd002481343aaab7736a871904bb07c6f	0fa1bd7ac417366f321ed2554caeaef550321959	positive	TypeScript	Security Patches / Vulnerability Fixes	405	TypeScript | Security Patches / Vulnerability Fixes | 13 comments
+infiniflow/ragflow	7151	8362ab405c35d260dd2328dc207aefcf30778f66	f189316eae1c199a5891f7a8bc47d53bb1b5c818	positive	Python	Bug Fix	207	Python | Bug Fix | 10 comments
+infiniflow/ragflow	6691	0a42e5777eb966b26aaf8f2a7d593ae99a4aa87a	a63caa1087852ada98964678be26b7c4d8363af6	positive	Python	Bug Fix	11	Python | Bug Fix | 6 comments
+infiniflow/ragflow	6553	b1c874698469ac999d210cd8cde59425781e4da2	705123406ec7cd5eb1f9be26f6c5c31357aeffc9	positive	Python	Performance Optimizations	37	Python | Performance Optimizations | 6 comments
+infiniflow/ragflow	5065	469460483665000f522b6c9a6583bb34f17a954b	2d06022b78536bd22a0fd83f38804f39aa34cce8	positive	Python	New Feature Additions	65	Python | New Feature Additions | 5 comments
+appwrite/appwrite	9999	d205ac457960f73d781547540cde1732f69076ac	710b8bda565c411ecb23e8b670d0ba7f45d2b3f3	positive	PHP	Bug Fix	46	PHP | Bug Fix | 18 comments
+laravel/framework	56591	6d94b16fd5f4f72bb741f9b900b83179c8ab46c9	0a5238acfc4ca99c363283bf3bb16e20905f2a39	positive	PHP	Bug Fix	4	PHP | Bug Fix | 1 comments
+laravel/framework	54226	2e5054a19ba55b335bf8df43a8ae7e032244f671	180c25ff94ae2dff26d2ca5f8bf779af1e8fc8c2	positive	PHP	Test Suite / CI Enhancements	556	PHP | Test Suite / CI Enhancements | 2 comments
+valkey-io/valkey	2141	23fb9f2b5162752fbf42d892c6ff311a346565b8	866fa4a4c9635bae6f0a6b59a78954083ff5ff1a	positive	C	Code Refactoring / Architectural Improvement	30	C | Code Refactoring / Architectural Improvement | 1 comments
+valkey-io/valkey	1889	ea2e48a807e1d4a1a5a684a2a699eda1934a0c6f	36f37c0bafa72c091a9a3725b9a026a056130892	positive	C	Security Patches / Vulnerability Fixes	52	C | Security Patches / Vulnerability Fixes | 2 comments
+valkey-io/valkey	2059	b5c7743971df5476acbdbbbd3b378496e885e1e4	1379171021c18b009fa02c42088e82caf0e33203	positive	C	New Feature Additions	283	C | New Feature Additions | 11 comments
+valkey-io/valkey	1651	78bcc0a2cfb33ec940bfb14cb12ea10efa3af93a	ecb3abd53e891861ce996506689336b6442ec8fb	positive	C	Bug Fix	279	C | Bug Fix | 2 comments
+valkey-io/valkey	1485	7fa784a27562940d2995fc6e3d6938940d81e4b6	8b2137d6cd7c8b898352b8bcb035402958d92707	positive	C	Performance Optimizations	540	C | Performance Optimizations | 8 comments
+facebook/react	32499	99563e91736e9de473c4865d5cb6fd9eb1a26bcb	b045f18e378341876ee69e729fc855cab501c3cd	positive	JavaScript	Code Refactoring / Architectural Improvement	599	JavaScript | Code Refactoring / Architectural Improvement | 16 comments
+facebook/react	33059	88b976740467f9dfabae03c79a8eff9033c35050	be58f26f9a6e579d8df36d901a59249d9ac1393f	positive	JavaScript	Test Suite / CI Enhancements	31	JavaScript | Test Suite / CI Enhancements | 1 comments
+mudler/LocalAI	4577	78533d7230bdb5e352e325c15d0d53f38428b08e	e466450c007539a2b1e4d2951c6756ff004a2b52	positive	Go	New Feature Additions	185	Go | New Feature Additions | 21 comments
+bitcoin/bitcoin	31886	d1b583181dcc31613cd586d63329cb4c4a586972	724546e28a5778e1c3f5100406ed7237f76aab55	positive	C++	New Feature Additions	34	C++ | New Feature Additions | 4 comments
+bitcoin/bitcoin	31405	ae024137bda9fe189f4e7ccf26dbaffd44cbbeb6	4ba2e480ffa0b77113953bee4ff5c9349e277e7e	positive	C++	Bug Fix	135	C++ | Bug Fix | 1 comments
+bitcoin/bitcoin	32425	663a9cabf811e2fc53102bc6da00d09fc99d1d81	e98c51fcce9ae3f441a416cab32a5c85756c6c64	positive	C++	New Feature Additions	254	C++ | New Feature Additions | 4 comments
+wavetermdev/waveterm	1793	286783fb8e71cec6d2294bd871e5ccf8c798c646	90a57d552d15f1b2a4d92cdfc3a4308efcf5c57b	positive	Go	Code Refactoring / Architectural Improvement	522	Go | Code Refactoring / Architectural Improvement | 5 comments
+wavetermdev/waveterm	1755	3beb14aa6bdd9118c43cdd75adca32616619451b	61b0fb4baec87c6fa91bdeadc43fab75fd29eb61	positive	Go	New Feature Additions	808	Go | New Feature Additions | 19 comments
+wavetermdev/waveterm	1998	ce9775c00c36ba290c7a6f5134c0ff7759def6eb	4b7637fb17fb0f937d67f12a63f3f370a3343117	positive	Go	Bug Fix	792	Go | Bug Fix | 14 comments
+n8n-io/n8n	20210	291a39c87eb2bc228816d02c55a1f6857822006f	ebe680fbcacd9210aa219ab01d98012ac1d6faae	positive	TypeScript	Test Suite / CI Enhancements	761	TypeScript | Test Suite / CI Enhancements | 21 comments
+n8n-io/n8n	15057	14f59373d2264e97d73474bed5964a6a405d8082	61fc500fee842539e2a5011303147fdf5df0cd96	positive	TypeScript	New Feature Additions	111	TypeScript | New Feature Additions | 12 comments
+n8n-io/n8n	13323	aae55fe7ac77594444c3405161555a517902c68b	93216919462181f52d6994f8f20a9a478716545f	positive	TypeScript	Bug Fix	81	TypeScript | Bug Fix | 13 comments
+n8n-io/n8n	20344	9627409d223cbff5d8b8a90e796c39b6124a736d	c8d45ad42aebf937a8347aa32a84ca63416bfdd4	positive	TypeScript	Documentation Update	176	TypeScript | Documentation Update | 2 comments
+n8n-io/n8n	20188	ef550104cdceb8113381c24fabb63d7e0f6fa6a4	f523897785e1a45484b31c9bb16e66e060553601	positive	TypeScript	Security Patches / Vulnerability Fixes	158	TypeScript | Security Patches / Vulnerability Fixes | 6 comments
+n8n-io/n8n	15362	3eb1c1c783a45a150fa7229d8f2590d3786f58ad	77ece2e572096e6ad267e7f9363ebbf9f8ba46e8	positive	TypeScript	Code Refactoring / Architectural Improvement	683	TypeScript | Code Refactoring / Architectural Improvement | 2 comments
+microsoft/PowerToys	40814	e1474c1f3020e2615c438d82b29f48626f456a9f	c1cedce10cfe7436da12580ea231d5837520ef69	positive	C#	Bug Fix	26	C# | Bug Fix | 3 comments
+immich-app/immich	14777	10e569cc1c563ece2eb7e2581cef943829a72440	91b3b6aebd3a02a4ac158b21ce469138df893178	positive	TypeScript	Bug Fix	312	TypeScript | Bug Fix | 16 comments
+immich-app/immich	17124	6ba94ac2f2f78c871f56874a7c2ff61b2ff4a06b	966c3f22d034c230a14bb21b02627ef6d00eec68	positive	TypeScript	Performance Optimizations	122	TypeScript | Performance Optimizations | 2 comments
+immich-app/immich	17535	584e5894bfd4fe356e790fa9781ccee4e5224874	5f4759196534661bd332085514878d0efbb7ce84	positive	TypeScript	Code Refactoring / Architectural Improvement	692	TypeScript | Code Refactoring / Architectural Improvement | 28 comments
+immich-app/immich	18043	55f4e93456ab7415082e342af9ad5cabd52562a6	9032c7e021872a913e28de2e79bd9ab9806e7413	positive	TypeScript	New Feature Additions	253	TypeScript | New Feature Additions | 6 comments
+immich-app/immich	14874	4d6d5537b713ca80bb2a670fdc7be66882b12d5c	7e2009f038cbf3f26403af6582af3cf8ba91672f	positive	TypeScript	Bug Fix	55	TypeScript | Bug Fix | 5 comments
+immich-app/immich	16893	c664d99a348999d16cda45a8dd57db436b8f9fba	d38f1f55f42d600d05058e70d6ccee9679623591	positive	TypeScript	New Feature Additions	125	TypeScript | New Feature Additions | 19 comments
+immich-app/immich	17879	b845184c80295603e3a02dfad84ff2755d417aff	b7a12558bc8e69c9c96b9a5b12f61f94689ea0e3	positive	TypeScript	Code Refactoring / Architectural Improvement	213	TypeScript | Code Refactoring / Architectural Improvement | 9 comments
+vllm-project/vllm	12608	7a8987dac5f0ed0c798a73e8b4ec8f5e640bc63a	075f1b5b8015e343f25b45d36ccff571cb39739b	positive	Python	Code Refactoring / Architectural Improvement	194	Python | Code Refactoring / Architectural Improvement | 6 comments
+vllm-project/vllm	15998	5e125e74d1b9739025ccb81106e28ce9b0dd4ea5	a800045d0e2473ce173865edb83967cd210dec4c	positive	Python	Test Suite / CI Enhancements	55	Python | Test Suite / CI Enhancements | 2 comments
+vllm-project/vllm	24425	f4962a6d55a340ebb569d377c842deff7611d8f7	6217b0c46176fa51196d862e02e1b3722eefa4de	positive	Python	New Feature Additions	12	Python | New Feature Additions | 1 comments
+vllm-project/vllm	19756	c3bf9bad11193ee684ed6083b6692d0b5bf2bac7	3fe18934d7f33b98812d7402463fe171c24efc77	positive	Python	Performance Optimizations	51	Python | Performance Optimizations | 4 comments
+vllm-project/vllm	17425	d8037867313eef09779b265ea4bace76d2d118ba	134705b1474ddcfac234a0a01313874f7c8b59bc	positive	Python	Bug Fix	154	Python | Bug Fix | 8 comments
+astral-sh/uv	12941	041c7a5e63d5559ce5571a30e177c072b1b357b2	61b521f4e9a1e8bdba760394740814f25cc108c2	positive	Rust	Test Suite / CI Enhancements	122	Rust | Test Suite / CI Enhancements | 1 comments
+astral-sh/uv	11088	1fae8dbf1789717f45e82ea290c1c99642d05139	ed57db2b34c2a7a955b2dc76583dce7ace02e628	positive	Rust	Bug Fix	113	Rust | Bug Fix | 6 comments
+dbeaver/dbeaver	38239	1df2fe97207fe1346ca92ea9c41dd3fd13303001	ed40132dcb3c6ab5502056b7de0e47c0858ec016	positive	Java	New Feature Additions	90	Java | New Feature Additions | 4 comments
+dbeaver/dbeaver	36789	469e4265a58af95a6d5f4069515e029fc2891374	dc67ca7cf486ceaf45559318cdcbca193847188d	positive	Java	New Feature Additions	294	Java | New Feature Additions | 11 comments
+dbeaver/dbeaver	37564	24ad3c4030412df3d9c843c405e90a0b1e2ad5dd	bc3ac7bb47092a934b344791d8aa3a1c41e6c8f7	positive	Java	Bug Fix	22	Java | Bug Fix | 4 comments
+dbeaver/dbeaver	38915	8793ec7a6c71aa503b1dc492ddb4e982a8f3e9d9	8224826969254a49e68e025cae82d3cf1574de38	positive	Java	Bug Fix	130	Java | Bug Fix | 5 comments
+filamentphp/filament	15267	ce4d9d08df41142ff219bb3dc44968084eaae0dc	d47632c0583bac481d4ce7cc9b6b1711d0f8e0fc	positive	PHP	Bug Fix	6	PHP | Bug Fix | 2 comments
+filamentphp/filament	15756	8b44845f2bfab244f650d38e1b0ac00e733612e7	912f080f3bf9873c1d059bcb9df485e3d8939220	positive	PHP	Documentation Update	6	PHP | Documentation Update | 1 comments
+filamentphp/filament	15181	753ceeac007a0d0aa4423971b01d651288720873	77874d0c3782a257101c3fb578144a6950f3dc9c	positive	PHP	Bug Fix	14	PHP | Bug Fix | 4 comments
+filamentphp/filament	15217	e4a7ecf0e65574522eb9fbe70b7339f41de0bbe2	871ec75815e1f92da141e9aef80f287f7779dfe7	positive	PHP	New Feature Additions	11	PHP | New Feature Additions | 3 comments
+dotnet/aspnetcore	61006	f83c97fa0b91f83bd20511d1abf235dc48b596e2	0ce67cdee87e9fee014ba95c11e8e36b8913041c	positive	C#	Code Refactoring / Architectural Improvement	115	C# | Code Refactoring / Architectural Improvement | 6 comments
+dotnet/aspnetcore	62734	8bb2b2067815996d9a8224ee38aa80a79f797827	742f022e92563bd6fb87d1c752f25fd14e1b2a43	positive	C#	Security Patches / Vulnerability Fixes	6	C# | Security Patches / Vulnerability Fixes | 4 comments
+dotnet/aspnetcore	62936	e7d49f52363753a4faa2a22538eace7a923382ce	2f372e8ff137aa24114269576fc1912f12ff5402	positive	C#	Test Suite / CI Enhancements	5	C# | Test Suite / CI Enhancements | 5 comments
+dotnet/aspnetcore	59322	7ba02e8ac71eeba562476953d5ff6030b8eda765	8ac940ff581aa344ab8f859874f6d4c0ecaec6b6	positive	C#	Performance Optimizations	226	C# | Performance Optimizations | 5 comments
+microsoft/semantic-kernel	11361	fa96214dbc167080bec90a917c7d911a1f3539e4	a712b62f7804121730a95d34195cad365eb350b7	positive	C#	Documentation Update	16	C# | Documentation Update | 3 comments
+kestra-io/kestra	7191	bfcfb2ac16dd8f198a99fef43072cb178f9a1d8e	0ec45f028467c99d8d1efeee6c201210d9433e6d	positive	Java	New Feature Additions	458	Java | New Feature Additions | 8 comments
+kestra-io/kestra	7381	a716094a9d3c3522fb40ea988b3dab2763d7519c	3c2a2765fcd06d7fe127e362ddc9a706d4073047	positive	Java	Bug Fix	200	Java | Bug Fix | 12 comments
+kestra-io/kestra	6844	01a77aff0422884ed7b18ba8d00a0495d0bab88e	06e7c6e48e22420da5bb0bf3188bc00f73974c9a	positive	Java	Test Suite / CI Enhancements	235	Java | Test Suite / CI Enhancements | 3 comments
+juspay/hyperswitch	8063	8e9bad6457449ef2a435be03a9f97acc2dd2108a	5e0fa17a5e9e977daa4b896e1dfc2de61f526113	positive	Rust	Documentation Update	112	Rust | Documentation Update | 2 comments
+juspay/hyperswitch	7353	50cbe20ee1da0392f4f590bade9f866435356b87	59ec03ceef191dcada50380ec20cd843b80a87b6	positive	Rust	Code Style, Linting, Formatting Fixes	94	Rust | Code Style, Linting, Formatting Fixes | 8 comments
+juspay/hyperswitch	9130	b26e845198407f3672a7f80d8eea670419858e0e	0231de6ae6795ef7fa85e5ab87b6fe46a4955333	positive	Rust	New Feature Additions	127	Rust | New Feature Additions | 6 comments
+ClickHouse/ClickHouse	80345	e29021aed71bfebb76c0305f554375061adb8bf9	5fb6ee38d2d7d2fc6e1a67005b12d3b9aaac418f	positive	C++	Documentation Update	373	C++ | Documentation Update | 11 comments
+ClickHouse/ClickHouse	73546	83afa5c6704737ed4afc5a178f96bf49c39e5e4c	40a4654d7b114f1d42f48680d57007ae80897cd1	positive	C++	Bug Fix	498	C++ | Bug Fix | 10 comments
+ClickHouse/ClickHouse	75218	3d6e0982755b235c6b55f377894ff1652a5c8f99	36ea28ab28fd93258143ab4312e60e2b5e244843	positive	C++	Code Refactoring / Architectural Improvement	204	C++ | Code Refactoring / Architectural Improvement | 4 comments
+ClickHouse/ClickHouse	85266	473c1b82e2bc2cbbbaac137fb86187c31d244700	fd6ba0c19048b6a546188661d1092c6c76a72796	positive	C++	Code Refactoring / Architectural Improvement	12	C++ | Code Refactoring / Architectural Improvement | 5 comments
+ClickHouse/ClickHouse	74070	39fba894af99b367fe5c1f9375b3dc2c8fc25bd3	cc962559c45fcee9706d86c6425d48e794676a67	positive	C++	New Feature Additions	871	C++ | New Feature Additions | 16 comments
+ClickHouse/ClickHouse	85873	80e66f08662739d8eaaccb40ef75c573572bb8ba	73ecc7d809300ed1c29e1078712c531ebddcb181	positive	C++	Documentation Update	575	C++ | Documentation Update | 18 comments
+ClickHouse/ClickHouse	82441	1c01feef2757648e0b1b801cf1f81c59de527bb6	314352043db0170026d11475bcaf67c7bb4fc311	positive	C++	Security Patches / Vulnerability Fixes	531	C++ | Security Patches / Vulnerability Fixes | 13 comments
+ClickHouse/ClickHouse	80597	25f2e13a8fc3ed6e6215ee7481677e1b8523ac4c	f9987c89a4cfaa95269385f24323dc6f44cda6e9	positive	C++	Performance Optimizations	76	C++ | Performance Optimizations | 5 comments
+ClickHouse/ClickHouse	74715	cb7d649b965c4049bf97942db7125cce1154ca38	79224f240cf020f73a9f492ce293d046fc0b7949	positive	C++	Test Suite / CI Enhancements	99	C++ | Test Suite / CI Enhancements | 4 comments
+ClickHouse/ClickHouse	80391	e06542d23d77ca297014b40c7fd0f406f15fef81	f9d51faa7cba634f38a711494003d404946b05de	positive	C++	New Feature Additions	166	C++ | New Feature Additions | 7 comments
+ClickHouse/ClickHouse	75474	1ac5c4a6a23b4742624d64db210f10ca95133b11	3eee8866fb55acab61eaba6dc9eebd847f483913	positive	C++	Bug Fix	412	C++ | Bug Fix | 18 comments
+ClickHouse/ClickHouse	72920	8a04621f436a36b35346ff474fb980469b61647d	d67628cd7e7aeeba2a60bea273c5cfc08714120c	positive	C++	Performance Optimizations	71	C++ | Performance Optimizations | 5 comments
+elastic/elasticsearch	132077	fcf040857f04ef064a06d80191fca112d0ba8f04	5e318eba16c2327289af2e96b9c099ec7469acfa	positive	Java	Test Suite / CI Enhancements	689	Java | Test Suite / CI Enhancements | 9 comments
+elastic/elasticsearch	118183	4b868b0e11f4a59d608523c57d1a62b870ac8e0e	bef908cb3aaf20210b267551df1210ad881722c5	positive	Java	Code Style, Linting, Formatting Fixes	674	Java | Code Style, Linting, Formatting Fixes | 5 comments
+elastic/elasticsearch	124403	fdfe63eb372a01b91a5b43eb5555c52731a69687	e355340162f24705db5e48ea2cf0a867490ae001	positive	Java	Code Refactoring / Architectural Improvement	81	Java | Code Refactoring / Architectural Improvement | 8 comments
+elastic/elasticsearch	133365	0a5a74c5e9dad3d62a8486e52422be2ae1295e03	5e604e492648a95f7adef067aeb2b9fc2ca4a206	positive	Java	Performance Optimizations	289	Java | Performance Optimizations | 10 comments
+elastic/elasticsearch	119759	4ac8d55ff7c5612413e4a45e14a2b39f3e85f3a9	a3bac5f2d4020183019a47d8d64c08123f7ec25d	positive	Java	Test Suite / CI Enhancements	494	Java | Test Suite / CI Enhancements | 4 comments
+elastic/elasticsearch	118998	edb3818ecc0ff0c34a63dcac533f51cfee4c4443	902352ac82dfa1d0b0a54ef7f0d86d6733691ba5	positive	Java	New Feature Additions	160	Java | New Feature Additions | 1 comments
+elastic/elasticsearch	120546	26e5373de1db0a9e7d72cbf79b2a4c6bb7d17cfd	761281a81a4002518df11ee62e5b9e34355c8778	positive	Java	Security Patches / Vulnerability Fixes	142	Java | Security Patches / Vulnerability Fixes | 3 comments
+elastic/elasticsearch	127697	3594ade2a9ce3dac2abda77add51cc88990ce43a	2adcb2d510ac8667f771842572c4b2c8bcaf2992	positive	Java	Code Refactoring / Architectural Improvement	106	Java | Code Refactoring / Architectural Improvement | 6 comments
+elastic/elasticsearch	118626	7c46556e2137a92e7d92ddf40af0ae5388c1e888	a9973f67256e21340a8b00039531e69b724d0856	positive	Java	Code Style, Linting, Formatting Fixes	229	Java | Code Style, Linting, Formatting Fixes | 7 comments
+elastic/elasticsearch	123744	ba5a9c83310ce6fbe27ff251aba00e37fad1d205	4d9b96f4ac1af0cb871f1d3b77169f9f1e83d194	positive	Java	Bug Fix	29	Java | Bug Fix | 4 comments
+elastic/elasticsearch	118895	cc0e53e883ee7e0b136e58a0105103c1a7ffddf9	a6a4623f4a0216b515a8cb323110305504431459	positive	Java	New Feature Additions	211	Java | New Feature Additions | 5 comments
+elastic/elasticsearch	133945	3c264cff967750ff7cb581defa42b0d69bb31fc6	dc8943ff2d735c9cd71adef644378ca2850db34f	positive	Java	Performance Optimizations	23	Java | Performance Optimizations | 4 comments
+elastic/elasticsearch	126376	47e352fda0567a682687fe926927cee3f631ea24	10d682d9aa4b1c2976e1db769ba04cb15256da9e	positive	Java	Security Patches / Vulnerability Fixes	476	Java | Security Patches / Vulnerability Fixes | 8 comments
+elastic/elasticsearch	125732	078f7ff9f7134a9c3011106e7b742a9fd8f04d56	e38d20c726cffb1ef9563d3146951a5356596464	positive	Java	Bug Fix	465	Java | Bug Fix | 5 comments
+openai/codex	3212	d6182becbe155776b159270fe4a5e88d607f0c5e	8c952af20fe791cc0c5d0a59089d3329968b4373	positive	Rust	Bug Fix	130	Rust | Bug Fix | 7 comments
+ollama/ollama	9379	2db96c18e72289928e45704a77f96f7bdfaee30f	af112d6365207a5a3f65136c7057d6bb98203c35	positive	Go	Security Patches / Vulnerability Fixes	132	Go | Security Patches / Vulnerability Fixes | 5 comments
+ollama/ollama	9654	56dc316a57f07fbed80723d1ecd589da0906018e	498792c9be023ebfdaa1e0dbc6ac85c0ff8c75b1	positive	Go	Test Suite / CI Enhancements	776	Go | Test Suite / CI Enhancements | 3 comments
+ollama/ollama	10135	c2f5d6662ba696b94455eaaa298a797d56fdca5c	0b52f186fb4af8fa7d4f6a71967f922eb6b69cdc	positive	Go	Performance Optimizations	132	Go | Performance Optimizations | 3 comments
+ollama/ollama	9746	4ea4d2b18952a104a47079df00ac0bfe4706f3aa	2ed14f2a28867c017426b41a9ff6bfc52c981a43	positive	Go	Bug Fix	716	Go | Bug Fix | 20 comments
+ollama/ollama	12185	92b96d54efd6b49322b7cf046f9a0dc16b00cd0a	b6002f6b6c69370f8c18a9e6c1cafa8463273a6b	positive	Go	Code Refactoring / Architectural Improvement	64	Go | Code Refactoring / Architectural Improvement | 12 comments
+ollama/ollama	8938	f53f4198c36d0a943de598ad91a20baa9481c5c5	c2d08dd67a9bcf15e52a2f15b1fad888afffcd32	positive	Go	New Feature Additions	24	Go | New Feature Additions | 2 comments
+mpv-player/mpv	15828	5809d4d1bc54c3a3a32b38c7cf8a6ed90e91f7db	0729afe8d7067f0e4d69000309ec6f3e24ac3926	positive	C	Performance Optimizations	56	C | Performance Optimizations | 8 comments
+mpv-player/mpv	16061	5ba7ee513751dd005379a06fb627303e6fe1b3dd	0b0330fa9d5d70c78f36e1010a3b826fa7046387	positive	C	New Feature Additions	159	C | New Feature Additions | 4 comments
+mpv-player/mpv	16164	30869ddb904f800ad1b858ac99c5fb81690f0cb7	dbd327d36fd0dc80ebd6e5517c102a92e31a0836	positive	C	Code Refactoring / Architectural Improvement	79	C | Code Refactoring / Architectural Improvement | 7 comments
+mpv-player/mpv	16090	5ba7ee513751dd005379a06fb627303e6fe1b3dd	ff45a8103e3c5ec3e786b950b4852c2750de936f	positive	C	Bug Fix	185	C | Bug Fix | 12 comments
+ppy/osu	31232	605979e790eb0aabdf5e8d6c8a182974697bc3a9	87697a72e333d1468a35d4a3fec388319cc16e2a	positive	C#	New Feature Additions	31	C# | New Feature Additions | 2 comments
+ppy/osu	33423	19e9bffc11f026ebff2dc2831668e606c701f71f	748ab3d4863f6ea4bf6a3fffccb50e5cd616937b	positive	C#	Performance Optimizations	27	C# | Performance Optimizations | 8 comments
+keycloak/keycloak	41672	949ef35a3bda916b24763c435033258a84ba8596	1463502078ae277b3613e02429ecafde921b892b	positive	Java	Dependency Updates & Environment Compatibility	19	Java | Dependency Updates & Environment Compatibility | 1 comments
+keycloak/keycloak	37465	cac93f7d3dd2a16c959e2a9e9c0d221f7f76a754	2373a483fdeead9f1b5e815015349c6871de8c3a	positive	Java	Security Patches / Vulnerability Fixes	176	Java | Security Patches / Vulnerability Fixes | 7 comments
+keycloak/keycloak	35645	0f1bdc4e975c4810102d6ad125b3ed2369c90f0b	460f8008f86d3fa8f62da63e26d8bdc306af60b2	positive	Java	New Feature Additions	259	Java | New Feature Additions | 7 comments
+keycloak/keycloak	36457	602df06191823bfc01828a00c491af41e39da751	79dbba9b179015cfd599ebac63112e34c9d724af	positive	Java	Bug Fix	122	Java | Bug Fix | 9 comments
+keycloak/keycloak	40283	ad511cbc538f1d9727d17cc423420abc50367af4	04ad5d530007517b60e2bf8706542556078d17f7	positive	Java	Test Suite / CI Enhancements	596	Java | Test Suite / CI Enhancements | 17 comments
+keycloak/keycloak	38723	8521b9952a989d0dac17697278610b053c613528	805c204a9dbfb5b8128de8f70c9f3fbd6d6583f9	positive	Java	Documentation Update	83	Java | Documentation Update | 10 comments
+keycloak/keycloak	37504	b0654c455f57bb9fbc3ea7511809921fed031ce3	21d4538b6f69a47dbd25571ea39a5d2a6fa788ef	positive	Java	Code Refactoring / Architectural Improvement	714	Java | Code Refactoring / Architectural Improvement | 21 comments
+bluewave-labs/Checkmate	1897	7c369e84052aaee15a6dedf8928b5af4c869037b	29e03a6294edfe43b49eba20fe49099cef601d34	positive	JavaScript	Test Suite / CI Enhancements	224	JavaScript | Test Suite / CI Enhancements | 9 comments
+bluewave-labs/Checkmate	2883	05dd5f7de27ae7f2139714f0bc577484642e2c77	32b54ddf11ea27b8ed85d2139fe38e0dcb7f3d43	positive	JavaScript	Dependency Updates & Environment Compatibility	847	JavaScript | Dependency Updates & Environment Compatibility | 30 comments
+symfony/symfony	60956	e06b10c4f0088e2966c510d335531f7daed61915	647870557cf275de666557e552e11e9a295b9d4a	positive	PHP	Bug Fix	5	PHP | Bug Fix | 1 comments
+symfony/symfony	61601	a57c946d3b8d477964da5303fa693a9b7c4e6227	942f8fa5384d34f2b5c9bd1b73a169d8fd049fd5	positive	PHP	Test Suite / CI Enhancements	24	PHP | Test Suite / CI Enhancements | 3 comments
+symfony/symfony	60342	0b4d21c3f91dd2cd2cc49739ab31a1457cf001ea	2b9721f04744fb213808f754ac98cd563384b3e5	positive	PHP	Documentation Update	32	PHP | Documentation Update | 4 comments
+linera-io/linera-protocol	3075	c4a8ac301274ccdfc8d0fc87871d557534a8405f	024925dfbeff5daaecdd2cd733cda2825eff1bb7	positive	Rust	New Feature Additions	72	Rust | New Feature Additions | 4 comments
+linera-io/linera-protocol	4639	c31634e52d719fdf60694f47812e2f007022ae26	3535ddb83de7dfae5db1732a7f1535031d31380a	positive	Rust	Bug Fix	40	Rust | Bug Fix | 6 comments
+linera-io/linera-protocol	3151	ad508025a9d05552a1c8ac1ba4e71a0062ebb556	8fb32bb8a463a3b19e291426f83833027739f868	positive	Rust	Documentation Update	8	Rust | Documentation Update | 1 comments
+timescale/timescaledb	8138	09513b064bc823c5525d82c242d9affe0a308e17	f84194cb231ad14a2f03b5ead75e99d64826972f	positive	C	Code Refactoring / Architectural Improvement	559	C | Code Refactoring / Architectural Improvement | 11 comments
+timescale/timescaledb	7935	17fb43d888dbe3b328da6b08b310bc83d3167d39	2568b018719e25f262255626c474a461da38fc21	positive	C	Bug Fix	188	C | Bug Fix | 5 comments
+timescale/timescaledb	7632	9382a90adac7a889c1df0d821a12ba1d29c8dcba	5ab9b1295e6bdce4834005e3738074b3a844eeb4	positive	C	Performance Optimizations	695	C | Performance Optimizations | 2 comments
+timescale/timescaledb	7915	d0fe7370082dbc57d391d5168705909809bd880f	7148e5c7d90c9da819a8ca77b79664fac300ca60	positive	C	New Feature Additions	297	C | New Feature Additions | 6 comments
+unionlabs/union	3414	efab2bedc6beb4e1bb01906cba9e0dabd3072f13	d840723278f1d4cecc02ac540385725a1c54ca84	positive	Rust	Code Refactoring / Architectural Improvement	213	Rust | Code Refactoring / Architectural Improvement | 18 comments
+langflow-ai/langflow	6044	5bcf4d001f1174ed9e63b7115f10e5dbe1bcca9f	bcfe6f9ded091cd360b3212b6e9f5a58cbcdac5e	positive	Python	Code Refactoring / Architectural Improvement	882	Python | Code Refactoring / Architectural Improvement | 9 comments
+langflow-ai/langflow	5388	f9b2ce18a4945c04ab786e66e6fc10e4b49e2677	b1cbdbad29eb3fe3895de1663b2e77b3943b1aef	positive	Python	Performance Optimizations	22	Python | Performance Optimizations | 3 comments
+langflow-ai/langflow	5896	d035e41e631f0da97bdc0e93e7afdae78d5e94da	9513d152197e5336fbc00eb6b891f1ffb25ad62d	positive	Python	Bug Fix	37	Python | Bug Fix | 4 comments
+langflow-ai/langflow	6652	a8f6ee4af97fe594eb2c84b655abc549f6d7c741	623929065f9ae45792afce2eb3185dad353df78e	positive	Python	New Feature Additions	387	Python | New Feature Additions | 6 comments
+FreeCAD/FreeCAD	19411	0c65673a6fd2421be8fbe613116077120adea068	a050e422e23ce3eaee960b75ceff236b34f369b9	negative	C++	Code Refactoring / Architectural Improvement	862	C++ | Code Refactoring / Architectural Improvement | 18 comments
+FreeCAD/FreeCAD	21257	17e56f6570a97aa9803b502b23cf27dc8be1da70	eb761fd69cf1fb9c674e385bb1d419814526ba5a	negative	C++	Bug Fix	672	C++ | Bug Fix | 11 comments
+FreeCAD/FreeCAD	22744	ab225f5672cbe45404299437d1613c308b68900b	82fef4a22503dd3affdd39e7120b6f71e9423f86	negative	C++	Security Patches / Vulnerability Fixes	41	C++ | Security Patches / Vulnerability Fixes | 2 comments
+FreeCAD/FreeCAD	18688	abb50a4daa43abee9e6b263dd82e5e876c978c6a	a440ff7e4138c20ed2ac66977a199ebbf295e493	negative	C++	Documentation Update	297	C++ | Documentation Update | 14 comments
+FreeCAD/FreeCAD	22235	730e07db5d2acafe7723eb89c83641375c375bc3	f8cd64328c49510285490dfd9872253ce7a53040	negative	C++	Documentation Update	85	C++ | Documentation Update | 11 comments
+FreeCAD/FreeCAD	20336	16968aa3ee1bc7f2caf4ce592d13066aa8755a80	290bdc79d1ad92669431458a62205d694522586e	negative	C++	Bug Fix	98	C++ | Bug Fix | 3 comments
+FreeCAD/FreeCAD	20825	01241245a1d92a8db69fab0db4c2053b5e1227c1	870d7f5385af5d377994479ce6ad017465bdad3d	negative	C++	New Feature Additions	776	C++ | New Feature Additions | 24 comments
+FreeCAD/FreeCAD	19977	b59cd794274c8c007b2ef16c3a06fecf30c0aef1	39c5968bdc6c0b20d94d4a629cd43eafee1e56d0	negative	C++	Code Style, Linting, Formatting Fixes	306	C++ | Code Style, Linting, Formatting Fixes | 3 comments
+FreeCAD/FreeCAD	20156	382720b82e4c6c81f7e1cdd3a33272047d7a3642	699b45c086f53858897aa8c688bbedaf570c644f	negative	C++	Code Style, Linting, Formatting Fixes	56	C++ | Code Style, Linting, Formatting Fixes | 2 comments
+FreeCAD/FreeCAD	19426	f001b8a10ac2206458f7db457a45c9b2853e7bff	e59692501d1a08e7306189fed5c31b02553f7746	negative	C++	New Feature Additions	725	C++ | New Feature Additions | 12 comments
+microsoft/typescript-go	1354	15def0236938e25ec7822755444f4d58c68045be	ae447d3b2a6db00072941e1992a09981b6096061	negative	Go	Code Refactoring / Architectural Improvement	176	Go | Code Refactoring / Architectural Improvement | 5 comments
+microsoft/typescript-go	831	bc3195e0f2727d11a48ed9fc61f37a90c9b7deb4	b970689fe86e0b6ef4f5285b18343ddf16b294eb	negative	Go	Bug Fix	933	Go | Bug Fix | 2 comments
+microsoft/typescript-go	1446	a9efe52c52001ea5b49d2ae8d7b0fa32ec8339f3	892b4a3f6b701352047ceb019fc0683ab1146bb3	negative	Go	Test Suite / CI Enhancements	80	Go | Test Suite / CI Enhancements | 4 comments
+microsoft/typescript-go	691	da4e121142cd3f891785b573a194b9caaaa01d55	1a84d8d5705df98fd1e1f81d9d3115a7a203509d	negative	Go	Performance Optimizations	92	Go | Performance Optimizations | 2 comments
+microsoft/typescript-go	698	3a3ff237cf7ad91bcdb604271f6135762aed9365	100dbc5127e723c4108efc02a179d9aec5fce32a	negative	Go	Documentation Update	829	Go | Documentation Update | 7 comments
+PowerShell/PowerShell	24910	2259f56c0786574cbde8624d031e778028352372	ec952ce3b70c87885ed756ffca2bec128f07c51b	negative	C#	Bug Fix	23	C# | Bug Fix | 1 comments
+PowerShell/PowerShell	25780	ce76ae1def6d5b00fff0d855ec01575121268ef3	ea07b93a40f64274505e3a070c1fd91684ff2959	negative	C#	Bug Fix	44	C# | Bug Fix | 1 comments
+libsdl-org/SDL	12964	71303b41bf89c4bb68dbe1bed12fd2ee1dc0dd41	15267271865f73c996719238425f1604fc2fa205	negative	C	New Feature Additions	48	C | New Feature Additions | 1 comments
+libsdl-org/SDL	12718	ab34ea5a2684766e510de1daf8ae44c41b6af704	96dfef35c4b0b89f2f8d9c2ecc4f5e3a25d3e7a0	negative	C	Bug Fix	161	C | Bug Fix | 5 comments
+gofr-dev/gofr	1681	d0300073f685bb1154f7437f3172799d31bfddbe	c1a26ade6db7da96622c9bdca7674ef7094c122f	negative	Go	Bug Fix	217	Go | Bug Fix | 1 comments
+gofr-dev/gofr	1617	ba0316277a22f508ed645951705f53d151552916	49ab39432cf4892ee84569099b8065dfe45fae92	negative	Go	Bug Fix	554	Go | Bug Fix | 2 comments
+gofr-dev/gofr	1355	44e3eeb2786ad4d333dc1f528fb104236693d060	dc0b3e630423b72cb9b2f273fdc18a5c11d12984	negative	Go	Security Patches / Vulnerability Fixes	309	Go | Security Patches / Vulnerability Fixes | 1 comments
+gofr-dev/gofr	1395	c2ab1eb3308afa4f29842f0a982751bf65c059d0	2c0c0997cad66a1ee1e47f95db6a830394157c00	negative	Go	Test Suite / CI Enhancements	348	Go | Test Suite / CI Enhancements | 1 comments
+comfyanonymous/ComfyUI	7952	924d771e18000f4cb223575189daa6d2c6c5a9c1	4936d01872b8719ede33f9a11dc8e898c33d39e4	negative	Python	New Feature Additions	323	Python | New Feature Additions | 2 comments
+comfyanonymous/ComfyUI	8446	c7b25784b141a298d8ee5f0d830a29da6e8a3d54	4dcd698e489da69294ee01de0350a9a02e3e4b41	negative	Python	New Feature Additions	971	Python | New Feature Additions | 4 comments
+comfyanonymous/ComfyUI	9560	a86aaa430183068e2a264495c802c81d05eb350a	cfc312296c0b9f255bba6b4b2789ac7bbc66a7cb	negative	Python	Bug Fix	319	Python | Bug Fix | 1 comments
+mrdoob/three.js	31402	de413e2112ff1ae80599f145b101354a1476976c	b55b9e97f6d0f5829e4d8fc364949e72b0d9e98c	negative	JavaScript	New Feature Additions	210	JavaScript | New Feature Additions | 1 comments
+mrdoob/three.js	30750	bf4e6fcb64a1d6bdbaf975528595ac6873051641	96ab0720fc65368e32ee3f2389cb192f96d8adff	negative	JavaScript	Bug Fix	61	JavaScript | Bug Fix | 1 comments
+CherryHQ/cherry-studio	5540	f258f5b2cb4a4cf9012e106837aba409b383e367	83a25941859179b635105c9b4fd79d5542e3701e	negative	TypeScript	New Feature Additions	345	TypeScript | New Feature Additions | 3 comments
+CherryHQ/cherry-studio	5637	636c788e2ba413d21a5fd385c3ea4cc7e134e1be	5644b00b87e07fa1acd84d4ec93f9f2fb1205090	negative	TypeScript	Code Refactoring / Architectural Improvement	687	TypeScript | Code Refactoring / Architectural Improvement | 5 comments
+opencv/opencv	27185	8b4b382fa42016dc04a4a9247425bdc8525cbb94	7b98f70b7c339de343d02db7b7ec63497291f4be	negative	C++	Test Suite / CI Enhancements	28	C++ | Test Suite / CI Enhancements | 1 comments
+opencv/opencv	26815	459bb12466abdade062607ae54f3267adaef8063	e3e45c86baa3c51def49961f5d77201ee97e4385	negative	C++	Security Patches / Vulnerability Fixes	11	C++ | Security Patches / Vulnerability Fixes | 1 comments
+opencv/opencv	27297	16a3d37dc159dbcaaf8ee74cf63669f0203f9655	e546382fc1cbb61a7679c0511303729844a70111	negative	C++	Bug Fix	48	C++ | Bug Fix | 1 comments
+opencv/opencv	27284	868fc5c581228f8f47bf4bc3ee84427acc99226a	79afad939ecfaa332af0541db473fa94f8f425b6	negative	C++	New Feature Additions	307	C++ | New Feature Additions | 8 comments
+nextcloud/server	52846	4aa4972550bec08faf477113f223475f7fb3e5d2	51b5ea92ccb5f4683b0f52840a01031e1ed0baa3	negative	PHP	Code Refactoring / Architectural Improvement	165	PHP | Code Refactoring / Architectural Improvement | 8 comments
+lvgl/lvgl	8164	344ba9fe99b487f7f5164900679d56acf2d8bff2	9cce37c219f95701fecc44f74595aa9c6effbdba	negative	C	New Feature Additions	67	C | New Feature Additions | 3 comments
+lvgl/lvgl	8129	d2ed41dda1618049a037df2639b9d28578847195	4a57db33476f1caf3e85726a6b1e189c68c1f36b	negative	C	Performance Optimizations	29	C | Performance Optimizations | 1 comments
+lvgl/lvgl	8689	244b3b996e0b331468cf5967c937029535af569c	e526b2a1faa4672eeb3610b466ecc25b1abb220b	negative	C	Code Style, Linting, Formatting Fixes	804	C | Code Style, Linting, Formatting Fixes | 9 comments
+cline/cline	5955	b3abbd886e7e693c48b31a0af8046035bf014118	f098af0f52bf1cdb7eb561c380caef5746b58d40	negative	TypeScript	New Feature Additions	165	TypeScript | New Feature Additions | 8 comments
+cline/cline	4676	0262e13ac48bbbc29f6c76b6b9a72e7e2ed2eb4b	d0a8db831cbe657faf792f00c0e3325de0b75fb4	negative	TypeScript	Performance Optimizations	179	TypeScript | Performance Optimizations | 6 comments
+cline/cline	2347	07d20574868b2ebb51c95c30a7a81b3793f0f07e	7d18fb9df620c61420c6939df22fb6f7af836bb2	negative	TypeScript	Bug Fix	63	TypeScript | Bug Fix | 8 comments
+cline/cline	4786	398bc87a64800e021966868243be2f09be72e73c	2195a689b787a963bdacc35d348f4590c30a2692	negative	TypeScript	Security Patches / Vulnerability Fixes	69	TypeScript | Security Patches / Vulnerability Fixes | 5 comments
+cline/cline	5524	8f4c6038dd70ce02caaf7ae924dc28d5be63968e	ca7f02b8cf8cd36d832a63e1c9ad892356c7df66	negative	TypeScript	Code Refactoring / Architectural Improvement	333	TypeScript | Code Refactoring / Architectural Improvement | 2 comments
+cline/cline	1808	4d8bdf29458db722a2bce1dfacc50771959b32fa	cb4d5c90460885942cbbae0298b95f4ee5682086	negative	TypeScript	New Feature Additions	11	TypeScript | New Feature Additions | 2 comments
+browser-use/browser-use	1482	fa461585f1fc2d4a430e68e6c115a12f4936fe73	0b21e50ca640581ecd46990475c8b223eaa05045	negative	Python	New Feature Additions	133	Python | New Feature Additions | 7 comments
+browser-use/browser-use	857	515b94225aa86c40dc2c20034055ab8bcc88c6ae	aab7b3bb54e2b15ee3b32ad7de74c91fc8b22f52	negative	Python	New Feature Additions	95	Python | New Feature Additions | 2 comments
+browser-use/browser-use	3172	e85a547378b236c9788802d28e816f10940a7e53	72f1585f9add5b72e829eaee3b5bff684e0b08d3	negative	Python	Performance Optimizations	324	Python | Performance Optimizations | 1 comments
+electron/electron	46982	9f8a629126a31224f6b1aa90d650cdc61f7568f2	c4864570586f4c2f019797d3b0a9c4c76e93396b	negative	C++	Code Refactoring / Architectural Improvement	190	C++ | Code Refactoring / Architectural Improvement | 6 comments
+electron/electron	47361	a42afaa8665b6d1b3a344918c60853184a97060e	6084595c5608226e961d251bfb5ec138de8022ca	negative	C++	Bug Fix	64	C++ | Bug Fix | 4 comments
+electron/electron	45671	d6f4982522efd5917b44d1ceed418e4a0ee7824e	2cc56562e22cd36c70f0b632c3297d62c3c58b06	negative	C++	Code Refactoring / Architectural Improvement	82	C++ | Code Refactoring / Architectural Improvement | 5 comments
+nodejs/node	56185	6cd1805364f457b19ebecb38b8f909146f968354	b2255442712cb6db83d112deb6ba61197d06a5f3	negative	JavaScript	Bug Fix	62	JavaScript | Bug Fix | 3 comments
+nodejs/node	57691	18b9120435287eafb1865102c6c4dc6a7cff5ede	e8b6c183d46c41b2992c4f5cafceb7f9c6f8710d	negative	JavaScript	Test Suite / CI Enhancements	169	JavaScript | Test Suite / CI Enhancements | 1 comments
+nodejs/node	56714	309924f65d3cfa562a49fca8667f58fdea2759a6	209cdfe685db71714ec093480084bab8cf58d8eb	negative	JavaScript	Code Refactoring / Architectural Improvement	793	JavaScript | Code Refactoring / Architectural Improvement | 3 comments
+sveltejs/svelte	15250	e4987d2a9f36b33f3934725723f9c4cc998ef278	4bf1f915d3374721f8a1655b1a151c1c423b1a3c	negative	JavaScript	Performance Optimizations	105	JavaScript | Performance Optimizations | 5 comments
+sveltejs/svelte	16232	2af7ba21563f1b7f011ffa9f0c08e4acb473eef3	44bec4c8b172a47ff300f754463555bbb694bb05	negative	JavaScript	Bug Fix	326	JavaScript | Bug Fix | 2 comments
+alibaba/spring-ai-alibaba	869	76c06b58a4d9e8ee3fe3c0269a046987ad0502e5	3555a95e7b888335d9f72e432eb4f9fb9640e8cd	negative	Java	Bug Fix	140	Java | Bug Fix | 6 comments
+google-gemini/gemini-cli	4828	de968877895a8ae5f0edb83a43b37fa190cc8ec9	77ea28a234023019ddda3f4a5f7a81b3514d3eb8	negative	TypeScript	New Feature Additions	861	TypeScript | New Feature Additions | 1 comments
+google-gemini/gemini-cli	8797	6e4236bf7681b2a2cba5630a8dd0a0d5a200a0df	d64b61ef89f01ecdc0e095a995d47522245a0065	negative	TypeScript	Bug Fix	436	TypeScript | Bug Fix | 13 comments
+google-gemini/gemini-cli	4163	7ffe8038efaa5bf263a2a933819bcd4badd37dc2	e7ed0a410ae510cda8b53ea20f3d758bd90a0f00	negative	TypeScript	Code Refactoring / Architectural Improvement	275	TypeScript | Code Refactoring / Architectural Improvement | 7 comments
+google-gemini/gemini-cli	5793	53f8617b249c9f0443f5082a293a30504a118030	4c150ab4befb2a727b493d732d8d3d01f388e492	negative	TypeScript	Bug Fix	262	TypeScript | Bug Fix | 3 comments
+google-gemini/gemini-cli	9177	809b933d8150c29154062e4d596cd916258022fc	c6e624883852318b71baa2a060c933bb5de591ef	negative	TypeScript	Test Suite / CI Enhancements	103	TypeScript | Test Suite / CI Enhancements | 1 comments
+google-gemini/gemini-cli	5819	4e49ee4c734f53a705df72efda2d076cb0acf44e	6fd82699700fc19ea30a7b29a059f392ccfbb2cc	negative	TypeScript	New Feature Additions	300	TypeScript | New Feature Additions | 5 comments
+google-gemini/gemini-cli	8154	5a05fb0dd002481343aaab7736a871904bb07c6f	0fa1bd7ac417366f321ed2554caeaef550321959	negative	TypeScript	Security Patches / Vulnerability Fixes	405	TypeScript | Security Patches / Vulnerability Fixes | 3 comments
+infiniflow/ragflow	7151	8362ab405c35d260dd2328dc207aefcf30778f66	f189316eae1c199a5891f7a8bc47d53bb1b5c818	negative	Python	Bug Fix	207	Python | Bug Fix | 3 comments
+infiniflow/ragflow	5065	469460483665000f522b6c9a6583bb34f17a954b	2d06022b78536bd22a0fd83f38804f39aa34cce8	negative	Python	New Feature Additions	65	Python | New Feature Additions | 4 comments
+appwrite/appwrite	9999	d205ac457960f73d781547540cde1732f69076ac	710b8bda565c411ecb23e8b670d0ba7f45d2b3f3	negative	PHP	Bug Fix	46	PHP | Bug Fix | 2 comments
+laravel/framework	54226	2e5054a19ba55b335bf8df43a8ae7e032244f671	180c25ff94ae2dff26d2ca5f8bf779af1e8fc8c2	negative	PHP	Test Suite / CI Enhancements	556	PHP | Test Suite / CI Enhancements | 1 comments
+valkey-io/valkey	2141	23fb9f2b5162752fbf42d892c6ff311a346565b8	866fa4a4c9635bae6f0a6b59a78954083ff5ff1a	negative	C	Code Refactoring / Architectural Improvement	30	C | Code Refactoring / Architectural Improvement | 1 comments
+valkey-io/valkey	1889	ea2e48a807e1d4a1a5a684a2a699eda1934a0c6f	36f37c0bafa72c091a9a3725b9a026a056130892	negative	C	Security Patches / Vulnerability Fixes	52	C | Security Patches / Vulnerability Fixes | 1 comments
+valkey-io/valkey	2059	b5c7743971df5476acbdbbbd3b378496e885e1e4	1379171021c18b009fa02c42088e82caf0e33203	negative	C	New Feature Additions	283	C | New Feature Additions | 11 comments
+valkey-io/valkey	1651	78bcc0a2cfb33ec940bfb14cb12ea10efa3af93a	ecb3abd53e891861ce996506689336b6442ec8fb	negative	C	Bug Fix	279	C | Bug Fix | 5 comments
+valkey-io/valkey	1485	7fa784a27562940d2995fc6e3d6938940d81e4b6	8b2137d6cd7c8b898352b8bcb035402958d92707	negative	C	Performance Optimizations	540	C | Performance Optimizations | 5 comments
+facebook/react	31844	8f92ea467e2672a436e3e032299d5230d03187ed	59812014eb10e8c0aec7e1890e38dbc22951caab	negative	JavaScript	Test Suite / CI Enhancements	206	JavaScript | Test Suite / CI Enhancements | 3 comments
+mudler/LocalAI	4577	78533d7230bdb5e352e325c15d0d53f38428b08e	e466450c007539a2b1e4d2951c6756ff004a2b52	negative	Go	New Feature Additions	185	Go | New Feature Additions | 2 comments
+bitcoin/bitcoin	31886	d1b583181dcc31613cd586d63329cb4c4a586972	724546e28a5778e1c3f5100406ed7237f76aab55	negative	C++	New Feature Additions	34	C++ | New Feature Additions | 1 comments
+bitcoin/bitcoin	31405	ae024137bda9fe189f4e7ccf26dbaffd44cbbeb6	4ba2e480ffa0b77113953bee4ff5c9349e277e7e	negative	C++	Bug Fix	135	C++ | Bug Fix | 4 comments
+bitcoin/bitcoin	32425	663a9cabf811e2fc53102bc6da00d09fc99d1d81	e98c51fcce9ae3f441a416cab32a5c85756c6c64	negative	C++	New Feature Additions	254	C++ | New Feature Additions | 4 comments
+wavetermdev/waveterm	1793	286783fb8e71cec6d2294bd871e5ccf8c798c646	90a57d552d15f1b2a4d92cdfc3a4308efcf5c57b	negative	Go	Code Refactoring / Architectural Improvement	522	Go | Code Refactoring / Architectural Improvement | 12 comments
+wavetermdev/waveterm	1755	3beb14aa6bdd9118c43cdd75adca32616619451b	61b0fb4baec87c6fa91bdeadc43fab75fd29eb61	negative	Go	New Feature Additions	808	Go | New Feature Additions | 12 comments
+wavetermdev/waveterm	1998	ce9775c00c36ba290c7a6f5134c0ff7759def6eb	4b7637fb17fb0f937d67f12a63f3f370a3343117	negative	Go	Bug Fix	792	Go | Bug Fix | 7 comments
+n8n-io/n8n	20210	291a39c87eb2bc228816d02c55a1f6857822006f	ebe680fbcacd9210aa219ab01d98012ac1d6faae	negative	TypeScript	Test Suite / CI Enhancements	761	TypeScript | Test Suite / CI Enhancements | 9 comments
+n8n-io/n8n	15057	14f59373d2264e97d73474bed5964a6a405d8082	61fc500fee842539e2a5011303147fdf5df0cd96	negative	TypeScript	New Feature Additions	111	TypeScript | New Feature Additions | 1 comments
+n8n-io/n8n	13323	aae55fe7ac77594444c3405161555a517902c68b	93216919462181f52d6994f8f20a9a478716545f	negative	TypeScript	Bug Fix	81	TypeScript | Bug Fix | 1 comments
+n8n-io/n8n	20188	ef550104cdceb8113381c24fabb63d7e0f6fa6a4	f523897785e1a45484b31c9bb16e66e060553601	negative	TypeScript	Security Patches / Vulnerability Fixes	158	TypeScript | Security Patches / Vulnerability Fixes | 4 comments
+immich-app/immich	14777	10e569cc1c563ece2eb7e2581cef943829a72440	91b3b6aebd3a02a4ac158b21ce469138df893178	negative	TypeScript	Bug Fix	312	TypeScript | Bug Fix | 1 comments
+immich-app/immich	17124	6ba94ac2f2f78c871f56874a7c2ff61b2ff4a06b	966c3f22d034c230a14bb21b02627ef6d00eec68	negative	TypeScript	Performance Optimizations	122	TypeScript | Performance Optimizations | 4 comments
+immich-app/immich	17535	584e5894bfd4fe356e790fa9781ccee4e5224874	5f4759196534661bd332085514878d0efbb7ce84	negative	TypeScript	Code Refactoring / Architectural Improvement	692	TypeScript | Code Refactoring / Architectural Improvement | 9 comments
+immich-app/immich	18043	55f4e93456ab7415082e342af9ad5cabd52562a6	9032c7e021872a913e28de2e79bd9ab9806e7413	negative	TypeScript	New Feature Additions	253	TypeScript | New Feature Additions | 3 comments
+immich-app/immich	14874	4d6d5537b713ca80bb2a670fdc7be66882b12d5c	7e2009f038cbf3f26403af6582af3cf8ba91672f	negative	TypeScript	Bug Fix	55	TypeScript | Bug Fix | 3 comments
+immich-app/immich	16893	c664d99a348999d16cda45a8dd57db436b8f9fba	d38f1f55f42d600d05058e70d6ccee9679623591	negative	TypeScript	New Feature Additions	125	TypeScript | New Feature Additions | 4 comments
+immich-app/immich	17879	b845184c80295603e3a02dfad84ff2755d417aff	b7a12558bc8e69c9c96b9a5b12f61f94689ea0e3	negative	TypeScript	Code Refactoring / Architectural Improvement	213	TypeScript | Code Refactoring / Architectural Improvement | 6 comments
+vllm-project/vllm	12608	7a8987dac5f0ed0c798a73e8b4ec8f5e640bc63a	075f1b5b8015e343f25b45d36ccff571cb39739b	negative	Python	Code Refactoring / Architectural Improvement	194	Python | Code Refactoring / Architectural Improvement | 1 comments
+vllm-project/vllm	15998	5e125e74d1b9739025ccb81106e28ce9b0dd4ea5	a800045d0e2473ce173865edb83967cd210dec4c	negative	Python	Test Suite / CI Enhancements	55	Python | Test Suite / CI Enhancements | 2 comments
+vllm-project/vllm	24425	f4962a6d55a340ebb569d377c842deff7611d8f7	6217b0c46176fa51196d862e02e1b3722eefa4de	negative	Python	New Feature Additions	12	Python | New Feature Additions | 1 comments
+vllm-project/vllm	19231	aa49f148322a39727be110da51a6782d43a2f5d8	acfaec4e0f99ffd81078428355662a166c1f5b60	negative	Python	Dependency Updates & Environment Compatibility	15	Python | Dependency Updates & Environment Compatibility | 1 comments
+vllm-project/vllm	17425	d8037867313eef09779b265ea4bace76d2d118ba	134705b1474ddcfac234a0a01313874f7c8b59bc	negative	Python	Bug Fix	154	Python | Bug Fix | 3 comments
+astral-sh/uv	11088	1fae8dbf1789717f45e82ea290c1c99642d05139	ed57db2b34c2a7a955b2dc76583dce7ace02e628	negative	Rust	Bug Fix	113	Rust | Bug Fix | 1 comments
+dbeaver/dbeaver	38239	1df2fe97207fe1346ca92ea9c41dd3fd13303001	ed40132dcb3c6ab5502056b7de0e47c0858ec016	negative	Java	New Feature Additions	90	Java | New Feature Additions | 3 comments
+dbeaver/dbeaver	36789	469e4265a58af95a6d5f4069515e029fc2891374	dc67ca7cf486ceaf45559318cdcbca193847188d	negative	Java	New Feature Additions	294	Java | New Feature Additions | 5 comments
+dbeaver/dbeaver	37564	24ad3c4030412df3d9c843c405e90a0b1e2ad5dd	bc3ac7bb47092a934b344791d8aa3a1c41e6c8f7	negative	Java	Bug Fix	22	Java | Bug Fix | 2 comments
+dbeaver/dbeaver	38915	8793ec7a6c71aa503b1dc492ddb4e982a8f3e9d9	8224826969254a49e68e025cae82d3cf1574de38	negative	Java	Bug Fix	130	Java | Bug Fix | 1 comments
+filamentphp/filament	15217	e4a7ecf0e65574522eb9fbe70b7339f41de0bbe2	871ec75815e1f92da141e9aef80f287f7779dfe7	negative	PHP	New Feature Additions	11	PHP | New Feature Additions | 1 comments
+dotnet/aspnetcore	62734	8bb2b2067815996d9a8224ee38aa80a79f797827	742f022e92563bd6fb87d1c752f25fd14e1b2a43	negative	C#	Security Patches / Vulnerability Fixes	6	C# | Security Patches / Vulnerability Fixes | 2 comments
+dotnet/aspnetcore	59322	7ba02e8ac71eeba562476953d5ff6030b8eda765	8ac940ff581aa344ab8f859874f6d4c0ecaec6b6	negative	C#	Performance Optimizations	226	C# | Performance Optimizations | 1 comments
+microsoft/semantic-kernel	11361	fa96214dbc167080bec90a917c7d911a1f3539e4	a712b62f7804121730a95d34195cad365eb350b7	negative	C#	Documentation Update	16	C# | Documentation Update | 1 comments
+kestra-io/kestra	6844	01a77aff0422884ed7b18ba8d00a0495d0bab88e	06e7c6e48e22420da5bb0bf3188bc00f73974c9a	negative	Java	Test Suite / CI Enhancements	235	Java | Test Suite / CI Enhancements | 4 comments
+juspay/hyperswitch	8063	8e9bad6457449ef2a435be03a9f97acc2dd2108a	5e0fa17a5e9e977daa4b896e1dfc2de61f526113	negative	Rust	Documentation Update	112	Rust | Documentation Update | 5 comments
+juspay/hyperswitch	7353	50cbe20ee1da0392f4f590bade9f866435356b87	59ec03ceef191dcada50380ec20cd843b80a87b6	negative	Rust	Code Style, Linting, Formatting Fixes	94	Rust | Code Style, Linting, Formatting Fixes | 1 comments
+juspay/hyperswitch	9130	b26e845198407f3672a7f80d8eea670419858e0e	0231de6ae6795ef7fa85e5ab87b6fe46a4955333	negative	Rust	New Feature Additions	127	Rust | New Feature Additions | 11 comments
+ClickHouse/ClickHouse	80345	e29021aed71bfebb76c0305f554375061adb8bf9	5fb6ee38d2d7d2fc6e1a67005b12d3b9aaac418f	negative	C++	Documentation Update	373	C++ | Documentation Update | 5 comments
+ClickHouse/ClickHouse	73546	83afa5c6704737ed4afc5a178f96bf49c39e5e4c	40a4654d7b114f1d42f48680d57007ae80897cd1	negative	C++	Bug Fix	498	C++ | Bug Fix | 16 comments
+ClickHouse/ClickHouse	85266	473c1b82e2bc2cbbbaac137fb86187c31d244700	fd6ba0c19048b6a546188661d1092c6c76a72796	negative	C++	Code Refactoring / Architectural Improvement	12	C++ | Code Refactoring / Architectural Improvement | 2 comments
+ClickHouse/ClickHouse	74070	39fba894af99b367fe5c1f9375b3dc2c8fc25bd3	cc962559c45fcee9706d86c6425d48e794676a67	negative	C++	New Feature Additions	871	C++ | New Feature Additions | 6 comments
+ClickHouse/ClickHouse	85873	80e66f08662739d8eaaccb40ef75c573572bb8ba	73ecc7d809300ed1c29e1078712c531ebddcb181	negative	C++	Documentation Update	575	C++ | Documentation Update | 16 comments
+ClickHouse/ClickHouse	82441	1c01feef2757648e0b1b801cf1f81c59de527bb6	314352043db0170026d11475bcaf67c7bb4fc311	negative	C++	Security Patches / Vulnerability Fixes	531	C++ | Security Patches / Vulnerability Fixes | 8 comments
+ClickHouse/ClickHouse	80597	25f2e13a8fc3ed6e6215ee7481677e1b8523ac4c	f9987c89a4cfaa95269385f24323dc6f44cda6e9	negative	C++	Performance Optimizations	76	C++ | Performance Optimizations | 3 comments
+ClickHouse/ClickHouse	74715	cb7d649b965c4049bf97942db7125cce1154ca38	79224f240cf020f73a9f492ce293d046fc0b7949	negative	C++	Test Suite / CI Enhancements	99	C++ | Test Suite / CI Enhancements | 3 comments
+ClickHouse/ClickHouse	80391	e06542d23d77ca297014b40c7fd0f406f15fef81	f9d51faa7cba634f38a711494003d404946b05de	negative	C++	New Feature Additions	166	C++ | New Feature Additions | 4 comments
+ClickHouse/ClickHouse	75474	1ac5c4a6a23b4742624d64db210f10ca95133b11	3eee8866fb55acab61eaba6dc9eebd847f483913	negative	C++	Bug Fix	412	C++ | Bug Fix | 3 comments
+ClickHouse/ClickHouse	72920	8a04621f436a36b35346ff474fb980469b61647d	d67628cd7e7aeeba2a60bea273c5cfc08714120c	negative	C++	Performance Optimizations	71	C++ | Performance Optimizations | 3 comments
+elastic/elasticsearch	133365	0a5a74c5e9dad3d62a8486e52422be2ae1295e03	5e604e492648a95f7adef067aeb2b9fc2ca4a206	negative	Java	Performance Optimizations	289	Java | Performance Optimizations | 8 comments
+elastic/elasticsearch	119759	4ac8d55ff7c5612413e4a45e14a2b39f3e85f3a9	a3bac5f2d4020183019a47d8d64c08123f7ec25d	negative	Java	Test Suite / CI Enhancements	494	Java | Test Suite / CI Enhancements | 1 comments
+elastic/elasticsearch	118998	edb3818ecc0ff0c34a63dcac533f51cfee4c4443	902352ac82dfa1d0b0a54ef7f0d86d6733691ba5	negative	Java	New Feature Additions	160	Java | New Feature Additions | 2 comments
+elastic/elasticsearch	118626	7c46556e2137a92e7d92ddf40af0ae5388c1e888	a9973f67256e21340a8b00039531e69b724d0856	negative	Java	Code Style, Linting, Formatting Fixes	229	Java | Code Style, Linting, Formatting Fixes | 1 comments
+elastic/elasticsearch	123744	ba5a9c83310ce6fbe27ff251aba00e37fad1d205	4d9b96f4ac1af0cb871f1d3b77169f9f1e83d194	negative	Java	Bug Fix	29	Java | Bug Fix | 1 comments
+elastic/elasticsearch	118895	cc0e53e883ee7e0b136e58a0105103c1a7ffddf9	a6a4623f4a0216b515a8cb323110305504431459	negative	Java	New Feature Additions	211	Java | New Feature Additions | 1 comments
+elastic/elasticsearch	126376	47e352fda0567a682687fe926927cee3f631ea24	10d682d9aa4b1c2976e1db769ba04cb15256da9e	negative	Java	Security Patches / Vulnerability Fixes	476	Java | Security Patches / Vulnerability Fixes | 3 comments
+openai/codex	3212	d6182becbe155776b159270fe4a5e88d607f0c5e	8c952af20fe791cc0c5d0a59089d3329968b4373	negative	Rust	Bug Fix	130	Rust | Bug Fix | 4 comments
+ollama/ollama	9654	56dc316a57f07fbed80723d1ecd589da0906018e	498792c9be023ebfdaa1e0dbc6ac85c0ff8c75b1	negative	Go	Test Suite / CI Enhancements	776	Go | Test Suite / CI Enhancements | 3 comments
+ollama/ollama	10135	c2f5d6662ba696b94455eaaa298a797d56fdca5c	0b52f186fb4af8fa7d4f6a71967f922eb6b69cdc	negative	Go	Performance Optimizations	132	Go | Performance Optimizations | 3 comments
+ollama/ollama	9746	4ea4d2b18952a104a47079df00ac0bfe4706f3aa	2ed14f2a28867c017426b41a9ff6bfc52c981a43	negative	Go	Bug Fix	716	Go | Bug Fix | 1 comments
+ollama/ollama	12185	92b96d54efd6b49322b7cf046f9a0dc16b00cd0a	b6002f6b6c69370f8c18a9e6c1cafa8463273a6b	negative	Go	Code Refactoring / Architectural Improvement	64	Go | Code Refactoring / Architectural Improvement | 4 comments
+ollama/ollama	8938	f53f4198c36d0a943de598ad91a20baa9481c5c5	c2d08dd67a9bcf15e52a2f15b1fad888afffcd32	negative	Go	New Feature Additions	24	Go | New Feature Additions | 2 comments
+mpv-player/mpv	15828	5809d4d1bc54c3a3a32b38c7cf8a6ed90e91f7db	0729afe8d7067f0e4d69000309ec6f3e24ac3926	negative	C	Performance Optimizations	56	C | Performance Optimizations | 1 comments
+mpv-player/mpv	16061	5ba7ee513751dd005379a06fb627303e6fe1b3dd	0b0330fa9d5d70c78f36e1010a3b826fa7046387	negative	C	New Feature Additions	159	C | New Feature Additions | 5 comments
+mpv-player/mpv	16164	30869ddb904f800ad1b858ac99c5fb81690f0cb7	dbd327d36fd0dc80ebd6e5517c102a92e31a0836	negative	C	Code Refactoring / Architectural Improvement	79	C | Code Refactoring / Architectural Improvement | 3 comments
+mpv-player/mpv	16090	5ba7ee513751dd005379a06fb627303e6fe1b3dd	ff45a8103e3c5ec3e786b950b4852c2750de936f	negative	C	Bug Fix	185	C | Bug Fix | 5 comments
+ppy/osu	31232	605979e790eb0aabdf5e8d6c8a182974697bc3a9	87697a72e333d1468a35d4a3fec388319cc16e2a	negative	C#	New Feature Additions	31	C# | New Feature Additions | 1 comments
+keycloak/keycloak	41672	949ef35a3bda916b24763c435033258a84ba8596	1463502078ae277b3613e02429ecafde921b892b	negative	Java	Dependency Updates & Environment Compatibility	19	Java | Dependency Updates & Environment Compatibility | 3 comments
+keycloak/keycloak	37465	cac93f7d3dd2a16c959e2a9e9c0d221f7f76a754	2373a483fdeead9f1b5e815015349c6871de8c3a	negative	Java	Security Patches / Vulnerability Fixes	176	Java | Security Patches / Vulnerability Fixes | 3 comments
+keycloak/keycloak	35645	0f1bdc4e975c4810102d6ad125b3ed2369c90f0b	460f8008f86d3fa8f62da63e26d8bdc306af60b2	negative	Java	New Feature Additions	259	Java | New Feature Additions | 4 comments
+keycloak/keycloak	40283	ad511cbc538f1d9727d17cc423420abc50367af4	04ad5d530007517b60e2bf8706542556078d17f7	negative	Java	Test Suite / CI Enhancements	596	Java | Test Suite / CI Enhancements | 2 comments
+keycloak/keycloak	37504	b0654c455f57bb9fbc3ea7511809921fed031ce3	21d4538b6f69a47dbd25571ea39a5d2a6fa788ef	negative	Java	Code Refactoring / Architectural Improvement	714	Java | Code Refactoring / Architectural Improvement | 10 comments
+bluewave-labs/Checkmate	2883	05dd5f7de27ae7f2139714f0bc577484642e2c77	32b54ddf11ea27b8ed85d2139fe38e0dcb7f3d43	negative	JavaScript	Dependency Updates & Environment Compatibility	847	JavaScript | Dependency Updates & Environment Compatibility | 10 comments
+symfony/symfony	60956	e06b10c4f0088e2966c510d335531f7daed61915	647870557cf275de666557e552e11e9a295b9d4a	negative	PHP	Bug Fix	5	PHP | Bug Fix | 1 comments
+symfony/symfony	61601	a57c946d3b8d477964da5303fa693a9b7c4e6227	942f8fa5384d34f2b5c9bd1b73a169d8fd049fd5	negative	PHP	Test Suite / CI Enhancements	24	PHP | Test Suite / CI Enhancements | 1 comments
+symfony/symfony	60342	0b4d21c3f91dd2cd2cc49739ab31a1457cf001ea	2b9721f04744fb213808f754ac98cd563384b3e5	negative	PHP	Documentation Update	32	PHP | Documentation Update | 1 comments
+linera-io/linera-protocol	3075	c4a8ac301274ccdfc8d0fc87871d557534a8405f	024925dfbeff5daaecdd2cd733cda2825eff1bb7	negative	Rust	New Feature Additions	72	Rust | New Feature Additions | 4 comments
+linera-io/linera-protocol	4639	c31634e52d719fdf60694f47812e2f007022ae26	3535ddb83de7dfae5db1732a7f1535031d31380a	negative	Rust	Bug Fix	40	Rust | Bug Fix | 1 comments
+linera-io/linera-protocol	3151	ad508025a9d05552a1c8ac1ba4e71a0062ebb556	8fb32bb8a463a3b19e291426f83833027739f868	negative	Rust	Documentation Update	8	Rust | Documentation Update | 2 comments
+timescale/timescaledb	8138	09513b064bc823c5525d82c242d9affe0a308e17	f84194cb231ad14a2f03b5ead75e99d64826972f	negative	C	Code Refactoring / Architectural Improvement	559	C | Code Refactoring / Architectural Improvement | 8 comments
+timescale/timescaledb	7915	d0fe7370082dbc57d391d5168705909809bd880f	7148e5c7d90c9da819a8ca77b79664fac300ca60	negative	C	New Feature Additions	297	C | New Feature Additions | 3 comments
+unionlabs/union	3414	efab2bedc6beb4e1bb01906cba9e0dabd3072f13	d840723278f1d4cecc02ac540385725a1c54ca84	negative	Rust	Code Refactoring / Architectural Improvement	213	Rust | Code Refactoring / Architectural Improvement | 4 comments
+langflow-ai/langflow	6044	5bcf4d001f1174ed9e63b7115f10e5dbe1bcca9f	bcfe6f9ded091cd360b3212b6e9f5a58cbcdac5e	negative	Python	Code Refactoring / Architectural Improvement	882	Python | Code Refactoring / Architectural Improvement | 3 comments
+langflow-ai/langflow	5896	d035e41e631f0da97bdc0e93e7afdae78d5e94da	9513d152197e5336fbc00eb6b891f1ffb25ad62d	negative	Python	Bug Fix	37	Python | Bug Fix | 2 comments

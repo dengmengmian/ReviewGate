@@ -1,0 +1,44 @@
+{
+  "github_pr_url": "https://github.com/dotnet/aspnetcore/pull/62936",
+  "owner": "dotnet",
+  "repo": "aspnetcore",
+  "pr_number": "62936",
+  "evaluation_id": "aspnetcore_62936",
+  "config": {
+    "line_distance_threshold": 1,
+    "semantic_matcher_type": "llm",
+    "enable_semantic_match": true
+  },
+  "positive_expected_nums": 5,
+  "total_generated_nums": 1,
+  "positive_match_nums": 0,
+  "positive_line_match_nums": 0,
+  "unmatched_nums": 1,
+  "positive_match_rate": 0.0,
+  "positive_recall_rate": 0.0,
+  "positive_line_match_rate": 0.0,
+  "positive_line_recall_rate": 0.0,
+  "unmatched_rate": 1.0,
+  "match_details": [
+    {
+      "generated_comment_index": 1,
+      "generated_comment": "监控容器仍使用 Docker Hub 的 `redis` 镜像，而未跟随主 Redis 容器切换到 ACR 镜像 `_redisImageName`。第 116 行的主 Redis 容器已改用 `_redisImageName`（`dotnetdhmirror-f8bzbjakh8cga6ab.azurecr.io/library/redis:7.4`），但第 138 行的监控容器（运行 redis-cli）仍直接使用 `redis`。如果此次改动的目的是将镜像拉取统一到 ACR 镜像仓库（例如规避 Docker Hub 限流或适配离线环境），监控容器将因无法从 Docker Hub 拉取镜像而启动失败。此外，`redis-cli` 版本与 Redis 7.4 服务端可能存在兼容性偏差。",
+      "generated_location": {
+        "path": "src/SignalR/server/StackExchangeRedis/test/Docker.cs",
+        "from_line": 138,
+        "to_line": 138,
+        "side": "right"
+      },
+      "line_match": false,
+      "semantic_match": false,
+      "matched_reference_id": null,
+      "matched_reference_note": null,
+      "matched_reference_location": null,
+      "matched_reference_details": {},
+      "location_match_details": {},
+      "llm_comparison": null
+    }
+  ],
+  "matched_reference_comments": [],
+  "llm_comparisons": []
+}

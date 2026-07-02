@@ -258,37 +258,94 @@ mod tests {
         assert_eq!(parse_pr_event("not json"), None);
     }
 
+    fn base_finding() -> Finding {
+        Finding {
+            dimension: Dimension::Security,
+            confidence: 0.95,
+            severity: Severity::High,
+            path: "a.rs".into(),
+            start_line: 3,
+            end_line: 3,
+            message: "SQL 注入".into(),
+            existing_code: "x".into(),
+            evidence: String::new(),
+            suggestion: None,
+            suggestion_code: String::new(),
+            reachability: crate::model::Reachability::default(),
+            filtered: false,
+            agreed_dimensions: 1,
+            criterion: None,
+            intent_status: None,
+        }
+    }
+
+    #[test]
+    fn markdown_summary_pass_no_issues() {
+        let outcome = ReviewOutcome {
+            files_changed: 1,
+            decision: GateDecision::Pass,
+            warnings: vec![],
+            incomplete: false,
+            usage: Default::default(),
+            findings: vec![],
+        };
+        let md = render_markdown(&outcome);
+        assert!(md.contains("PASS"));
+        assert!(md.contains("No issues reached the display threshold"));
+    }
+
+    #[test]
+    fn markdown_summary_warn_incomplete_and_warnings() {
+        let mut f = base_finding();
+        f.filtered = true;
+        let outcome = ReviewOutcome {
+            files_changed: 2,
+            decision: GateDecision::Warn,
+            warnings: vec![crate::review::ReviewWarning {
+                dimension: "logic".into(),
+                kind: "timed_out".into(),
+                message: "timeout".into(),
+            }],
+            incomplete: true,
+            usage: Default::default(),
+            findings: vec![f],
+        };
+        let md = render_markdown(&outcome);
+        assert!(md.contains("WARN"));
+        assert!(md.contains("审查未完整"));
+        assert!(md.contains("timed_out"));
+        assert!(md.contains("1 条已过滤"));
+    }
+
     #[test]
     fn markdown_summary_has_decision_and_rows() {
+        let mut f = base_finding();
+        f.message = "SQL 注入 | 危险".into();
         let outcome = ReviewOutcome {
             files_changed: 1,
             decision: GateDecision::Block,
             warnings: vec![],
             incomplete: false,
             usage: Default::default(),
-            findings: vec![Finding {
-                dimension: Dimension::Security,
-                confidence: 0.95,
-                severity: Severity::High,
-                path: "a.rs".into(),
-                start_line: 3,
-                end_line: 3,
-                message: "SQL 注入 | 危险".into(),
-                existing_code: "x".into(),
-                evidence: String::new(),
-                suggestion: None,
-                suggestion_code: String::new(),
-                reachability: crate::model::Reachability::default(),
-                filtered: false,
-                agreed_dimensions: 1,
-                criterion: None,
-                intent_status: None,
-            }],
+            findings: vec![f],
         };
         let md = render_markdown(&outcome);
         assert!(md.contains("BLOCK"));
         assert!(md.contains("a.rs:3"));
         // message 里的 | 被转义，不破坏表格。
         assert!(md.contains("\\|"));
+    }
+
+    #[test]
+    fn detect_head_sha_from_event_and_env() {
+        let tmp = std::env::temp_dir().join(format!("rg_event_{}", std::process::id()));
+        std::fs::write(&tmp, r#"{"pull_request":{"head":{"sha":"abc123"}}}"#).unwrap();
+        std::env::set_var("GITHUB_EVENT_PATH", tmp.to_str().unwrap());
+        assert_eq!(detect_head_sha(), Some("abc123".into()));
+
+        std::env::remove_var("GITHUB_EVENT_PATH");
+        std::env::set_var("GITHUB_SHA", "def456");
+        assert_eq!(detect_head_sha(), Some("def456".into()));
+        std::env::remove_var("GITHUB_SHA");
     }
 }

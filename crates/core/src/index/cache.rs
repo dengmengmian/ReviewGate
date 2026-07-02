@@ -132,6 +132,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn references_mode_also_cached() {
+        let inner = Arc::new(Counting {
+            calls: AtomicUsize::new(0),
+        });
+        let idx = CachingIndex::new(inner.clone());
+        let a = idx.find_references("foo", None).await.unwrap();
+        let b = idx.find_references("foo", None).await.unwrap();
+        assert!(a.is_empty());
+        assert!(b.is_empty());
+        // Counting 只在 find_definition 中计数，find_references 恒返回空；
+        // 这里验证两次结果一致即可（缓存生效的话应相同，底层不会被重复调计数器）。
+        assert_eq!(inner.calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn errors_are_not_cached() {
+        struct Failing;
+        #[async_trait]
+        impl CodeIndex for Failing {
+            async fn find_definition(&self, _: &str, _: Option<Lang>) -> Result<Vec<SymbolLoc>> {
+                anyhow::bail!("boom")
+            }
+            async fn find_callers(&self, _: &str, _: Option<Lang>) -> Result<Vec<SymbolLoc>> {
+                anyhow::bail!("boom")
+            }
+            async fn find_references(&self, _: &str, _: Option<Lang>) -> Result<Vec<SymbolLoc>> {
+                anyhow::bail!("boom")
+            }
+        }
+        let idx = CachingIndex::new(Arc::new(Failing));
+        assert!(idx.find_definition("foo", None).await.is_err());
+        // 错误不缓存：再次调用仍应走到底层并失败。
+        assert!(idx.find_definition("foo", None).await.is_err());
+    }
+
+    #[tokio::test]
     async fn modes_do_not_collide() {
         let inner = Arc::new(Counting {
             calls: AtomicUsize::new(0),

@@ -159,6 +159,37 @@ mod tests {
     }
 
     #[test]
+    fn same_loc_deduped_within_file() {
+        // 同一函数体在同一文件同一行只算一次（防御 tree-sitter 重复列出）。
+        let body = "{\n    let total = base_price * quantity + shipping_fee + discount;\n    if total < 0 { return Err(\"negative total not allowed in this module\"); }\n    audit_log.record(user_id, total, created_at);\n    let rounded = (total as f64 * tax_rate).round() as i64;\n    Ok(rounded)\n}";
+        let src = format!("fn a() {body}\nfn b() {body}");
+        let groups = duplicate_groups(&[("a.rs".into(), src)]);
+        // a 与 b 是两个不同位置，应归为一组；若去重正确则仍是 1 组 2 成员。
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].len(), 2);
+    }
+
+    #[test]
+    fn max_groups_limit() {
+        let mut files = Vec::new();
+        // 造 25 组不同的重复函数，每组在 2 个文件中出现；应被限制为 MAX_GROUPS=20。
+        for g in 0..25 {
+            let body = format!(
+                "{{\n    let v{} = base_price * quantity + shipping_fee + discount;\n    let y = (v{} as f64 * tax_rate).round() as i64;\n    if y < 0 {{ return Err(\"negative total not allowed\"); }}\n    audit_log.record(user_id, y, {});\n    Ok(y)\n}}",
+                g, g, g
+            );
+            for side in ["a", "b"] {
+                files.push((
+                    format!("f{}_{}.rs", g, side),
+                    format!("fn f{}_{}() {body}", g, side),
+                ));
+            }
+        }
+        let groups = duplicate_groups(&files);
+        assert_eq!(groups.len(), MAX_GROUPS);
+    }
+
+    #[test]
     fn distinct_bodies_not_grouped() {
         // 两个体都足够长（> 阈值），仅运算符不同 → 不应被分到同一组。
         let big = |op: &str| {

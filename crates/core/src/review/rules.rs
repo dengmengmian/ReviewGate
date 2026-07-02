@@ -719,4 +719,20 @@ mod tests {
         }
         assert!(language_template_count > 0);
     }
+
+    #[test]
+    fn ext_to_lang_maps_common_extensions() {
+        assert_eq!(ext_to_lang("rs"), Some("rust"));
+        assert_eq!(ext_to_lang("tsx"), Some("typescript"));
+        assert_eq!(ext_to_lang("jsx"), Some("javascript"));
+        assert_eq!(ext_to_lang("py"), Some("python"));
+        assert_eq!(ext_to_lang("go"), Some("go"));
+        assert_eq!(ext_to_lang("dockerfile"), Some("dockerfile"));
+        assert_eq!(ext_to_lang("unknown"), None);
+    }
+
+    #[test]
+    fn empty_diff_has_no_changed_languages() {
+        assert!(changed_languages(&Diff { files: vec![] }).is_empty());
+    }
 }

@@ -76,3 +76,53 @@ async fn synthesize_added(path: &str) -> Option<FileDiff> {
         hunks,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn synthesize_added_maps_lines_and_status() {
+        let tmp = std::env::temp_dir().join(format!("rg_synth_{}", std::process::id()));
+        let _ = std::fs::remove_file(&tmp);
+        std::fs::write(&tmp, "line1\nline2\n").unwrap();
+
+        let fd = synthesize_added(tmp.to_str().unwrap()).await.unwrap();
+        assert_eq!(fd.status, FileStatus::Added);
+        assert_eq!(fd.new_path.as_deref(), tmp.to_str());
+        assert!(fd.old_path.is_none());
+        assert!(!fd.binary);
+        assert_eq!(fd.hunks.len(), 1);
+        let h = &fd.hunks[0];
+        assert_eq!(h.old_start, 0);
+        assert_eq!(h.old_count, 0);
+        assert_eq!(h.new_start, 1);
+        assert_eq!(h.new_count, 2);
+        assert_eq!(h.lines.len(), 2);
+        assert_eq!(h.lines[0].content, "line1");
+        assert_eq!(h.lines[0].kind, LineKind::Added);
+        assert_eq!(h.lines[0].new_lineno, Some(1));
+        assert_eq!(h.lines[1].new_lineno, Some(2));
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[tokio::test]
+    async fn synthesize_empty_file_has_no_hunks() {
+        let tmp = std::env::temp_dir().join(format!("rg_synth_empty_{}", std::process::id()));
+        let _ = std::fs::remove_file(&tmp);
+        std::fs::write(&tmp, "").unwrap();
+
+        let fd = synthesize_added(tmp.to_str().unwrap()).await.unwrap();
+        assert!(fd.hunks.is_empty());
+        assert_eq!(fd.added_lines(), 0);
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[tokio::test]
+    async fn synthesize_missing_file_returns_none() {
+        let path = "/tmp/reviewgate_definitely_missing_file_for_test.rs";
+        assert!(synthesize_added(path).await.is_none());
+    }
+}

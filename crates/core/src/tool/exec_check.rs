@@ -173,6 +173,51 @@ mod tests {
     // 回归：子进程 stdout/stderr 必须被捕获进返回值（喂给模型），
     // 而不是继承父进程 fd 泄漏到 ReviewGate 自己的 stdout（会破坏 --format json）。
     #[tokio::test]
+    async fn unsupported_language_errors() {
+        use crate::diff::Diff;
+        use std::sync::Arc;
+        let mut ctx = ToolContext::with_grep_index(Arc::new(Diff::default()), ".", None);
+        ctx.allow_exec = true;
+        let err = RunCheck
+            .call(&json!({"language":"rust","code":"fn main() {}"}), &ctx)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("unsupported language"));
+    }
+
+    #[tokio::test]
+    async fn empty_code_errors() {
+        use crate::diff::Diff;
+        use std::sync::Arc;
+        let mut ctx = ToolContext::with_grep_index(Arc::new(Diff::default()), ".", None);
+        ctx.allow_exec = true;
+        let err = RunCheck
+            .call(&json!({"language":"python","code":"   "}), &ctx)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("missing code"));
+    }
+
+    #[tokio::test]
+    async fn captures_child_stderr_too() {
+        use crate::diff::Diff;
+        use std::sync::Arc;
+        let mut ctx = ToolContext::with_grep_index(Arc::new(Diff::default()), ".", None);
+        ctx.allow_exec = true;
+        let out = RunCheck
+            .call(
+                &json!({"language":"python","code":"import sys; sys.stderr.write('RG_ERR_5522')"}),
+                &ctx,
+            )
+            .await
+            .unwrap();
+        assert!(
+            out.contains("RG_ERR_5522"),
+            "stderr must be captured, got: {out:?}"
+        );
+    }
+
+    #[tokio::test]
     async fn captures_child_stdout_instead_of_leaking() {
         use crate::diff::Diff;
         use std::sync::Arc;

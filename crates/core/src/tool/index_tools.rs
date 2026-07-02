@@ -145,6 +145,12 @@ mod tests {
     }
 
     #[test]
+    fn symbol_arg_error_includes_tool_name() {
+        let err = symbol_arg(&json!({"lang": "rust"}), "find_definition").unwrap_err();
+        assert!(err.to_string().contains("find_definition"));
+    }
+
+    #[test]
     fn format_locs_empty_and_nonempty() {
         assert_eq!(format_locs(&[]), "(no results)");
         let locs = vec![

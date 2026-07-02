@@ -241,4 +241,41 @@ mod tests {
         assert!(confined_fix_path(root, "../secret").is_err());
         assert!(confined_fix_path(root, "/etc/passwd").is_err());
     }
+
+    #[test]
+    fn fix_all_skips_unfixable_findings() {
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!("rg_fixskip_{}_{}", std::process::id(), secs));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("t.txt");
+        std::fs::write(&file, "line1\nBAD\nline3\n").unwrap();
+
+        let mut filtered = mk_finding("t.txt", 2, "BAD", "GOOD");
+        filtered.filtered = true;
+        let no_suggestion = mk_finding("t.txt", 2, "BAD", "   ");
+        let unlocated = mk_finding("t.txt", 0, "BAD", "GOOD");
+        let reversed = mk_finding("t.txt", 2, "BAD", "GOOD");
+        let mut reversed = reversed;
+        reversed.end_line = 1; // end < start
+
+        let findings = vec![filtered, no_suggestion, unlocated, reversed];
+        apply_fixes(&findings, &dir, None, true).unwrap();
+
+        let got = std::fs::read_to_string(&file).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(got, "line1\nBAD\nline3\n", "不应应用任何不可修复项");
+    }
+
+    #[test]
+    fn fix_all_no_changes_when_no_fixable() {
+        let dir = std::env::temp_dir().join(format!("rg_fixnone_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let findings: Vec<Finding> = vec![];
+        apply_fixes(&findings, &dir, None, true).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

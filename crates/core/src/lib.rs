@@ -26,6 +26,18 @@ pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_matches_cargo_manifest() {
+        let manifest = env!("CARGO_PKG_VERSION");
+        assert_eq!(version(), manifest);
+        assert!(!version().is_empty());
+    }
+}
+
 // 后续里程碑逐步加入的模块（M1.3 起）：
 // pub mod llm;       // LlmClient trait + Anthropic / OpenAI 兼容
 // pub mod diff;      // git diff 获取 + hunk 解析

@@ -121,11 +121,11 @@ async fn full_pipeline_blocks_real_finding() {
 
     let outcome = outcome.expect("run_review_with_client 应成功");
 
-    // 3) 断言整条编排：5 维度各报同一处 → 去重为 1；judge real=true 保留；置信度高 → BLOCK。
+    // 3) 断言整条编排：各维度报同一处 → 去重为 1；judge real=true 保留；置信度高 → BLOCK。
     assert_eq!(
         outcome.findings.len(),
         1,
-        "5 维度同处发现应去重为 1，实际：{:#?}",
+        "各维度同处发现应去重为 1，实际：{:#?}",
         outcome.findings
     );
     let f = &outcome.findings[0];

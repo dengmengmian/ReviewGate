@@ -141,6 +141,142 @@ mod tests {
     use super::*;
     use crate::diff::{FileDiff, FileStatus, Hunk, Line, LineKind};
 
+    #[test]
+    fn new_ref_for_modes() {
+        assert_eq!(new_ref_for(&DiffMode::Workspace), None);
+        assert_eq!(
+            new_ref_for(&DiffMode::Commit("abc".into())),
+            Some("abc".into())
+        );
+        assert_eq!(
+            new_ref_for(&DiffMode::Range {
+                from: "main".into(),
+                to: "HEAD".into()
+            }),
+            Some("HEAD".into())
+        );
+    }
+
+    #[test]
+    fn hunk_context_empty_cases() {
+        // 总行数为 0
+        let empty = FileDiff {
+            old_path: Some("a.rs".into()),
+            new_path: Some("a.rs".into()),
+            status: FileStatus::Modified,
+            binary: false,
+            hunks: vec![Hunk {
+                old_start: 1,
+                old_count: 1,
+                new_start: 1,
+                new_count: 1,
+                section: String::new(),
+                lines: vec![],
+            }],
+        };
+        assert!(hunk_context_line_numbers(&empty, 0).is_empty());
+
+        // 无 hunk → 返回全部行
+        let no_hunk = FileDiff {
+            old_path: Some("a.rs".into()),
+            new_path: Some("a.rs".into()),
+            status: FileStatus::Added,
+            binary: false,
+            hunks: vec![],
+        };
+        assert_eq!(hunk_context_line_numbers(&no_hunk, 5), vec![1, 2, 3, 4, 5]);
+    }
+
+    #[tokio::test]
+    async fn build_unit_prompt_without_context_omits_full_files() {
+        let root = std::env::temp_dir().join(format!("rg_ctx_nofull_{}", std::process::id()));
+        tokio::fs::create_dir_all(&root).await.unwrap();
+        tokio::fs::write(root.join("a.rs"), "fn main() {}\n")
+            .await
+            .unwrap();
+
+        let diff = Diff {
+            files: vec![FileDiff {
+                old_path: Some("a.rs".into()),
+                new_path: Some("a.rs".into()),
+                status: FileStatus::Modified,
+                binary: false,
+                hunks: vec![Hunk {
+                    old_start: 1,
+                    old_count: 1,
+                    new_start: 1,
+                    new_count: 1,
+                    section: String::new(),
+                    lines: vec![Line {
+                        kind: LineKind::Context,
+                        content: "fn main() {}".into(),
+                        old_lineno: Some(1),
+                        new_lineno: Some(1),
+                    }],
+                }],
+            }],
+        };
+        let prompt = build_unit_prompt(&diff, &[0], false, &root, &None, "").await;
+        assert!(prompt.contains("fn main() {}"));
+        assert!(!prompt.contains("Full new contents"));
+
+        let prompt_full = build_unit_prompt(&diff, &[0], true, &root, &None, "").await;
+        assert!(prompt_full.contains("Full new contents"));
+
+        tokio::fs::remove_dir_all(&root).await.ok();
+    }
+
+    #[tokio::test]
+    async fn render_changed_files_skips_deleted_and_binary() {
+        let root = std::env::temp_dir().join(format!("rg_ctx_skip_{}", std::process::id()));
+        tokio::fs::create_dir_all(&root).await.unwrap();
+        tokio::fs::write(root.join("keep.rs"), "x\n").await.unwrap();
+
+        let diff = Diff {
+            files: vec![
+                FileDiff {
+                    old_path: Some("del.rs".into()),
+                    new_path: None,
+                    status: FileStatus::Deleted,
+                    binary: false,
+                    hunks: vec![],
+                },
+                FileDiff {
+                    old_path: None,
+                    new_path: Some("bin.png".into()),
+                    status: FileStatus::Added,
+                    binary: true,
+                    hunks: vec![],
+                },
+                FileDiff {
+                    old_path: Some("keep.rs".into()),
+                    new_path: Some("keep.rs".into()),
+                    status: FileStatus::Modified,
+                    binary: false,
+                    hunks: vec![Hunk {
+                        old_start: 1,
+                        old_count: 1,
+                        new_start: 1,
+                        new_count: 1,
+                        section: String::new(),
+                        lines: vec![Line {
+                            kind: LineKind::Context,
+                            content: "x".into(),
+                            old_lineno: Some(1),
+                            new_lineno: Some(1),
+                        }],
+                    }],
+                },
+            ],
+        };
+        let rendered = render_changed_files(&diff, &[0, 1, 2], &root, &None).await;
+        assert!(!rendered.contains("del.rs"));
+        assert!(!rendered.contains("bin.png"));
+        assert!(rendered.contains("keep.rs"));
+
+        tokio::fs::remove_dir_all(&root).await.ok();
+    }
+
     #[tokio::test]
     async fn changed_file_context_is_hunk_window_not_file_prefix() {
         let root = std::env::temp_dir().join(format!("rg_hunk_window_{}", std::process::id()));

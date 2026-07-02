@@ -1,0 +1,50 @@
+{
+  "decision": "block",
+  "incomplete": false,
+  "files_changed": 105,
+  "summary": {
+    "total": 2,
+    "kept": 2,
+    "filtered": 0,
+    "warnings": 0
+  },
+  "warnings": [],
+  "findings": [
+    {
+      "path": "src/Mod/BIM/ArchStairs.py",
+      "start_line": 1271,
+      "end_line": 1271,
+      "dimension": "style",
+      "severity": "med",
+      "confidence": 0.97,
+      "message": "机械替换导致 TODO 注释语义错误。原始注释 `# TODO to allow tolerance`（其中 `allow` 后接名词 `tolerance`，并非不定式）被错误地替换为 `# TODO to allow one tolerance`，变得无意义。应还原为 `# TODO to allow tolerance` 或改为 `# TODO allow tolerance`。 (also flagged by ai_smell)",
+      "suggestion": "将无意义的 `allow one tolerance` 改回有意义的 `allow tolerance`。原意是\"允许（使用）容差\"而非\"允许一个人去容差\"。",
+      "suggestion_code": "            if (outlineLeftAll[-1] - obj.OutlineLeft[0]).Length < 0.01: # To avoid 2 points overlapping fail creating LineSegment # TODO to allow tolerance Part.LineSegment / edge.toShape() allow?",
+      "filtered": false,
+      "agreed_dimensions": 2,
+      "existing_code": "            if (outlineLeftAll[-1] - obj.OutlineLeft[0]).Length < 0.01: # To avoid 2 points overlapping fail creating LineSegment # TODO to allow one tolerance Part.LineSegment / edge.toShape() allow?",
+      "evidence": "第 1271 行注释 `# TODO to allow one tolerance` 明显是机械替换（如 `a tolerance` → `one tolerance`）的误伤结果，原意为\"允许容差\"，插入 `one` 后语义不通。应还原为 `# TODO to allow tolerance` 或 `# TODO allow tolerance`。"
+    },
+    {
+      "path": "src/App/FeaturePython.h",
+      "start_line": 165,
+      "end_line": 166,
+      "dimension": "style",
+      "severity": "low",
+      "confidence": 0.95,
+      "message": "注释语法修复不完整：原始 \"allows to behave every DocumentObject\" 的真正含义是\"允许每个 DocumentObject 表现为 Python feature\"，而非\"允许某人去表现每个 DocumentObject\"。替换为 \"allows one to behave\" 后语义仍然不通。应改为 \"allows every DocumentObject derived class to behave as a Python feature\"。",
+      "suggestion": "将 \"allows one to behave every DocumentObject\" 改为 \"allows every DocumentObject derived class to behave as a Python feature\"。",
+      "suggestion_code": " * Generic Python feature class which allows every DocumentObject\n * derived class to behave as Python feature -- simply by subclassing.",
+      "filtered": false,
+      "agreed_dimensions": 1,
+      "existing_code": " * Generic Python feature class which allows one to behave every DocumentObject\n * derived class as Python feature -- simply by subclassing.",
+      "evidence": "当前注释 \"allows one to behave every DocumentObject derived class as Python feature\" 语法不通：\"behave\" 是不及物动词，不能接宾语 \"every DocumentObject\"。原意应为\"允许每个 DocumentObject 派生类表现为 Python feature\"，建议改为 \"allows every DocumentObject derived class to behave as a Python feature\" 语义清晰正确。"
+    }
+  ],
+  "usage": {
+    "input_tokens": 282210,
+    "output_tokens": 19117,
+    "cache_read_input_tokens": 422784,
+    "cache_creation_input_tokens": 0
+  }
+}

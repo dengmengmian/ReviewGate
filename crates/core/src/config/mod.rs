@@ -336,4 +336,99 @@ block_treshold = 0.95
         let bad: Config = toml::from_str("provider = \"nope\"").unwrap();
         assert!(bad.active_provider().is_err());
     }
+
+    #[test]
+    fn from_path_reads_existing_file() {
+        let dir = std::env::temp_dir().join(format!("rg_cfg_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("reviewgate.toml");
+        std::fs::write(&path, TOML).unwrap();
+
+        let cfg = Config::from_path(&path).unwrap();
+        assert_eq!(cfg.provider, "qwen");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn from_path_errors_on_missing_file() {
+        let p = std::env::temp_dir().join("does_not_exist_reviewgate.toml");
+        assert!(Config::from_path(&p).is_err());
+    }
+
+    #[test]
+    fn active_provider_resolved_env_overrides() {
+        // Serialize env-var mutations because they affect the global process.
+        let _guard = ENV_LOCK.lock().unwrap();
+
+        let cfg: Config = toml::from_str(TOML).unwrap();
+        std::env::set_var("REVIEWGATE_API_KEY", "env-key");
+        std::env::set_var("REVIEWGATE_BASE_URL", "https://env.example");
+        std::env::set_var("REVIEWGATE_MODEL", "env-model");
+
+        let resolved = cfg.active_provider_resolved().unwrap();
+        assert_eq!(resolved.api_key, "env-key");
+        assert_eq!(resolved.base_url, "https://env.example");
+        assert_eq!(resolved.model, "env-model");
+
+        std::env::remove_var("REVIEWGATE_API_KEY");
+        std::env::remove_var("REVIEWGATE_BASE_URL");
+        std::env::remove_var("REVIEWGATE_MODEL");
+    }
+
+    #[test]
+    fn active_provider_resolved_rejects_missing_and_placeholder_keys() {
+        let _guard = ENV_LOCK.lock().unwrap();
+
+        let cfg: Config = toml::from_str(
+            r#"
+provider = "q"
+[providers.q]
+base_url = "https://x/v1"
+model = "m"
+api_key = ""
+"#,
+        )
+        .unwrap();
+        std::env::remove_var("REVIEWGATE_API_KEY");
+        assert!(cfg.active_provider_resolved().is_err());
+
+        let cfg2: Config = toml::from_str(
+            r#"
+provider = "q"
+[providers.q]
+base_url = "https://x/v1"
+model = "m"
+api_key = "REPLACE_WITH_YOUR_API_KEY"
+"#,
+        )
+        .unwrap();
+        assert!(cfg2.active_provider_resolved().is_err());
+    }
+
+    #[test]
+    fn discover_prefers_env_over_cwd_and_home() {
+        let _guard = ENV_LOCK.lock().unwrap();
+
+        let dir = std::env::temp_dir().join(format!("rg_discover_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let env_path = dir.join("env.toml");
+        std::fs::write(&env_path, "provider = \"env\"\n").unwrap();
+
+        // Remove any existing env pointer so discover falls back to cwd/home logic.
+        std::env::remove_var("REVIEWGATE_CONFIG");
+        let without_env = Config::discover();
+        // We are running in the workspace root, which has reviewgate.toml.
+        assert!(without_env.is_some());
+
+        std::env::set_var("REVIEWGATE_CONFIG", env_path.to_str().unwrap());
+        assert_eq!(Config::discover().unwrap().file_name().unwrap(), "env.toml");
+
+        std::env::remove_var("REVIEWGATE_CONFIG");
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
+
+#[cfg(test)]
+use std::sync::Mutex;
+#[cfg(test)]
+static ENV_LOCK: Mutex<()> = Mutex::new(());

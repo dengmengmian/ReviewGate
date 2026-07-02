@@ -179,6 +179,34 @@ mod tests {
     }
 
     #[test]
+    fn dir_key_groups_by_parent() {
+        let diff = Diff {
+            files: vec![
+                file("a/x.rs", 1, 1),
+                file("a/b/y.rs", 1, 1),
+                file("z.rs", 1, 1),
+            ],
+        };
+        assert_eq!(dir_key(&diff, 0), "a");
+        assert_eq!(dir_key(&diff, 1), "a/b");
+        assert_eq!(dir_key(&diff, 2), "");
+    }
+
+    #[test]
+    fn multiple_oversized_files_each_get_own_unit() {
+        let diff = Diff {
+            files: vec![
+                file("small.rs", 3, 10),
+                file("huge1.rs", 5000, 80),
+                file("huge2.rs", 5000, 80),
+            ],
+        };
+        let units = plan_units(&diff, 2000);
+        let oversized: Vec<_> = units.iter().filter(|u| u.oversized).collect();
+        assert_eq!(oversized.len(), 2);
+    }
+
+    #[test]
     fn single_oversized_file_gets_its_own_unit() {
         let diff = Diff {
             files: vec![file("small.rs", 3, 10), file("huge.rs", 5000, 80)],

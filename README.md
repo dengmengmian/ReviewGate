@@ -114,9 +114,11 @@ irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 |
 | 🔒 security | 注入、越权、密钥泄露、不安全反序列化 |
 | ⚡ perf | N+1、无谓拷贝、热路径复杂度、阻塞调用 |
 | 🧠 logic | 边界条件、空值、错误处理、并发竞态 |
-| 📐 style | 命名、可读性、重复代码 |
 | 🤖 ai_smell | 幻觉 API、看似合理实则错误、假设漂移、复制未适配 |
+| 📐 style | 命名、可读性、重复代码 —— **默认不跑**（质量闸口不管纯风格，交给 linter；用 `--dimensions style` 显式开启） |
 | 📋 business | 项目业务规则、权限边界、状态机、金额/订单/库存（配置 `[business].rules` 后自动启用） |
+
+> 默认审查缺陷四维（security / perf / logic / ai_smell）。style/business/intent 为 opt-in——闸口聚焦高危，不用风格噪声淹没真问题。
 
 然后：
 

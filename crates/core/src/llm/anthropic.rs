@@ -301,4 +301,23 @@ mod tests {
         assert!(wire[0]["content"][1].get("cache_control").is_none());
         assert!(wire[1]["content"][0].get("cache_control").is_none());
     }
+
+    #[test]
+    fn parses_success_response_with_text_tool_use_and_usage() {
+        let body = r#"{
+            "content": [
+                {"type": "text", "text": "Looks good."},
+                {"type": "tool_use", "id": "tu1", "name": "report_finding", "input": {"path":"a.rs","message":"m"}}
+            ],
+            "stop_reason": "tool_use",
+            "usage": {"input_tokens": 100, "output_tokens": 50, "cache_read_input_tokens": 20, "cache_creation_input_tokens": 10}
+        }"#;
+        let parsed: MessagesResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(parsed.content.len(), 2);
+        assert_eq!(parsed.stop_reason.as_deref(), Some("tool_use"));
+        let u = parsed.usage.unwrap();
+        assert_eq!(u.input_tokens, 100);
+        assert_eq!(u.cache_read_input_tokens, 20);
+        assert_eq!(u.cache_creation_input_tokens, 10);
+    }
 }

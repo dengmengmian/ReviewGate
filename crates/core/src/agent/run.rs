@@ -689,6 +689,113 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn multi_round_tool_result_feeds_back_to_llm() {
+        // 第 1 轮调用 code_search；第 2 轮必须看到前一轮的 tool_result 才能 task_done。
+        let client = MockClient::new(vec![
+            Ok(resp(vec![("code_search", json!({"pattern": "foo"}))])),
+            Ok(resp(vec![("task_done", json!({}))])),
+        ]);
+        let run = run_agent_with_stats(&client, &registry(), &ctx(), &cfg(5), "审查".into())
+            .await
+            .unwrap();
+        assert_eq!(run.exit_reason, AgentExitReason::Completed);
+        let messages = client.seen_messages.lock().unwrap();
+        // 第二轮请求应包含 tool 角色的结果消息。
+        let second_req = &messages[1];
+        assert!(second_req.iter().any(|m| m.role == Role::Tool));
+    }
+
+    #[tokio::test]
+    async fn invalid_report_finding_is_error_not_panic() {
+        let client = MockClient::new(vec![Ok(resp(vec![
+            ("report_finding", json!({"path": "a.rs"})), // 缺少 message/severity
+            ("task_done", json!({})),
+        ]))]);
+        let run = run_agent_with_stats(&client, &registry(), &ctx(), &cfg(5), "审查".into())
+            .await
+            .unwrap();
+        assert!(run.findings.is_empty());
+        assert_eq!(run.exit_reason, AgentExitReason::Completed);
+    }
+
+    #[tokio::test]
+    async fn collects_multiple_findings_in_one_round() {
+        let client = MockClient::new(vec![Ok(resp(vec![
+            ("report_finding", finding_input()),
+            (
+                "report_finding",
+                json!({
+                    "path": "b.rs",
+                    "message": "another",
+                    "line_start": 10,
+                    "line_end": 10,
+                    "existing_code": "y",
+                    "severity": "med",
+                    "confidence": 0.7
+                }),
+            ),
+            ("task_done", json!({})),
+        ]))]);
+        let findings = run_agent(&client, &registry(), &ctx(), &cfg(5), "审查".into())
+            .await
+            .unwrap();
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].path, "a.rs");
+        assert_eq!(findings[1].path, "b.rs");
+    }
+
+    #[tokio::test]
+    async fn natural_end_turn_completes_without_task_done() {
+        let client = MockClient::new(vec![Ok(LlmResponse {
+            content: vec![ContentBlock::text("No issues found.")],
+            stop_reason: StopReason::EndTurn,
+            usage: Usage::default(),
+        })]);
+        let run = run_agent_with_stats(&client, &registry(), &ctx(), &cfg(5), "审查".into())
+            .await
+            .unwrap();
+        assert_eq!(run.exit_reason, AgentExitReason::Completed);
+        assert!(run.findings.is_empty());
+    }
+
+    #[tokio::test]
+    async fn intent_dimension_uses_intent_finding_tool() {
+        let mut c = AgentConfig::for_dimension(Dimension::Intent);
+        c.max_rounds = 5;
+        let client = MockClient::new(vec![Ok(resp(vec![
+            (
+                "report_intent_finding",
+                json!({
+                    "criterion": "must handle URL object",
+                    "status": "missing",
+                    "message": "dispatchRequest does not normalize URL objects",
+                    "confidence": 0.85
+                }),
+            ),
+            ("task_done", json!({})),
+        ]))]);
+        let findings = run_agent(&client, &registry(), &ctx(), &c, "意图评审".into())
+            .await
+            .unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].dimension, Dimension::Intent);
+        assert_eq!(
+            findings[0].criterion.as_deref(),
+            Some("must handle URL object")
+        );
+    }
+
+    #[test]
+    fn truncate_detail_shortens_long_errors() {
+        let short = "short error";
+        assert_eq!(truncate_detail(short), short);
+        let long = "x".repeat(300);
+        let out = truncate_detail(&long);
+        assert!(out.len() <= 250);
+        assert!(out.ends_with('…'));
+    }
+
+    #[tokio::test]
     async fn wall_clock_landing_forces_wrapup_before_timeout() {
         // timeout=1000ms，阈值 75% = 750ms；每轮 ~100ms：r1..r7 正常探索，
         // r8@~750+ ≥阈值 → 收口轮（只剩上报工具 + 注入收口消息），且剩余 ~25% 预算足够收口调用完成。

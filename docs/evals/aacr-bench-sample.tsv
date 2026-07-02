@@ -1,0 +1,18 @@
+# AACR-Bench -> ReviewGate 评测清单
+# 数据来源：阿里巴巴开源数据集 alibaba/aacr-bench
+# 原始描述：200 real Pull Requests from 50 active open-source projects, 10 languages,
+#          human-LLM collaborative annotation, 1,505 review comments as ground truth.
+# 列（Tab 分隔）：repo	pr	source_commit	target_commit	label	language	category	change_line_count	note
+# source_commit = PR base, target_commit = PR head
+timescale/timescaledb	7915	d0fe7370082dbc57d391d5168705909809bd880f	7148e5c7d90c9da819a8ca77b79664fac300ca60	positive	C	New Feature Additions	297	C | New Feature Additions | 6 comments
+lvgl/lvgl	8689	244b3b996e0b331468cf5967c937029535af569c	e526b2a1faa4672eeb3610b466ecc25b1abb220b	positive	C	Code Style, Linting, Formatting Fixes	804	C | Code Style, Linting, Formatting Fixes | 33 comments
+valkey-io/valkey	1889	ea2e48a807e1d4a1a5a684a2a699eda1934a0c6f	36f37c0bafa72c091a9a3725b9a026a056130892	positive	C	Security Patches / Vulnerability Fixes	52	C | Security Patches / Vulnerability Fixes | 2 comments
+dotnet/aspnetcore	61006	f83c97fa0b91f83bd20511d1abf235dc48b596e2	0ce67cdee87e9fee014ba95c11e8e36b8913041c	positive	C#	Code Refactoring / Architectural Improvement	115	C# | Code Refactoring / Architectural Improvement | 6 comments
+dotnet/aspnetcore	62936	e7d49f52363753a4faa2a22538eace7a923382ce	2f372e8ff137aa24114269576fc1912f12ff5402	positive	C#	Test Suite / CI Enhancements	5	C# | Test Suite / CI Enhancements | 5 comments
+dotnet/aspnetcore	59322	7ba02e8ac71eeba562476953d5ff6030b8eda765	8ac940ff581aa344ab8f859874f6d4c0ecaec6b6	positive	C#	Performance Optimizations	226	C# | Performance Optimizations | 5 comments
+dotnet/aspnetcore	62734	8bb2b2067815996d9a8224ee38aa80a79f797827	742f022e92563bd6fb87d1c752f25fd14e1b2a43	positive	C#	Security Patches / Vulnerability Fixes	6	C# | Security Patches / Vulnerability Fixes | 4 comments
+FreeCAD/FreeCAD	20156	382720b82e4c6c81f7e1cdd3a33272047d7a3642	699b45c086f53858897aa8c688bbedaf570c644f	positive	C++	Code Style, Linting, Formatting Fixes	56	C++ | Code Style, Linting, Formatting Fixes | 16 comments
+FreeCAD/FreeCAD	18688	abb50a4daa43abee9e6b263dd82e5e876c978c6a	a440ff7e4138c20ed2ac66977a199ebbf295e493	positive	C++	Documentation Update	297	C++ | Documentation Update | 6 comments
+FreeCAD/FreeCAD	20612	79008331b30d098b2c32e59752e24e0705b350bc	ec3da2e93e3fd8f69f113ca14abf892dfb86c11b	positive	C++	Code Refactoring / Architectural Improvement	80	C++ | Code Refactoring / Architectural Improvement | 3 comments
+microsoft/typescript-go	1354	15def0236938e25ec7822755444f4d58c68045be	ae447d3b2a6db00072941e1992a09981b6096061	positive	Go	Code Refactoring / Architectural Improvement	176	Go | Code Refactoring / Architectural Improvement | 2 comments
+microsoft/typescript-go	698	3a3ff237cf7ad91bcdb604271f6135762aed9365	100dbc5127e723c4108efc02a179d9aec5fce32a	positive	Go	Documentation Update	829	Go | Documentation Update | 6 comments

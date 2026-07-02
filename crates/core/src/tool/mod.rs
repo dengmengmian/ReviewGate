@@ -192,6 +192,7 @@ pub fn readonly_tools() -> Vec<Box<dyn Tool>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn short_result_unchanged() {
@@ -238,6 +239,41 @@ mod tests {
         assert!(confine_path(root, "/etc/passwd").is_err());
         assert!(confine_path(root, "../../../etc/passwd").is_err());
         assert!(confine_path(root, "src/../../secret").is_err());
+    }
+
+    #[test]
+    fn registry_dispatch_unknown_tool_errors() {
+        let reg = ToolRegistry::new();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let err = rt
+            .block_on(reg.dispatch(
+                "nonexistent",
+                &json!({}),
+                &ToolContext::with_grep_index(Arc::new(Diff::default()), ".", None),
+            ))
+            .unwrap_err();
+        assert!(err.to_string().contains("unknown tool"));
+    }
+
+    #[test]
+    fn registry_defs_and_contains() {
+        let mut reg = ToolRegistry::new();
+        for t in readonly_tools() {
+            reg.register(t);
+        }
+        assert!(reg.contains("read_file"));
+        assert!(reg.contains("find_duplicate_functions"));
+        assert!(!reg.contains("missing"));
+        let defs = reg.defs();
+        assert_eq!(defs.len(), 8);
+        assert!(defs.iter().any(|d| d.name == "read_file"));
+    }
+
+    #[test]
+    fn result_at_exact_limit_not_truncated() {
+        let s = "x".repeat(MAX_TOOL_RESULT_BYTES);
+        let out = cap_tool_result(s.clone());
+        assert_eq!(out, s);
     }
 
     #[test]

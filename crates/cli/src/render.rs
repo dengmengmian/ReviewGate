@@ -772,4 +772,47 @@ mod tests {
         let dispatch_hits = text.matches("dispatchRequest 未规范化 URL 对象").count();
         assert_eq!(dispatch_hits, 1, "意图发现只应出现在清单里，不重复");
     }
+
+    #[test]
+    fn render_json_includes_decision_summary_and_findings() {
+        let outcome = ReviewOutcome {
+            findings: vec![finding(Severity::High, false)],
+            files_changed: 1,
+            decision: GateDecision::Block,
+            incomplete: false,
+            warnings: vec![],
+            usage: Usage {
+                input_tokens: 500,
+                output_tokens: 50,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+            },
+        };
+        let json = render_json(&outcome).unwrap();
+        assert!(json.contains("\"decision\": \"block\""));
+        assert!(json.contains("\"files_changed\": 1"));
+        assert!(json.contains("\"total\": 1"));
+        assert!(json.contains("\"kept\": 1"));
+        assert!(json.contains("\"filtered\": 0"));
+        assert!(json.contains("\"path\": \"src/auth.rs\""));
+        assert!(json.contains("\"start_line\": 42"));
+        assert!(json.contains("\"dimension\": \"security\""));
+    }
+
+    #[test]
+    fn render_json_hides_filtered_fields() {
+        let mut f = finding(Severity::Low, true);
+        f.confidence = 0.3;
+        let outcome = ReviewOutcome {
+            findings: vec![f],
+            files_changed: 1,
+            decision: GateDecision::Pass,
+            incomplete: false,
+            warnings: vec![],
+            usage: Usage::default(),
+        };
+        let json = render_json(&outcome).unwrap();
+        assert!(json.contains("\"filtered\": true"));
+        assert!(json.contains("\"decision\": \"pass\""));
+    }
 }

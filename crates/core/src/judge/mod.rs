@@ -552,6 +552,78 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn empty_findings_returns_empty_and_zero_stats() {
+        let client = VerdictMock {
+            verdict: Some((true, 0.9)),
+        };
+        let reg = ToolRegistry::new();
+        let (kept, stats) = judge_all_with_stats(&client, &reg, &ctx(), vec![], false).await;
+        assert!(kept.is_empty());
+        assert_eq!(stats.candidates, 0);
+        assert_eq!(stats.hard_excluded, 0);
+        assert_eq!(stats.llm_requests, 0);
+    }
+
+    #[tokio::test]
+    async fn malformed_verdict_conservatively_keeps_with_damped_confidence() {
+        struct BadVerdictMock;
+        #[async_trait::async_trait]
+        impl LlmClient for BadVerdictMock {
+            async fn complete(
+                &self,
+                _system: &str,
+                _messages: &[Message],
+                _tools: &[ToolDef],
+            ) -> anyhow::Result<LlmResponse> {
+                Ok(LlmResponse {
+                    content: vec![ContentBlock::ToolUse(ToolUse {
+                        id: "v0".into(),
+                        name: "verdict".into(),
+                        input: json!({"real": true}), // 缺少 confidence
+                    })],
+                    stop_reason: StopReason::ToolUse,
+                    usage: Usage::default(),
+                })
+            }
+            fn model(&self) -> &str {
+                "bad"
+            }
+        }
+        let reg = ToolRegistry::new();
+        let (kept, _) = judge_all_with_stats(
+            &BadVerdictMock,
+            &reg,
+            &ctx(),
+            vec![finding(Dimension::Logic, "src/a.rs", 0.9)],
+            false,
+        )
+        .await;
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].confidence, 0.6);
+    }
+
+    #[tokio::test]
+    async fn parse_verdict_reachability_and_confidence_defaults() {
+        // real=false 且缺 confidence → 0
+        let v = parse_verdict(&json!({"real": false})).unwrap();
+        assert!(!v.real);
+        assert_eq!(v.confidence, 0.0);
+        assert_eq!(v.reachability, Reachability::Unknown);
+
+        // 非法 reachability 回退 Unknown
+        let v = parse_verdict(&json!({"real": true, "confidence": 0.8, "reachability": "bogus"}))
+            .unwrap();
+        assert!(v.real);
+        assert_eq!(v.reachability, Reachability::Unknown);
+
+        // confidence 越界被截断
+        let v = parse_verdict(&json!({"real": true, "confidence": 1.5})).unwrap();
+        assert_eq!(v.confidence, 1.0);
+        let v = parse_verdict(&json!({"real": true, "confidence": -0.2})).unwrap();
+        assert_eq!(v.confidence, 0.0);
+    }
+
+    #[tokio::test]
     async fn judge_respects_concurrency_limit() {
         let client = SlowCountingJudge {
             current: AtomicUsize::new(0),

@@ -94,3 +94,31 @@ pub trait CodeIndex: Send + Sync {
     /// 找符号的所有引用。
     async fn find_references(&self, symbol: &str, lang: Option<Lang>) -> Result<Vec<SymbolLoc>>;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lang_from_path_maps_extensions() {
+        assert!(matches!(Lang::from_path("src/main.rs"), Lang::Rust));
+        assert!(matches!(Lang::from_path("app.go"), Lang::Go));
+        assert!(matches!(Lang::from_path("component.tsx"), Lang::TypeScript));
+        assert!(matches!(Lang::from_path("script.jsx"), Lang::JavaScript));
+        assert!(matches!(Lang::from_path("main.py"), Lang::Python));
+        assert!(matches!(Lang::from_path("Bean.java"), Lang::Java));
+        assert!(matches!(Lang::from_path("lib.cpp"), Lang::Cpp));
+        assert!(matches!(Lang::from_path("lib.cxx"), Lang::Cpp));
+        assert!(matches!(Lang::from_path("header.h"), Lang::Cpp));
+        assert!(matches!(Lang::from_path("Dockerfile"), Lang::Other));
+    }
+
+    #[test]
+    fn symbol_kind_as_str() {
+        assert_eq!(SymbolKind::Function.as_str(), "function");
+        assert_eq!(SymbolKind::Type.as_str(), "type");
+        assert_eq!(SymbolKind::Variable.as_str(), "variable");
+        assert_eq!(SymbolKind::Reference.as_str(), "reference");
+        assert_eq!(SymbolKind::Other.as_str(), "other");
+    }
+}

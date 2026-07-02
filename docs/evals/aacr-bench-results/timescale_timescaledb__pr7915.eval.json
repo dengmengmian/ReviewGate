@@ -1,0 +1,80 @@
+{
+  "github_pr_url": "https://github.com/timescale/timescaledb/pull/7915",
+  "owner": "timescale",
+  "repo": "timescaledb",
+  "pr_number": "7915",
+  "evaluation_id": "timescaledb_7915",
+  "config": {
+    "line_distance_threshold": 1,
+    "semantic_matcher_type": "llm",
+    "enable_semantic_match": true
+  },
+  "positive_expected_nums": 6,
+  "total_generated_nums": 3,
+  "positive_match_nums": 0,
+  "positive_line_match_nums": 0,
+  "unmatched_nums": 3,
+  "positive_match_rate": 0.0,
+  "positive_recall_rate": 0.0,
+  "positive_line_match_rate": 0.0,
+  "positive_line_recall_rate": 0.0,
+  "unmatched_rate": 1.0,
+  "match_details": [
+    {
+      "generated_comment_index": 1,
+      "generated_comment": "`refresh_newest_first` 参数未被 C 函数读取：SQL 函数签名新增了第 11 个参数 `refresh_newest_first BOOL = true`，但 C 函数 `policy_refresh_cagg_add` 只读取了前 10 个参数。同时 `policy_refresh_cagg_add_internal` 签名中缺少该参数，构建 job 配置 JSONB 时也未写入该键。导致用户指定 `refresh_newest_first => false` 时被静默忽略，策略始终以默认值 `true`（DESC/newest first）执行。测试输出也证实了这一点：设置 `refresh_newest_first => false` 的策略（job [1001]）实际按 newest-first（DESC）顺序处理 batches。 (also flagged by ai_smell)",
+      "generated_location": {
+        "path": "tsl/src/bgw_policy/continuous_aggregate_api.c",
+        "from_line": 724,
+        "to_line": 726,
+        "side": "right"
+      },
+      "line_match": false,
+      "semantic_match": false,
+      "matched_reference_id": null,
+      "matched_reference_note": null,
+      "matched_reference_location": null,
+      "matched_reference_details": {},
+      "location_match_details": {},
+      "llm_comparison": null
+    },
+    {
+      "generated_comment_index": 2,
+      "generated_comment": "（潜在）batch 边界调整与排序方向不匹配：当 `refresh_newest_first = false` 时，batch 按 ASC 顺序排列（最旧→最新），但 `i==0` 的 end 调整和 `i==SPI_processed-1` 的 start 调整仍然假定 DESC 顺序（最新→最旧）。这会导致：最旧 batch 的 end 被错误设为 max，最新 batch 的 start 被错误设为 min。目前此 bug 因第一个问题（参数未被存储）而潜伏，修复后需要将 i 的判定条件改为基于 `refresh_newest_first` 的方向。",
+      "generated_location": {
+        "path": "tsl/src/continuous_aggs/refresh.c",
+        "from_line": 1222,
+        "to_line": 1237,
+        "side": "right"
+      },
+      "line_match": false,
+      "semantic_match": false,
+      "matched_reference_id": null,
+      "matched_reference_note": null,
+      "matched_reference_location": null,
+      "matched_reference_details": {},
+      "location_match_details": {},
+      "llm_comparison": null
+    },
+    {
+      "generated_comment_index": 3,
+      "generated_comment": "`continuous_agg_split_refresh_window` 的函数级注释未根据新增的 `refresh_newest_first` 参数进行更新。注释中多处提到批次\"以逆序生成\"（reverse order），但现在排序方向取决于参数值，当 `refresh_newest_first=false` 时批次按 ASC（正向）顺序生成，注释与实际行为不一致，容易误导后续维护者。",
+      "generated_location": {
+        "path": "tsl/src/continuous_aggs/refresh.c",
+        "from_line": 1066,
+        "to_line": 1087,
+        "side": "right"
+      },
+      "line_match": false,
+      "semantic_match": false,
+      "matched_reference_id": null,
+      "matched_reference_note": null,
+      "matched_reference_location": null,
+      "matched_reference_details": {},
+      "location_match_details": {},
+      "llm_comparison": null
+    }
+  ],
+  "matched_reference_comments": [],
+  "llm_comparisons": []
+}

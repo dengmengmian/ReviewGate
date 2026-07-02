@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 /// 审查范围模式。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiffMode {
     /// 工作区相对 HEAD 的改动（含暂存）+ 未跟踪文件。默认。
     Workspace,
@@ -151,5 +151,156 @@ impl FileDiff {
             }
         }
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(kind: LineKind, content: &str, old: Option<u32>, new: Option<u32>) -> Line {
+        Line {
+            kind,
+            content: content.into(),
+            old_lineno: old,
+            new_lineno: new,
+        }
+    }
+
+    fn file_diff(new_path: &str, hunks: Vec<Hunk>) -> FileDiff {
+        FileDiff {
+            old_path: None,
+            new_path: Some(new_path.into()),
+            status: FileStatus::Modified,
+            binary: false,
+            hunks,
+        }
+    }
+
+    #[test]
+    fn path_prefers_new_then_old_then_unknown() {
+        let mut f = file_diff("a.rs", vec![]);
+        assert_eq!(f.path(), "a.rs");
+        f.new_path = None;
+        f.old_path = Some("old.rs".into());
+        assert_eq!(f.path(), "old.rs");
+        f.old_path = None;
+        assert_eq!(f.path(), "<unknown>");
+    }
+
+    #[test]
+    fn added_and_deleted_line_counts() {
+        let hunk = Hunk {
+            old_start: 1,
+            old_count: 2,
+            new_start: 1,
+            new_count: 3,
+            section: String::new(),
+            lines: vec![
+                line(LineKind::Deleted, "a", Some(1), None),
+                line(LineKind::Added, "b", None, Some(1)),
+                line(LineKind::Added, "c", None, Some(2)),
+                line(LineKind::Context, "d", Some(2), Some(3)),
+            ],
+        };
+        let f = file_diff("x.rs", vec![hunk]);
+        assert_eq!(f.added_lines(), 2);
+        assert_eq!(f.deleted_lines(), 1);
+    }
+
+    #[test]
+    fn by_new_path_indexes_only_new_paths() {
+        let a = FileDiff {
+            old_path: Some("old.rs".into()),
+            new_path: Some("a.rs".into()),
+            status: FileStatus::Renamed,
+            binary: false,
+            hunks: vec![],
+        };
+        let b = FileDiff {
+            old_path: Some("b.rs".into()),
+            new_path: None,
+            status: FileStatus::Deleted,
+            binary: false,
+            hunks: vec![],
+        };
+        let diff = Diff { files: vec![a, b] };
+        let idx = diff.by_new_path();
+        assert_eq!(idx.len(), 1);
+        assert!(idx.contains_key("a.rs"));
+        assert!(!idx.contains_key("b.rs"));
+    }
+
+    #[test]
+    fn render_for_prompt_includes_status_and_line_numbers() {
+        let f = file_diff(
+            "src/main.rs",
+            vec![Hunk {
+                old_start: 1,
+                old_count: 1,
+                new_start: 1,
+                new_count: 2,
+                section: "fn main".into(),
+                lines: vec![
+                    line(LineKind::Context, "fn main() {", Some(1), Some(1)),
+                    line(LineKind::Added, "    println!();", None, Some(2)),
+                ],
+            }],
+        );
+        let out = f.render_for_prompt();
+        assert!(out.contains("### src/main.rs  [Modified]"));
+        assert!(out.contains("@@ -1,1 +1,2 @@ fn main"));
+        assert!(
+            out.contains("     1  fn main() {"),
+            "actual context line: {out:?}"
+        );
+        assert!(
+            out.contains("     2 +    println!();"),
+            "actual added line: {out:?}"
+        );
+    }
+
+    #[test]
+    fn render_binary_file_omits_content() {
+        let f = FileDiff {
+            old_path: None,
+            new_path: Some("img.png".into()),
+            status: FileStatus::Added,
+            binary: true,
+            hunks: vec![],
+        };
+        let out = f.render_for_prompt();
+        assert!(out.contains("img.png"));
+        assert!(out.contains("(binary file, omitted)"));
+    }
+
+    #[test]
+    fn render_deleted_lines_have_no_number() {
+        let f = file_diff(
+            "src/x.rs",
+            vec![Hunk {
+                old_start: 5,
+                old_count: 1,
+                new_start: 5,
+                new_count: 0,
+                section: String::new(),
+                lines: vec![line(LineKind::Deleted, "removed", Some(5), None)],
+            }],
+        );
+        let out = f.render_for_prompt();
+        assert!(out.contains("       -removed"));
+        assert!(!out.contains("     5 -removed"));
+    }
+
+    #[test]
+    fn render_diff_joins_files_with_blank_line() {
+        let diff = Diff {
+            files: vec![file_diff("a.rs", vec![]), file_diff("b.rs", vec![])],
+        };
+        let out = diff.render_for_prompt();
+        let parts: Vec<_> = out.split("\n").collect();
+        // Two headers plus a trailing empty line.
+        assert!(parts.iter().any(|s| s.contains("a.rs")));
+        assert!(parts.iter().any(|s| s.contains("b.rs")));
     }
 }

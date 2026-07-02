@@ -530,3 +530,200 @@ fn warning_for_exit(dim: Dimension, run: &AgentRun) -> Option<ReviewWarning> {
         AgentExitReason::Completed | AgentExitReason::MaxRounds => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::{AgentExitReason, AgentRun, AgentStats};
+    use crate::model::{Dimension, Finding, Reachability, Severity, Usage};
+
+    fn finding(dim: Dimension) -> Finding {
+        Finding {
+            dimension: dim,
+            confidence: 0.9,
+            severity: Severity::High,
+            path: "a.rs".into(),
+            start_line: 1,
+            end_line: 1,
+            message: "m".into(),
+            existing_code: "x".into(),
+            evidence: String::new(),
+            suggestion: None,
+            suggestion_code: String::new(),
+            reachability: Reachability::Unknown,
+            filtered: false,
+            agreed_dimensions: 1,
+            criterion: None,
+            intent_status: None,
+        }
+    }
+
+    fn run_with(findings: Vec<Finding>, reason: AgentExitReason) -> AgentRun {
+        let mut stats = AgentStats::default();
+        stats.llm_requests = 1;
+        stats.findings_reported = findings.len();
+        AgentRun {
+            findings,
+            stats,
+            exit_reason: reason,
+            error_detail: None,
+        }
+    }
+
+    #[test]
+    fn collect_aggregates_findings_and_stats() {
+        let mut warnings = Vec::new();
+        let mut incomplete = false;
+        let results = vec![
+            (
+                Dimension::Security,
+                Ok(run_with(
+                    vec![finding(Dimension::Security)],
+                    AgentExitReason::Completed,
+                )),
+            ),
+            (
+                Dimension::Logic,
+                Ok(run_with(
+                    vec![finding(Dimension::Logic)],
+                    AgentExitReason::Completed,
+                )),
+            ),
+        ];
+        let (findings, stats) = collect_agent_results(results, &mut warnings, &mut incomplete);
+        assert_eq!(findings.len(), 2);
+        assert_eq!(stats.llm_requests, 2);
+        assert_eq!(stats.findings_reported, 2);
+        assert!(warnings.is_empty());
+        assert!(!incomplete);
+    }
+
+    #[test]
+    fn collect_marks_incomplete_on_timeout_and_failed() {
+        let mut warnings = Vec::new();
+        let mut incomplete = false;
+        let results = vec![
+            (
+                Dimension::Security,
+                Ok(run_with(vec![], AgentExitReason::TimedOut)),
+            ),
+            (Dimension::Logic, Err(anyhow::anyhow!("boom"))),
+        ];
+        let (findings, _) = collect_agent_results(results, &mut warnings, &mut incomplete);
+        assert!(findings.is_empty());
+        assert!(incomplete);
+        assert_eq!(warnings.len(), 2);
+        assert!(warnings.iter().any(|w| w.kind == "timed_out"));
+        assert!(warnings.iter().any(|w| w.kind == "failed"));
+    }
+
+    #[test]
+    fn collect_keeps_partial_findings_on_failure() {
+        let f = finding(Dimension::Security);
+        let mut warnings = Vec::new();
+        let mut incomplete = false;
+        let results = vec![(
+            Dimension::Security,
+            Ok(run_with(vec![f.clone()], AgentExitReason::TimedOut)),
+        )];
+        let (findings, _) = collect_agent_results(results, &mut warnings, &mut incomplete);
+        assert_eq!(findings.len(), 1);
+        assert!(incomplete);
+    }
+
+    #[test]
+    fn warning_for_exit_maps_reasons() {
+        let completed = AgentRun {
+            findings: vec![],
+            stats: AgentStats::default(),
+            exit_reason: AgentExitReason::Completed,
+            error_detail: None,
+        };
+        assert!(warning_for_exit(Dimension::Security, &completed).is_none());
+
+        let timed = AgentRun {
+            findings: vec![],
+            stats: AgentStats::default(),
+            exit_reason: AgentExitReason::TimedOut,
+            error_detail: None,
+        };
+        let w = warning_for_exit(Dimension::Perf, &timed).unwrap();
+        assert_eq!(w.kind, "timed_out");
+        assert_eq!(w.dimension, "perf");
+
+        let auth = AgentRun {
+            findings: vec![],
+            stats: AgentStats::default(),
+            exit_reason: AgentExitReason::AuthFailed,
+            error_detail: Some("401".into()),
+        };
+        let w = warning_for_exit(Dimension::Security, &auth).unwrap();
+        assert_eq!(w.kind, "auth_failed");
+        assert!(w.message.contains("401"));
+
+        let ctx = AgentRun {
+            findings: vec![],
+            stats: AgentStats::default(),
+            exit_reason: AgentExitReason::ContextOverflow,
+            error_detail: None,
+        };
+        assert_eq!(
+            warning_for_exit(Dimension::Logic, &ctx).unwrap().kind,
+            "incomplete"
+        );
+    }
+
+    #[test]
+    fn review_options_defaults() {
+        let opts = ReviewOptions::new(DiffMode::Commit("abc".into()), Dimension::ALL.to_vec());
+        assert!(opts.judge);
+        assert_eq!(opts.samples, 1);
+        assert!(!opts.exec_verify);
+        assert_eq!(opts.judge_concurrency, 4);
+        assert_eq!(opts.fanout_concurrency, 6);
+        assert!(opts.intent.is_none());
+        assert!(!opts.verbose);
+
+        let ws = ReviewOptions::workspace(Dimension::ALL.to_vec());
+        assert!(matches!(ws.mode, DiffMode::Workspace));
+    }
+
+    #[test]
+    fn agent_stats_aggregate_usage_and_tools() {
+        let mut run1 = run_with(
+            vec![finding(Dimension::Security)],
+            AgentExitReason::Completed,
+        );
+        run1.stats.usage = Usage {
+            input_tokens: 10,
+            output_tokens: 5,
+            cache_read_input_tokens: 2,
+            cache_creation_input_tokens: 0,
+        };
+        run1.stats.tool_counts.insert("read_file".into(), 1);
+        let mut run2 = run_with(vec![finding(Dimension::Logic)], AgentExitReason::Completed);
+        run2.stats.usage = Usage {
+            input_tokens: 8,
+            output_tokens: 4,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 0,
+        };
+        run2.stats.tool_counts.insert("read_file".into(), 2);
+
+        let mut warnings = Vec::new();
+        let mut incomplete = false;
+        let (_, stats) = collect_agent_results(
+            vec![
+                (Dimension::Security, Ok(run1)),
+                (Dimension::Logic, Ok(run2)),
+            ],
+            &mut warnings,
+            &mut incomplete,
+        );
+
+        assert_eq!(stats.usage.input_tokens, 18);
+        assert_eq!(stats.usage.output_tokens, 9);
+        assert_eq!(stats.usage.cache_read_input_tokens, 2);
+        assert_eq!(stats.tool_counts["read_file"], 3);
+    }
+}

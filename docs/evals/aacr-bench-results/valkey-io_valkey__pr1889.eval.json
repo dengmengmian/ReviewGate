@@ -1,0 +1,94 @@
+{
+  "github_pr_url": "https://github.com/valkey-io/valkey/pull/1889",
+  "owner": "valkey-io",
+  "repo": "valkey",
+  "pr_number": "1889",
+  "evaluation_id": "valkey_1889",
+  "config": {
+    "line_distance_threshold": 1,
+    "semantic_matcher_type": "llm",
+    "enable_semantic_match": true
+  },
+  "positive_expected_nums": 2,
+  "total_generated_nums": 1,
+  "positive_match_nums": 1,
+  "positive_line_match_nums": 1,
+  "unmatched_nums": 0,
+  "positive_match_rate": 1.0,
+  "positive_recall_rate": 0.5,
+  "positive_line_match_rate": 1.0,
+  "positive_line_recall_rate": 0.5,
+  "unmatched_rate": 0.0,
+  "match_details": [
+    {
+      "generated_comment_index": 1,
+      "generated_comment": "逗号运算符导致 `snprintf` 格式字符串参数完全错误：三元表达式 `?:` 的两个分支都用括号包裹了格式字符串和其参数，但括号内的逗号被当作**逗号运算符**（而非函数参数分隔符），导致整个三元表达式只产出一个值（true 分支产出一个 `size_t`，false 分支产出 querybuf 尾部指针），该值被错误地当作 `snprintf` 的格式字符串。<br><br>**具体模拟**：当 `hide_user_data_from_log=1` 且剩余 querybuf ≥ 128 字节时，true 分支 `(\"...%zu bytes\", 200)` 经逗号运算符求值为 `(size_t)200`，`snprintf(buf, 256, 200)` 将数值 200 当作格式字符串指针解引用 → **段错误/未定义行为**。false 分支同样错误：格式字符串和参数全被逗号运算符吞掉，最终只有 querybuf 尾部片段作为格式字符串输出，格式说明符 `%s`、`%zu` 不会被替换。 (also flagged by ai_smell/security/style)",
+      "generated_location": {
+        "path": "src/networking.c",
+        "from_line": 2771,
+        "to_line": 2776,
+        "side": "right"
+      },
+      "line_match": true,
+      "semantic_match": true,
+      "matched_reference_id": "src/networking.c:2776:277674ece3c9ed91078d2bc2216f6dfeb0f5e79d9bd769dd8eea04aa90c9bd6e552a",
+      "matched_reference_note": "The snprintf ternary expression for redacting long query buffers has mismatched types and incorrect argument structure, failing to suppress user data exposure when `server.hide_user_data_from_log` is enabled and causing potential crashes.",
+      "matched_reference_location": {
+        "path": "src/networking.c",
+        "from_line": 2776,
+        "to_line": 2776,
+        "side": "right"
+      },
+      "matched_reference_details": {
+        "from_line": 2776,
+        "to_line": 2776,
+        "category": "Code Defect",
+        "context": "Diff Level",
+        "source_model": "",
+        "is_ai_comment": false
+      },
+      "location_match_details": {
+        "path_match": true,
+        "side_match": true,
+        "line_overlap": true
+      },
+      "llm_comparison": {
+        "is_similar": true,
+        "reason": "yes",
+        "raw_response": "yes"
+      }
+    }
+  ],
+  "matched_reference_comments": [
+    {
+      "reference_comment_id": "src/networking.c:2776:277674ece3c9ed91078d2bc2216f6dfeb0f5e79d9bd769dd8eea04aa90c9bd6e552a",
+      "reference_note": "The snprintf ternary expression for redacting long query buffers has mismatched types and incorrect argument structure, failing to suppress user data exposure when `server.hide_user_data_from_log` is enabled and causing potential crashes.",
+      "reference_location": {
+        "path": "src/networking.c",
+        "from_line": 2776,
+        "to_line": 2776,
+        "side": "right"
+      },
+      "reference_details": {
+        "from_line": 2776,
+        "to_line": 2776,
+        "category": "Code Defect",
+        "context": "Diff Level",
+        "source_model": "",
+        "is_ai_comment": false
+      },
+      "matched_by_generated_index": 1,
+      "matched_by_generated_note": "逗号运算符导致 `snprintf` 格式字符串参数完全错误：三元表达式 `?:` 的两个分支都用括号包裹了格式字符串和其参数，但括号内的逗号被当作**逗号运算符**（而非函数参数分隔符），导致整个三元表达式只产出一个值（true 分支产出一个 `size_t`，false 分支产出 querybuf 尾部指针），该值被错误地当作 `snprintf` 的格式字符串。<br><br>**具体模拟**：当 `hide_user_data_from_log=1` 且剩余 querybuf ≥ 128 字节时，true 分支 `(\"...%zu bytes\", 200)` 经逗号运算符求值为 `(size_t)200`，`snprintf(buf, 256, 200)` 将数值 200 当作格式字符串指针解引用 → **段错误/未定义行为**。false 分支同样错误：格式字符串和参数全被逗号运算符吞掉，最终只有 querybuf 尾部片段作为格式字符串输出，格式说明符 `%s`、`%zu` 不会被替换。 (also flagged by ai_smell/security/style)"
+    }
+  ],
+  "llm_comparisons": [
+    {
+      "generated_comment_index": 1,
+      "generated_note": "逗号运算符导致 `snprintf` 格式字符串参数完全错误：三元表达式 `?:` 的两个分支都用括号包裹了格式字符串和其参数，但括号内的逗号被当作**逗号运算符**（而非函数参数分隔符），导致整个三元表达式只产出一个值（true 分支产出一个 `size_t`，false 分支产出 querybuf 尾部指针），该值被错误地当作 `snprintf` 的格式字符串。<br><br>**具体模拟**：当 `hide_user_data_from_log=1` 且剩余 querybuf ≥ 128 字节时，true 分支 `(\"...%zu bytes\", 200)` 经逗号运算符求值为 `(size_t)200`，`snprintf(buf, 256, 200)` 将数值 200 当作格式字符串指针解引用 → **段错误/未定义行为**。false 分支同样错误：格式字符串和参数全被逗号运算符吞掉，最终只有 querybuf 尾部片段作为格式字符串输出，格式说明符 `%s`、`%zu` 不会被替换。 (also flagged by ai_smell/security/style)",
+      "reference_comment_id": "src/networking.c:2776:277674ece3c9ed91078d2bc2216f6dfeb0f5e79d9bd769dd8eea04aa90c9bd6e552a",
+      "reference_note": "The snprintf ternary expression for redacting long query buffers has mismatched types and incorrect argument structure, failing to suppress user data exposure when `server.hide_user_data_from_log` is enabled and causing potential crashes.",
+      "is_similar": true,
+      "llm_response": "yes"
+    }
+  ]
+}

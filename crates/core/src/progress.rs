@@ -44,6 +44,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn default_progress_starts_empty() {
+        let p = Progress::default();
+        assert_eq!(p.snapshot(), (0, String::new()));
+    }
+
+    #[test]
     fn records_count_and_latest_activity() {
         let p = Progress::new();
         assert_eq!(p.snapshot(), (0, String::new()));

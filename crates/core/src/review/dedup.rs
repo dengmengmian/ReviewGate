@@ -247,6 +247,31 @@ mod tests {
     }
 
     #[test]
+    fn cites_business_rule_detects_multiple_citations() {
+        assert!(cites_business_rule("[B1] rule"));
+        assert!(cites_business_rule("[B12] rule"));
+        assert!(!cites_business_rule("[BX] rule"));
+        assert!(!cites_business_rule("no citation"));
+    }
+
+    #[test]
+    fn unlocated_fallback_to_message_fingerprint() {
+        // existing_code 无显著行，但 message 不同 → 不应合并。
+        let input = vec![fc(Dimension::Logic, 0.9, "short"), {
+            let mut f = fc(Dimension::Perf, 0.9, "short");
+            f.message = "different message fingerprint".into();
+            f
+        }];
+        let out = dedupe(input);
+        assert_eq!(out.len(), 2);
+    }
+
+    #[test]
+    fn normalize_collapses_whitespace() {
+        assert_eq!(super::normalize("  a\t b  c "), "a b c");
+    }
+
+    #[test]
     fn sets_agreed_dimensions_count() {
         // 同一行被 3 个不同维度标记 → agreed_dimensions == 3；单独的那条 == 1。
         let input = vec![

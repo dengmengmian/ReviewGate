@@ -1,0 +1,348 @@
+{
+  "github_pr_url": "https://github.com/lvgl/lvgl/pull/8689",
+  "owner": "lvgl",
+  "repo": "lvgl",
+  "pr_number": "8689",
+  "evaluation_id": "lvgl_8689",
+  "config": {
+    "line_distance_threshold": 1,
+    "semantic_matcher_type": "llm",
+    "enable_semantic_match": true
+  },
+  "positive_expected_nums": 33,
+  "total_generated_nums": 8,
+  "positive_match_nums": 3,
+  "positive_line_match_nums": 4,
+  "unmatched_nums": 5,
+  "positive_match_rate": 0.375,
+  "positive_recall_rate": 0.091,
+  "positive_line_match_rate": 0.5,
+  "positive_line_recall_rate": 0.121,
+  "unmatched_rate": 0.625,
+  "match_details": [
+    {
+      "generated_comment_index": 1,
+      "generated_comment": "`lv_spangroup_set_span_text_fmt` 中存在与 `lv_span_set_text_fmt` 完全相同的内存泄漏：条件 `span->txt == NULL && span->static_flag` 写反了（应为 `span->txt != NULL && span->static_flag == 0`），导致每次调用时旧的动态分配文本不会被释放，造成内存泄漏。 (also flagged by perf)",
+      "generated_location": {
+        "path": "src/widgets/span/lv_span.c",
+        "from_line": 274,
+        "to_line": 282,
+        "side": "right"
+      },
+      "line_match": true,
+      "semantic_match": true,
+      "matched_reference_id": "src/widgets/span/lv_span.c:267:273eeb1bb4c81b6f3336e443e01a31d7c326a839dfe2c75f1739b1b84eac8135207",
+      "matched_reference_note": "This function shares the same implementation issues as `lv_span_set_text_fmt`:\n1. Missing `va_end(args)` before `return` if `text` allocation fails.\n2. Incorrect logic for freeing `span->txt`. The condition `if(span->txt == NULL && span->static_flag)` prevents freeing existing dynamic memory, causing a leak. It should be `if(span->static_flag == 0 && span->txt != NULL)`.\n",
+      "matched_reference_location": {
+        "path": "src/widgets/span/lv_span.c",
+        "from_line": 267,
+        "to_line": 273,
+        "side": "right"
+      },
+      "matched_reference_details": {
+        "from_line": 267,
+        "to_line": 273,
+        "category": "Code Defect",
+        "context": "Diff Level",
+        "source_model": "Gemini-3-Pro",
+        "is_ai_comment": true
+      },
+      "location_match_details": {
+        "path_match": true,
+        "side_match": true,
+        "line_overlap": true
+      },
+      "llm_comparison": {
+        "is_similar": true,
+        "reason": "yes",
+        "raw_response": "yes"
+      }
+    },
+    {
+      "generated_comment_index": 2,
+      "generated_comment": "`lv_span_set_text_fmt` 中释放旧文本的条件写反了：`span->txt == NULL && span->static_flag` 永远不会释放已动态分配的旧文本。当 `span->txt != NULL && span->static_flag == 0`（即旧文本是动态分配的，需要被释放）时，条件为 false → 内存泄漏。当 `span->txt == NULL` 时，`lv_free(NULL)` 虽无害但无意义。正确条件应为 `span->txt != NULL && span->static_flag == 0`，与同文件中 `lv_span_set_text_static`（第237行）的模式一致。这是典型的 AI 复制粘贴时条件取反错误。 (also flagged by perf)",
+      "generated_location": {
+        "path": "src/widgets/span/lv_span.c",
+        "from_line": 216,
+        "to_line": 222,
+        "side": "right"
+      },
+      "line_match": false,
+      "semantic_match": false,
+      "matched_reference_id": null,
+      "matched_reference_note": null,
+      "matched_reference_location": null,
+      "matched_reference_details": {},
+      "location_match_details": {},
+      "llm_comparison": null
+    },
+    {
+      "generated_comment_index": 3,
+      "generated_comment": "`lv_spangroup_bind_span_text` 函数声明被 `#if LV_USE_LABEL` / `#endif` 包围，但该函数操作的是 Spangroup/Span 控件（依赖 `LV_USE_SPAN`），而非 Label。这既误导读者（注释也错误地写了 \"Bind ... to a Label\"），也可能在 `LV_USE_LABEL=0` 但 `LV_USE_SPAN=1` 时导致函数不可用。应改为 `#if LV_USE_SPAN`，并修正注释中 \"Label\" 为 \"Span/SpanGroup\"。 (also flagged by ai_smell)",
+      "generated_location": {
+        "path": "src/others/observer/lv_observer.h",
+        "from_line": 548,
+        "to_line": 564,
+        "side": "right"
+      },
+      "line_match": true,
+      "semantic_match": false,
+      "matched_reference_id": "src/others/observer/lv_observer.h:551:5510985cc8f7beb850033153935d8409d4c46430627c8e127a12e17d24ac2e8adcf",
+      "matched_reference_note": "The function documentation incorrectly states it binds to a Label when parameters clearly indicate it operates on a Spangroup's Span. Update the comment to accurately describe binding to a Spangroup's Span to prevent developer confusion.",
+      "matched_reference_location": {
+        "path": "src/others/observer/lv_observer.h",
+        "from_line": 551,
+        "to_line": 551,
+        "side": "right"
+      },
+      "matched_reference_details": {
+        "from_line": 551,
+        "to_line": 551,
+        "category": "Maintainability and Readability",
+        "context": "File Level",
+        "source_model": "",
+        "is_ai_comment": false
+      },
+      "location_match_details": {
+        "path_match": true,
+        "side_match": true,
+        "line_overlap": true
+      },
+      "llm_comparison": null
+    },
+    {
+      "generated_comment_index": 4,
+      "generated_comment": "`lv_xml_style.c` 和 `lv_xml_obj_parser.c` 中存在几乎完全相同的 grid_dsc_array 解析代码（约 35 行），包括空格计数、`fr(` 前缀处理、`LV_GRID_TEMPLATE_LAST` 终止。仅循环变量名和最终调用的 API 不同。如果后续需要修改解析逻辑（例如支持新的 fr 语法或修复边界条件），必须同时修改两处，极易遗漏导致行为不一致。应提取为共享辅助函数（例如 `lv_xml_parse_grid_dsc_array`）。",
+      "generated_location": {
+        "path": "src/others/xml/lv_xml_style.c",
+        "from_line": 284,
+        "to_line": 317,
+        "side": "right"
+      },
+      "line_match": true,
+      "semantic_match": false,
+      "matched_reference_id": "src/others/xml/lv_xml_style.c:311:3166dedc4581d162f29d095cafef218c579c5f0a413b0b293da4b40a9b613eaccd3",
+      "matched_reference_note": "After setting the style property, the allocated dsc_array should be freed to prevent memory leak.\n",
+      "matched_reference_location": {
+        "path": "src/others/xml/lv_xml_style.c",
+        "from_line": 311,
+        "to_line": 316,
+        "side": "right"
+      },
+      "matched_reference_details": {
+        "from_line": 311,
+        "to_line": 316,
+        "category": "Performance",
+        "context": "Diff Level",
+        "source_model": "Deepseek-V3.2",
+        "is_ai_comment": true
+      },
+      "location_match_details": {
+        "path_match": true,
+        "side_match": true,
+        "line_overlap": true
+      },
+      "llm_comparison": null
+    },
+    {
+      "generated_comment_index": 5,
+      "generated_comment": "`lv_xml_spangroup_parser.c` 新增的 `free_fmt_event_cb` 与全局 `lv_event_free_user_data_cb`（`lv_event.c:242`）功能完全相同——都是获取 `user_data` 并 `lv_free`。本次变更在其他地方（`lv_xml_label_parser.c`、`lv_obj.c`、`lv_observer.c` 等多处）已将原有的本地 `free_*_event_cb` 统一替换为 `lv_event_free_user_data_cb`，但 spangroup parser 却又重新引入了重复的静态函数。这不仅是不一致的实践，也增加了代码体积。应直接使用 `lv_event_free_user_data_cb` 并删除本地的 `free_fmt_event_cb`。",
+      "generated_location": {
+        "path": "src/others/xml/parsers/lv_xml_spangroup_parser.c",
+        "from_line": 120,
+        "to_line": 124,
+        "side": "right"
+      },
+      "line_match": false,
+      "semantic_match": false,
+      "matched_reference_id": null,
+      "matched_reference_note": null,
+      "matched_reference_location": null,
+      "matched_reference_details": {},
+      "location_match_details": {},
+      "llm_comparison": null
+    },
+    {
+      "generated_comment_index": 6,
+      "generated_comment": "`lv_span_set_text_fmt` 中，当 `lv_text_set_text_vfmt` 返回 NULL 时（在断言被禁用/不中止的构建中），函数会在未调用 `va_end(args)` 的情况下直接 return。根据 C 标准，在 `va_start` 之后未调用 `va_end` 就返回是未定义行为。应在 `va_end` 之后再检查 NULL 返回。",
+      "generated_location": {
+        "path": "src/widgets/span/lv_span.c",
+        "from_line": 208,
+        "to_line": 214,
+        "side": "right"
+      },
+      "line_match": true,
+      "semantic_match": true,
+      "matched_reference_id": "src/widgets/span/lv_span.c:212:214afdfd85f6f443be9f54c008b10bbc43b56825db4b22c5f44da3f0c8efa209361",
+      "matched_reference_note": "Variable argument list not properly cleaned up on error path. The function returns without calling va_end(args) when text allocation fails, violating the C standard requirement for matching va_start/va_end pairs and potentially causing undefined behavior.",
+      "matched_reference_location": {
+        "path": "src/widgets/span/lv_span.c",
+        "from_line": 212,
+        "to_line": 214,
+        "side": "right"
+      },
+      "matched_reference_details": {
+        "from_line": 212,
+        "to_line": 214,
+        "category": "Code Defect",
+        "context": "Diff Level",
+        "source_model": "",
+        "is_ai_comment": false
+      },
+      "location_match_details": {
+        "path_match": true,
+        "side_match": true,
+        "line_overlap": true
+      },
+      "llm_comparison": {
+        "is_similar": true,
+        "reason": "yes",
+        "raw_response": "yes"
+      }
+    },
+    {
+      "generated_comment_index": 7,
+      "generated_comment": "`lv_spangroup_bind_span_text` 的文档注释第一行写的是 \"Bind ... to a Label.\"，但该函数绑定的是 Spangroup 的 Span 文本，而非 Label。这是从 `lv_label_bind_text` 复制粘贴时未更新的残留文字。虽然 `@param obj` 已正确写为 \"pointer to Spangroup\"，但摘要行仍然具有误导性。",
+      "generated_location": {
+        "path": "src/others/observer/lv_observer.h",
+        "from_line": 550,
+        "to_line": 553,
+        "side": "right"
+      },
+      "line_match": false,
+      "semantic_match": true,
+      "matched_reference_id": "src/others/observer/lv_observer.h:551:5510985cc8f7beb850033153935d8409d4c46430627c8e127a12e17d24ac2e8adcf",
+      "matched_reference_note": "The function documentation incorrectly states it binds to a Label when parameters clearly indicate it operates on a Spangroup's Span. Update the comment to accurately describe binding to a Spangroup's Span to prevent developer confusion.",
+      "matched_reference_location": {
+        "path": "src/others/observer/lv_observer.h",
+        "from_line": 551,
+        "to_line": 551,
+        "side": "right"
+      },
+      "matched_reference_details": {
+        "from_line": 551,
+        "to_line": 551,
+        "category": "Maintainability and Readability",
+        "context": "File Level",
+        "source_model": "",
+        "is_ai_comment": false
+      },
+      "location_match_details": {
+        "path_match": true,
+        "side_match": true,
+        "line_overlap": true
+      },
+      "llm_comparison": {
+        "is_similar": true,
+        "reason": "yes",
+        "raw_response": "yes"
+      }
+    },
+    {
+      "generated_comment_index": 8,
+      "generated_comment": "`lv_span_set_text_fmt`（第 202-222 行）和 `lv_spangroup_set_span_text_fmt`（第 260-282 行）内部实现了完全相同的文本格式化与 span 更新逻辑（~15 行），唯一区别是后者末尾多了 `lv_spangroup_refresh(obj)`。建议将公共逻辑抽取为静态辅助函数（如 `span_set_text_fmt_impl`），或让 `lv_spangroup_set_span_text_fmt` 调用 `lv_span_set_text_fmt` 后再 refresh，以减少维护负担和未来漂移风险。",
+      "generated_location": {
+        "path": "src/widgets/span/lv_span.c",
+        "from_line": 260,
+        "to_line": 282,
+        "side": "right"
+      },
+      "line_match": false,
+      "semantic_match": false,
+      "matched_reference_id": null,
+      "matched_reference_note": null,
+      "matched_reference_location": null,
+      "matched_reference_details": {},
+      "location_match_details": {},
+      "llm_comparison": null
+    }
+  ],
+  "matched_reference_comments": [
+    {
+      "reference_comment_id": "src/widgets/span/lv_span.c:267:273eeb1bb4c81b6f3336e443e01a31d7c326a839dfe2c75f1739b1b84eac8135207",
+      "reference_note": "This function shares the same implementation issues as `lv_span_set_text_fmt`:\n1. Missing `va_end(args)` before `return` if `text` allocation fails.\n2. Incorrect logic for freeing `span->txt`. The condition `if(span->txt == NULL && span->static_flag)` prevents freeing existing dynamic memory, causing a leak. It should be `if(span->static_flag == 0 && span->txt != NULL)`.\n",
+      "reference_location": {
+        "path": "src/widgets/span/lv_span.c",
+        "from_line": 267,
+        "to_line": 273,
+        "side": "right"
+      },
+      "reference_details": {
+        "from_line": 267,
+        "to_line": 273,
+        "category": "Code Defect",
+        "context": "Diff Level",
+        "source_model": "Gemini-3-Pro",
+        "is_ai_comment": true
+      },
+      "matched_by_generated_index": 1,
+      "matched_by_generated_note": "`lv_spangroup_set_span_text_fmt` 中存在与 `lv_span_set_text_fmt` 完全相同的内存泄漏：条件 `span->txt == NULL && span->static_flag` 写反了（应为 `span->txt != NULL && span->static_flag == 0`），导致每次调用时旧的动态分配文本不会被释放，造成内存泄漏。 (also flagged by perf)"
+    },
+    {
+      "reference_comment_id": "src/widgets/span/lv_span.c:212:214afdfd85f6f443be9f54c008b10bbc43b56825db4b22c5f44da3f0c8efa209361",
+      "reference_note": "Variable argument list not properly cleaned up on error path. The function returns without calling va_end(args) when text allocation fails, violating the C standard requirement for matching va_start/va_end pairs and potentially causing undefined behavior.",
+      "reference_location": {
+        "path": "src/widgets/span/lv_span.c",
+        "from_line": 212,
+        "to_line": 214,
+        "side": "right"
+      },
+      "reference_details": {
+        "from_line": 212,
+        "to_line": 214,
+        "category": "Code Defect",
+        "context": "Diff Level",
+        "source_model": "",
+        "is_ai_comment": false
+      },
+      "matched_by_generated_index": 6,
+      "matched_by_generated_note": "`lv_span_set_text_fmt` 中，当 `lv_text_set_text_vfmt` 返回 NULL 时（在断言被禁用/不中止的构建中），函数会在未调用 `va_end(args)` 的情况下直接 return。根据 C 标准，在 `va_start` 之后未调用 `va_end` 就返回是未定义行为。应在 `va_end` 之后再检查 NULL 返回。"
+    },
+    {
+      "reference_comment_id": "src/others/observer/lv_observer.h:551:5510985cc8f7beb850033153935d8409d4c46430627c8e127a12e17d24ac2e8adcf",
+      "reference_note": "The function documentation incorrectly states it binds to a Label when parameters clearly indicate it operates on a Spangroup's Span. Update the comment to accurately describe binding to a Spangroup's Span to prevent developer confusion.",
+      "reference_location": {
+        "path": "src/others/observer/lv_observer.h",
+        "from_line": 551,
+        "to_line": 551,
+        "side": "right"
+      },
+      "reference_details": {
+        "from_line": 551,
+        "to_line": 551,
+        "category": "Maintainability and Readability",
+        "context": "File Level",
+        "source_model": "",
+        "is_ai_comment": false
+      },
+      "matched_by_generated_index": 7,
+      "matched_by_generated_note": "`lv_spangroup_bind_span_text` 的文档注释第一行写的是 \"Bind ... to a Label.\"，但该函数绑定的是 Spangroup 的 Span 文本，而非 Label。这是从 `lv_label_bind_text` 复制粘贴时未更新的残留文字。虽然 `@param obj` 已正确写为 \"pointer to Spangroup\"，但摘要行仍然具有误导性。"
+    }
+  ],
+  "llm_comparisons": [
+    {
+      "generated_comment_index": 1,
+      "generated_note": "`lv_spangroup_set_span_text_fmt` 中存在与 `lv_span_set_text_fmt` 完全相同的内存泄漏：条件 `span->txt == NULL && span->static_flag` 写反了（应为 `span->txt != NULL && span->static_flag == 0`），导致每次调用时旧的动态分配文本不会被释放，造成内存泄漏。 (also flagged by perf)",
+      "reference_comment_id": "src/widgets/span/lv_span.c:267:273eeb1bb4c81b6f3336e443e01a31d7c326a839dfe2c75f1739b1b84eac8135207",
+      "reference_note": "This function shares the same implementation issues as `lv_span_set_text_fmt`:\n1. Missing `va_end(args)` before `return` if `text` allocation fails.\n2. Incorrect logic for freeing `span->txt`. The condition `if(span->txt == NULL && span->static_flag)` prevents freeing existing dynamic memory, causing a leak. It should be `if(span->static_flag == 0 && span->txt != NULL)`.\n",
+      "is_similar": true,
+      "llm_response": "yes"
+    },
+    {
+      "generated_comment_index": 6,
+      "generated_note": "`lv_span_set_text_fmt` 中，当 `lv_text_set_text_vfmt` 返回 NULL 时（在断言被禁用/不中止的构建中），函数会在未调用 `va_end(args)` 的情况下直接 return。根据 C 标准，在 `va_start` 之后未调用 `va_end` 就返回是未定义行为。应在 `va_end` 之后再检查 NULL 返回。",
+      "reference_comment_id": "src/widgets/span/lv_span.c:212:214afdfd85f6f443be9f54c008b10bbc43b56825db4b22c5f44da3f0c8efa209361",
+      "reference_note": "Variable argument list not properly cleaned up on error path. The function returns without calling va_end(args) when text allocation fails, violating the C standard requirement for matching va_start/va_end pairs and potentially causing undefined behavior.",
+      "is_similar": true,
+      "llm_response": "yes"
+    },
+    {
+      "generated_comment_index": 7,
+      "generated_note": "`lv_spangroup_bind_span_text` 的文档注释第一行写的是 \"Bind ... to a Label.\"，但该函数绑定的是 Spangroup 的 Span 文本，而非 Label。这是从 `lv_label_bind_text` 复制粘贴时未更新的残留文字。虽然 `@param obj` 已正确写为 \"pointer to Spangroup\"，但摘要行仍然具有误导性。",
+      "reference_comment_id": "src/others/observer/lv_observer.h:551:5510985cc8f7beb850033153935d8409d4c46430627c8e127a12e17d24ac2e8adcf",
+      "reference_note": "The function documentation incorrectly states it binds to a Label when parameters clearly indicate it operates on a Spangroup's Span. Update the comment to accurately describe binding to a Spangroup's Span to prevent developer confusion.",
+      "is_similar": true,
+      "llm_response": "yes"
+    }
+  ]
+}

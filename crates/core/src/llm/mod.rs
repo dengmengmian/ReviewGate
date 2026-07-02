@@ -36,3 +36,31 @@ pub fn build_client(cfg: &ProviderConfig) -> Result<Box<dyn LlmClient>> {
         Protocol::Anthropic => Ok(Box::new(AnthropicClient::new(cfg)?)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ProviderConfig;
+
+    fn cfg(protocol: crate::config::Protocol) -> ProviderConfig {
+        ProviderConfig {
+            protocol,
+            base_url: "https://api.example.com".into(),
+            api_key: "sk-test".into(),
+            model: "m".into(),
+            max_input_tokens: None,
+        }
+    }
+
+    #[test]
+    fn build_client_openai() {
+        let client = build_client(&cfg(crate::config::Protocol::Openai)).unwrap();
+        assert_eq!(client.model(), "m");
+    }
+
+    #[test]
+    fn build_client_anthropic() {
+        let client = build_client(&cfg(crate::config::Protocol::Anthropic)).unwrap();
+        assert_eq!(client.model(), "m");
+    }
+}

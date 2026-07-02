@@ -156,4 +156,26 @@ mod tests {
         let out = apply_fix(f, 2, 3, "bad_b();", "fixed();").unwrap();
         assert_eq!(out, "x();\nfixed();\ny();\n");
     }
+
+    #[test]
+    fn apply_fix_multiline_anchor_matches() {
+        let f = "x();\nfoo();\nbar();\ny();\n";
+        let out = apply_fix(f, 2, 3, "foo();\nbar();", "baz();").unwrap();
+        assert_eq!(out, "x();\nbaz();\ny();\n");
+    }
+
+    #[test]
+    fn apply_fix_inverted_range_rejected() {
+        assert_eq!(
+            apply_fix(FILE, 3, 2, "bad();", "good();"),
+            Err(ApplyError::OutOfRange)
+        );
+    }
+
+    #[test]
+    fn splice_lines_preserves_lines_after_range() {
+        let f = "a();\nb();\nc();\nd();\n";
+        let out = splice_lines(f, 2, 3, "X();").unwrap();
+        assert_eq!(out, "a();\nX();\nd();\n");
+    }
 }

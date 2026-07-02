@@ -112,9 +112,11 @@ ReviewGate runs multiple agents in parallel, each focused on a review dimension:
 | security | injection, authorization bypasses, secret leaks, unsafe deserialization |
 | perf | N+1 queries, unnecessary copies, hot-path complexity, blocking calls |
 | logic | edge cases, null handling, error paths, concurrency races |
-| style | naming, readability, duplicated code |
 | ai_smell | hallucinated APIs, plausible-but-wrong code, assumption drift, unadapted copy/paste |
+| style | naming, readability, duplicated code — **off by default** (a quality gate leaves pure style to linters; enable with `--dimensions style`) |
 | business | project-specific rules, permission boundaries, state machines, money/order/inventory rules; enabled when `[business].rules` is configured |
+
+> By default review runs the four defect dimensions (security / perf / logic / ai_smell). style/business/intent are opt-in — the gate stays focused on high-risk issues instead of drowning them in style noise.
 
 Then it applies:
 

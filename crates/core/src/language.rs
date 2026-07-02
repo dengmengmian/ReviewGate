@@ -161,4 +161,24 @@ mod tests {
         // 未知但合法的语言标签：返回裸语言码（不硬塞英文）。
         assert_eq!(detect(&[("LANG", "vi_VN.UTF-8")]), "vi");
     }
+
+    #[test]
+    fn more_common_locales() {
+        assert_eq!(detect(&[("LANG", "de_DE.UTF-8")]), "German");
+        assert_eq!(detect(&[("LANG", "fr_FR.UTF-8")]), "French");
+        assert_eq!(detect(&[("LANG", "es_ES.UTF-8")]), "Spanish");
+        assert_eq!(detect(&[("LANG", "ru_RU.UTF-8")]), "Russian");
+        assert_eq!(detect(&[("LANG", "it_IT.UTF-8")]), "Italian");
+    }
+
+    #[test]
+    fn empty_explicit_output_language_ignored() {
+        assert_eq!(
+            detect(&[
+                ("REVIEWGATE_OUTPUT_LANGUAGE", "  "),
+                ("LANG", "zh_CN.UTF-8"),
+            ]),
+            "Chinese (Simplified)"
+        );
+    }
 }

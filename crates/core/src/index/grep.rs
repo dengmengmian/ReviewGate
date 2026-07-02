@@ -194,6 +194,40 @@ mod tests {
     }
 
     #[test]
+    fn parse_grep_line_extracts_path_line_content() {
+        let loc = parse_grep_line("src/a.rs:12:fn foo() {}", "foo").unwrap();
+        assert_eq!(loc.path, "src/a.rs");
+        assert_eq!(loc.line, 12);
+        assert_eq!(loc.col, 4); // "fn foo" 中 foo 在第 4 列（1-based）
+        assert_eq!(loc.snippet, "fn foo() {}");
+    }
+
+    #[test]
+    fn definition_kind_more_keywords() {
+        assert_eq!(
+            definition_kind("class User {", "User"),
+            Some(SymbolKind::Type)
+        );
+        assert_eq!(
+            definition_kind("let value = 1;", "value"),
+            Some(SymbolKind::Variable)
+        );
+        assert_eq!(
+            definition_kind("const MAX = 100;", "MAX"),
+            Some(SymbolKind::Variable)
+        );
+        assert_eq!(definition_kind("impl Trait for Type", "Type"), None);
+    }
+
+    #[test]
+    fn call_site_with_multiple_occurrences() {
+        // 出现多次，第一次是定义/赋值，第二次是调用 → 应识别。
+        assert!(is_call_site("let audit = 1; audit(x);", "audit"));
+        // 没有调用形态。
+        assert!(!is_call_site("let audit = 1; let b = audit;", "audit"));
+    }
+
+    #[test]
     fn validates_identifier() {
         assert!(is_identifier("foo_bar"));
         assert!(is_identifier("_x"));

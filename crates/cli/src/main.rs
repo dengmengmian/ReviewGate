@@ -594,9 +594,79 @@ async fn llm_test() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{exit_code, parse_dimensions, release_asset, FailOn};
+    use super::{exit_code, parse_dimensions, release_asset, resolve_mode, FailOn, ReviewArgs};
     use reviewgate_core::gate::GateDecision;
     use reviewgate_core::model::Dimension;
+
+    fn review_args() -> ReviewArgs {
+        ReviewArgs {
+            format: super::OutputFormat::Text,
+            dimensions: "all".into(),
+            commit: None,
+            from: None,
+            to: None,
+            no_judge: false,
+            show_filtered: false,
+            fail_on: FailOn::Block,
+            comment: false,
+            verbose: false,
+            timeout: 0,
+            samples: 1,
+            judge_concurrency: 4,
+            fanout_concurrency: 6,
+            fix: false,
+            fix_all: false,
+            fix_branch: None,
+            exec_verify: false,
+            intent: None,
+            intent_from_commit: false,
+        }
+    }
+
+    #[test]
+    fn resolve_mode_workspace_commit_range() {
+        use reviewgate_core::diff::DiffMode;
+        assert!(matches!(
+            resolve_mode(&None, &None, &None).unwrap(),
+            DiffMode::Workspace
+        ));
+        assert_eq!(
+            resolve_mode(&Some("abc".into()), &None, &None).unwrap(),
+            DiffMode::Commit("abc".into())
+        );
+        assert_eq!(
+            resolve_mode(&None, &Some("main".into()), &Some("HEAD".into())).unwrap(),
+            DiffMode::Range {
+                from: "main".into(),
+                to: "HEAD".into()
+            }
+        );
+        assert!(resolve_mode(&None, &Some("main".into()), &None).is_err());
+        assert!(resolve_mode(&None, &None, &Some("HEAD".into())).is_err());
+    }
+
+    #[test]
+    fn resolve_intent_from_file_or_none() {
+        let tmp = std::env::temp_dir().join(format!("rg_intent_{}", std::process::id()));
+        std::fs::write(&tmp, "意图说明\n").unwrap();
+
+        let mut args = review_args();
+        args.intent = Some(tmp.to_str().unwrap().into());
+        assert_eq!(
+            super::resolve_intent(&args).unwrap(),
+            Some("意图说明".into())
+        );
+
+        let args = review_args();
+        assert_eq!(super::resolve_intent(&args).unwrap(), None);
+
+        let mut args = review_args();
+        args.intent = Some(tmp.to_str().unwrap().into());
+        std::fs::write(&tmp, "   \n").unwrap();
+        assert_eq!(super::resolve_intent(&args).unwrap(), None);
+
+        let _ = std::fs::remove_file(&tmp);
+    }
 
     #[test]
     fn exit_code_gate_and_fail_on_matrix() {
@@ -637,7 +707,28 @@ mod tests {
         assert_eq!(parse_dimensions("all").unwrap(), Dimension::ALL.to_vec());
         let list = parse_dimensions("security,logic").unwrap();
         assert_eq!(list, vec![Dimension::Security, Dimension::Logic]);
+        let with_business = parse_dimensions("security,business").unwrap();
+        assert!(with_business.contains(&Dimension::Business));
         assert!(parse_dimensions("security,bogus").is_err());
+    }
+
+    #[test]
+    fn resolve_intent_from_commit_requires_commit() {
+        let mut args = review_args();
+        args.intent_from_commit = true;
+        assert!(super::resolve_intent(&args).is_err());
+    }
+
+    #[test]
+    fn exit_code_fail_on_never_allows_block_and_warn() {
+        assert_eq!(
+            exit_code(GateDecision::Block, false, false, FailOn::Never),
+            0
+        );
+        assert_eq!(
+            exit_code(GateDecision::Warn, false, false, FailOn::Never),
+            0
+        );
     }
 
     #[test]

@@ -101,3 +101,74 @@ impl Message {
             .join("")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn role_serde_round_trip() {
+        assert_eq!(serde_json::to_string(&Role::System).unwrap(), "\"system\"");
+        assert_eq!(
+            serde_json::to_string(&Role::Assistant).unwrap(),
+            "\"assistant\""
+        );
+        assert_eq!(serde_json::to_string(&Role::Tool).unwrap(), "\"tool\"");
+        let back: Role = serde_json::from_str("\"user\"").unwrap();
+        assert_eq!(back, Role::User);
+    }
+
+    #[test]
+    fn content_block_text_helper() {
+        let b = ContentBlock::text("hello");
+        assert!(matches!(b, ContentBlock::Text { text } if text == "hello"));
+    }
+
+    #[test]
+    fn message_user_and_assistant() {
+        let m = Message::user("hi");
+        assert_eq!(m.role, Role::User);
+        assert_eq!(m.text(), "hi");
+
+        let m = Message::assistant(vec![ContentBlock::text("a"), ContentBlock::text("b")]);
+        assert_eq!(m.role, Role::Assistant);
+        assert_eq!(m.text(), "ab");
+    }
+
+    #[test]
+    fn message_tool_results_packs_blocks() {
+        let results = vec![
+            ToolResult {
+                tool_use_id: "t1".into(),
+                content: "ok".into(),
+                is_error: false,
+            },
+            ToolResult {
+                tool_use_id: "t2".into(),
+                content: "err".into(),
+                is_error: true,
+            },
+        ];
+        let m = Message::tool_results(results);
+        assert_eq!(m.role, Role::Tool);
+        assert_eq!(m.content.len(), 2);
+        assert!(matches!(&m.content[0], ContentBlock::ToolResult(r) if r.tool_use_id == "t1"));
+    }
+
+    #[test]
+    fn message_text_ignores_nontext_blocks() {
+        let m = Message {
+            role: Role::Assistant,
+            content: vec![
+                ContentBlock::text("hello "),
+                ContentBlock::ToolUse(ToolUse {
+                    id: "x".into(),
+                    name: "y".into(),
+                    input: serde_json::json!({}),
+                }),
+                ContentBlock::text("world"),
+            ],
+        };
+        assert_eq!(m.text(), "hello world");
+    }
+}

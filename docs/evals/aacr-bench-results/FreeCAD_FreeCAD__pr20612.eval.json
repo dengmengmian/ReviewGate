@@ -1,0 +1,112 @@
+{
+  "github_pr_url": "https://github.com/FreeCAD/FreeCAD/pull/20612",
+  "owner": "FreeCAD",
+  "repo": "FreeCAD",
+  "pr_number": "20612",
+  "evaluation_id": "FreeCAD_20612",
+  "config": {
+    "line_distance_threshold": 1,
+    "semantic_matcher_type": "llm",
+    "enable_semantic_match": true
+  },
+  "positive_expected_nums": 3,
+  "total_generated_nums": 2,
+  "positive_match_nums": 1,
+  "positive_line_match_nums": 1,
+  "unmatched_nums": 1,
+  "positive_match_rate": 0.5,
+  "positive_recall_rate": 0.333,
+  "positive_line_match_rate": 0.5,
+  "positive_line_recall_rate": 0.333,
+  "unmatched_rate": 0.5,
+  "match_details": [
+    {
+      "generated_comment_index": 1,
+      "generated_comment": "调用者未同步更新：CosmeticExtension.cpp 仍通过 DU（DrawUtil 别名）调用 isCosmeticVertex / isCosmeticEdge / isCenterLine，但这些函数已从 DrawUtil 中删除并移至 DrawViewPart。这将导致编译/链接失败。",
+      "generated_location": {
+        "path": "src/Mod/TechDraw/App/CosmeticExtension.cpp",
+        "from_line": 70,
+        "to_line": 71,
+        "side": "right"
+      },
+      "line_match": false,
+      "semantic_match": false,
+      "matched_reference_id": null,
+      "matched_reference_note": null,
+      "matched_reference_location": null,
+      "matched_reference_details": {},
+      "location_match_details": {},
+      "llm_comparison": null
+    },
+    {
+      "generated_comment_index": 2,
+      "generated_comment": "头文件声明与实现签名不匹配，导致编译错误。头文件声明为 static 成员函数并接受 (App::DocumentObject* owner, std::string element) 两个参数，但实现只接受 (std::string element) 一个参数。此外，实现体内调用了 getProjVertexByIndex() 和 getEdge() 等非静态成员函数，与 static 声明矛盾——static 成员函数没有 this 指针，无法调用非静态成员。 (also flagged by ai_smell/style)",
+      "generated_location": {
+        "path": "src/Mod/TechDraw/App/DrawViewPart.h",
+        "from_line": 242,
+        "to_line": 244,
+        "side": "right"
+      },
+      "line_match": true,
+      "semantic_match": true,
+      "matched_reference_id": "src/Mod/TechDraw/App/DrawViewPart.h:242:245e3ee06bacb440aae2e44d8f4dfeff54f010e2df363b3131fa040f322d711f85c",
+      "matched_reference_note": "The newly added member functions `isCosmeticVertex`, `isCosmeticEdge`, and `isCenterLine` are incorrectly declared as `static` with an unnecessary `owner` parameter; remove `static` and the `App::DocumentObject* owner` argument to correctly implement them as non-static member functions operating on the current instance.",
+      "matched_reference_location": {
+        "path": "src/Mod/TechDraw/App/DrawViewPart.h",
+        "from_line": 242,
+        "to_line": 245,
+        "side": "right"
+      },
+      "matched_reference_details": {
+        "from_line": 242,
+        "to_line": 245,
+        "category": "Code Defect",
+        "context": "Repo Level",
+        "source_model": "",
+        "is_ai_comment": false
+      },
+      "location_match_details": {
+        "path_match": true,
+        "side_match": true,
+        "line_overlap": true
+      },
+      "llm_comparison": {
+        "is_similar": true,
+        "reason": "yes",
+        "raw_response": "yes"
+      }
+    }
+  ],
+  "matched_reference_comments": [
+    {
+      "reference_comment_id": "src/Mod/TechDraw/App/DrawViewPart.h:242:245e3ee06bacb440aae2e44d8f4dfeff54f010e2df363b3131fa040f322d711f85c",
+      "reference_note": "The newly added member functions `isCosmeticVertex`, `isCosmeticEdge`, and `isCenterLine` are incorrectly declared as `static` with an unnecessary `owner` parameter; remove `static` and the `App::DocumentObject* owner` argument to correctly implement them as non-static member functions operating on the current instance.",
+      "reference_location": {
+        "path": "src/Mod/TechDraw/App/DrawViewPart.h",
+        "from_line": 242,
+        "to_line": 245,
+        "side": "right"
+      },
+      "reference_details": {
+        "from_line": 242,
+        "to_line": 245,
+        "category": "Code Defect",
+        "context": "Repo Level",
+        "source_model": "",
+        "is_ai_comment": false
+      },
+      "matched_by_generated_index": 2,
+      "matched_by_generated_note": "头文件声明与实现签名不匹配，导致编译错误。头文件声明为 static 成员函数并接受 (App::DocumentObject* owner, std::string element) 两个参数，但实现只接受 (std::string element) 一个参数。此外，实现体内调用了 getProjVertexByIndex() 和 getEdge() 等非静态成员函数，与 static 声明矛盾——static 成员函数没有 this 指针，无法调用非静态成员。 (also flagged by ai_smell/style)"
+    }
+  ],
+  "llm_comparisons": [
+    {
+      "generated_comment_index": 2,
+      "generated_note": "头文件声明与实现签名不匹配，导致编译错误。头文件声明为 static 成员函数并接受 (App::DocumentObject* owner, std::string element) 两个参数，但实现只接受 (std::string element) 一个参数。此外，实现体内调用了 getProjVertexByIndex() 和 getEdge() 等非静态成员函数，与 static 声明矛盾——static 成员函数没有 this 指针，无法调用非静态成员。 (also flagged by ai_smell/style)",
+      "reference_comment_id": "src/Mod/TechDraw/App/DrawViewPart.h:242:245e3ee06bacb440aae2e44d8f4dfeff54f010e2df363b3131fa040f322d711f85c",
+      "reference_note": "The newly added member functions `isCosmeticVertex`, `isCosmeticEdge`, and `isCenterLine` are incorrectly declared as `static` with an unnecessary `owner` parameter; remove `static` and the `App::DocumentObject* owner` argument to correctly implement them as non-static member functions operating on the current instance.",
+      "is_similar": true,
+      "llm_response": "yes"
+    }
+  ]
+}

@@ -76,6 +76,33 @@ mod tests {
     }
 
     #[test]
+    fn sort_ties_by_severity_when_confidence_equal() {
+        let mut fs = vec![
+            {
+                let mut f = finding(0.8, 1);
+                f.severity = Severity::Low;
+                f
+            },
+            {
+                let mut f = finding(0.8, 1);
+                f.severity = Severity::High;
+                f
+            },
+        ];
+        sort_findings(&mut fs);
+        assert_eq!(fs[0].severity, Severity::High);
+        assert_eq!(fs[1].severity, Severity::Low);
+    }
+
+    #[test]
+    fn agreement_boost_no_effect_when_single_dimension() {
+        let mut fs = vec![finding(0.6, 0), finding(0.6, 1)];
+        boost_cross_dimension_agreement(&mut fs);
+        assert!((fs[0].confidence - 0.6).abs() < 1e-6);
+        assert!((fs[1].confidence - 0.6).abs() < 1e-6);
+    }
+
+    #[test]
     fn agreement_boost_scales_and_caps() {
         let mut fs = vec![
             finding(0.6, 1),  // 单维度：不加分

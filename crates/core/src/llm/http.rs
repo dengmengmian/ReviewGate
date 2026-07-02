@@ -108,6 +108,9 @@ fn backoff_with_jitter(attempt: u64) -> Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+    use std::sync::{Arc, Mutex};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[test]
     fn retryable_covers_5xx_429_408_only() {
@@ -136,5 +139,93 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Tiny HTTP/1.1 server that returns queued responses for each incoming connection.
+    async fn mock_server(
+        responses: Arc<Mutex<Vec<(u16, &'static str)>>>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = [0u8; 4096];
+                let _ = socket.read(&mut buf).await;
+                let (code, body) = {
+                    let mut v = responses.lock().unwrap();
+                    if v.is_empty() {
+                        (200u16, "{}")
+                    } else {
+                        v.remove(0)
+                    }
+                };
+                let reason = match code {
+                    200 => "OK",
+                    401 => "Unauthorized",
+                    429 => "Too Many Requests",
+                    503 => "Service Unavailable",
+                    _ => "Unknown",
+                };
+                let response = format!(
+                    "HTTP/1.1 {code} {reason}\r\nContent-Length: {}\r\nContent-Type: application/json\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+            }
+        });
+        (format!("http://127.0.0.1:{port}"), handle)
+    }
+
+    #[tokio::test]
+    async fn post_json_success_returns_body() {
+        let q = Arc::new(Mutex::new(vec![(200, r#"{"ok":true}"#)]));
+        let (url, h) = mock_server(q).await;
+        let client = reqwest::Client::new();
+        let body = json!({"prompt":"hi"});
+        let out = post_json_with_retry(&client, &url, &[], &body)
+            .await
+            .unwrap();
+        assert_eq!(out, r#"{"ok":true}"#);
+        h.abort();
+    }
+
+    #[tokio::test]
+    async fn post_json_retries_503_and_succeeds() {
+        let q = Arc::new(Mutex::new(vec![
+            (503, r#"{"error":"overload"}"#),
+            (200, r#"{"ok":true}"#),
+        ]));
+        let (url, h) = mock_server(q).await;
+        let client = reqwest::Client::new();
+        let out = post_json_with_retry(&client, &url, &[], &json!({}))
+            .await
+            .unwrap();
+        assert_eq!(out, r#"{"ok":true}"#);
+        h.abort();
+    }
+
+    #[tokio::test]
+    async fn post_json_401_not_retried() {
+        let q = Arc::new(Mutex::new(vec![(401, r#"{"error":"unauthorized"}"#)]));
+        let (url, h) = mock_server(q).await;
+        let client = reqwest::Client::new();
+        let err = post_json_with_retry(&client, &url, &[], &json!({}))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("401"));
+        h.abort();
+    }
+
+    #[tokio::test]
+    async fn post_json_429_retry_after_zero() {
+        let q = Arc::new(Mutex::new(vec![(429, r#"{"error":"rate"}"#), (200, "ok")]));
+        let (url, h) = mock_server(q).await;
+        let client = reqwest::Client::new();
+        let out = post_json_with_retry(&client, &url, &[], &json!({}))
+            .await
+            .unwrap();
+        assert_eq!(out, "ok");
+        h.abort();
     }
 }

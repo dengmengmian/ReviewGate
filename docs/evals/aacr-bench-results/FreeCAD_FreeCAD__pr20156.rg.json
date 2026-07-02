@@ -1,0 +1,34 @@
+{
+  "decision": "warn",
+  "incomplete": false,
+  "files_changed": 16,
+  "summary": {
+    "total": 1,
+    "kept": 1,
+    "filtered": 0,
+    "warnings": 0
+  },
+  "warnings": [],
+  "findings": [
+    {
+      "path": "src/Base/StackWalker.cpp",
+      "start_line": 1473,
+      "end_line": 1576,
+      "dimension": "ai_smell",
+      "severity": "low",
+      "confidence": 0.64,
+      "message": "多处 `%d` → `%ld` 格式说明符修改存在符号错误：`DWORD` 在 Windows 上定义为 `unsigned long`，应使用 `%lu` 而非 `%ld`（signed long）。这看起来像是 AI 生成的修复 —— 它正确识别了需要 `long` 长度修饰符（`%l`），但忽略了 signed/unsigned 的区别，统一写成了 `%ld`。涉及行：1473 (size/result), 1489-1490 (size/result + fileVersion), 1540 (lineNumber), 1559 (gle), 1576 (symOptions), 1609 (dwMajorVersion 等)。虽然 DWORD 实际取值通常很小，误用时输出一致，但技术上是不正确的。",
+      "suggestion": "将所有 DWORD 参数的 `%ld` 替换为 `%lu`。例如：`\"size: %lu (result: %lu)\"`, `\"GetLastError: %lu\"`, `\"symOptions: %lu\"`, `\"(%lu): %s\"`, `\"%lu.%lu.%lu.%lu\"`, `\"%lu.%lu.%lu\"`。",
+      "suggestion_code": "",
+      "filtered": false,
+      "agreed_dimensions": 1,
+      "existing_code": "                    \"%s:%s (%p), size: %ld (result: %ld), SymType: '%s', PDB: '%s'\\n\","
+    }
+  ],
+  "usage": {
+    "input_tokens": 213433,
+    "output_tokens": 33604,
+    "cache_read_input_tokens": 1139840,
+    "cache_creation_input_tokens": 0
+  }
+}

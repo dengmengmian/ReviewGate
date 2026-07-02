@@ -47,3 +47,42 @@ pub async fn untracked_files() -> Result<Vec<String>> {
     let out = git(&["ls-files", "--others", "--exclude-standard"]).await?;
     Ok(out.lines().map(|s| s.to_string()).collect())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn repo_root_returns_non_empty_absolute_path() {
+        let root = repo_root()
+            .await
+            .expect("repo_root should succeed in git tree");
+        assert!(!root.is_empty());
+        assert!(std::path::Path::new(&root).is_absolute());
+    }
+
+    #[tokio::test]
+    async fn rev_parse_head_succeeds() {
+        let head = git(&["rev-parse", "HEAD"])
+            .await
+            .expect("git rev-parse HEAD");
+        assert_eq!(head.trim().len(), 40);
+    }
+
+    #[tokio::test]
+    async fn git_lenient_returns_nonzero_for_invalid_ref() {
+        // `git_lenient` must not panic on non-zero exits; it should surface the code.
+        let (code, out) = git_lenient(&["rev-parse", "--verify", "__no_such_ref__/HEAD"])
+            .await
+            .expect("git_lenient should not error on non-zero exit");
+        assert_ne!(code, 0);
+        assert!(out.is_empty());
+    }
+
+    #[tokio::test]
+    async fn untracked_files_returns_vec_without_panic() {
+        let files = untracked_files().await.expect("untracked_files should run");
+        // The workspace is git-controlled; this should not fail.
+        assert!(files.iter().all(|f| !f.contains('\n')));
+    }
+}

@@ -612,4 +612,15 @@ mod tests {
         assert_eq!(c.len(), 1);
         assert_eq!(c[0].line, 2);
     }
+
+    #[test]
+    fn identifier_validation() {
+        assert!(is_identifier("foo"));
+        assert!(is_identifier("_bar"));
+        assert!(is_identifier("baz123"));
+        assert!(!is_identifier("123foo"));
+        assert!(!is_identifier(""));
+        assert!(!is_identifier("a-b"));
+        assert!(!is_identifier("a.b"));
+    }
 }

@@ -1,0 +1,62 @@
+{
+  "github_pr_url": "https://github.com/FreeCAD/FreeCAD/pull/18688",
+  "owner": "FreeCAD",
+  "repo": "FreeCAD",
+  "pr_number": "18688",
+  "evaluation_id": "FreeCAD_18688",
+  "config": {
+    "line_distance_threshold": 1,
+    "semantic_matcher_type": "llm",
+    "enable_semantic_match": true
+  },
+  "positive_expected_nums": 6,
+  "total_generated_nums": 2,
+  "positive_match_nums": 0,
+  "positive_line_match_nums": 0,
+  "unmatched_nums": 2,
+  "positive_match_rate": 0.0,
+  "positive_recall_rate": 0.0,
+  "positive_line_match_rate": 0.0,
+  "positive_line_recall_rate": 0.0,
+  "unmatched_rate": 1.0,
+  "match_details": [
+    {
+      "generated_comment_index": 1,
+      "generated_comment": "机械替换导致 TODO 注释语义错误。原始注释 `# TODO to allow tolerance`（其中 `allow` 后接名词 `tolerance`，并非不定式）被错误地替换为 `# TODO to allow one tolerance`，变得无意义。应还原为 `# TODO to allow tolerance` 或改为 `# TODO allow tolerance`。 (also flagged by ai_smell)",
+      "generated_location": {
+        "path": "src/Mod/BIM/ArchStairs.py",
+        "from_line": 1271,
+        "to_line": 1271,
+        "side": "right"
+      },
+      "line_match": false,
+      "semantic_match": false,
+      "matched_reference_id": null,
+      "matched_reference_note": null,
+      "matched_reference_location": null,
+      "matched_reference_details": {},
+      "location_match_details": {},
+      "llm_comparison": null
+    },
+    {
+      "generated_comment_index": 2,
+      "generated_comment": "注释语法修复不完整：原始 \"allows to behave every DocumentObject\" 的真正含义是\"允许每个 DocumentObject 表现为 Python feature\"，而非\"允许某人去表现每个 DocumentObject\"。替换为 \"allows one to behave\" 后语义仍然不通。应改为 \"allows every DocumentObject derived class to behave as a Python feature\"。",
+      "generated_location": {
+        "path": "src/App/FeaturePython.h",
+        "from_line": 165,
+        "to_line": 166,
+        "side": "right"
+      },
+      "line_match": false,
+      "semantic_match": false,
+      "matched_reference_id": null,
+      "matched_reference_note": null,
+      "matched_reference_location": null,
+      "matched_reference_details": {},
+      "location_match_details": {},
+      "llm_comparison": null
+    }
+  ],
+  "matched_reference_comments": [],
+  "llm_comparisons": []
+}

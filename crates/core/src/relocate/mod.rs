@@ -270,6 +270,19 @@ mod tests {
     }
 
     #[test]
+    fn locate_empty_snippet_returns_none() {
+        assert_eq!(locate("   ", FILE, &HashSet::new()), None);
+    }
+
+    #[test]
+    fn locate_ignores_added_lines_when_not_provided() {
+        let file = "a();\nx();\na();\n";
+        let r = locate("a();", file, &HashSet::new());
+        // 无 added_lines 时取最靠前匹配。
+        assert_eq!(r, Some((1, 1)));
+    }
+
+    #[test]
     fn anchor_validation_trusts_model_when_anchor_empty() {
         let file: Vec<String> = FILE.lines().map(normalize).collect();
         // 锚点为空：无从否定 → 采信模型行号。

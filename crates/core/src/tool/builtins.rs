@@ -272,6 +272,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn read_file_pagination_and_out_of_range() {
+        let (dir, ctx) = ctx_with_file();
+        // 写入 5 行文件
+        std::fs::write(dir.join("paged.txt"), "a\nb\nc\nd\ne\n").unwrap();
+
+        let out = ReadFile
+            .call(
+                &json!({"path": "paged.txt", "start_line": 2, "limit": 2}),
+                &ctx,
+            )
+            .await
+            .unwrap();
+        assert!(out.contains("2\tb"));
+        assert!(out.contains("3\tc"));
+        assert!(!out.contains("1\ta"));
+        assert!(out.contains("... (2 more lines"));
+
+        let out = ReadFile
+            .call(&json!({"path": "paged.txt", "start_line": 10}), &ctx)
+            .await
+            .unwrap();
+        assert!(out.contains("start_line=10 is out of range"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn find_file_filters_and_limits() {
+        let (dir, ctx) = ctx_with_file();
+        std::fs::write(dir.join("foo.rs"), "").unwrap();
+        std::fs::write(dir.join("bar.rs"), "").unwrap();
+        std::fs::write(dir.join("baz.txt"), "").unwrap();
+
+        // 需要 git 仓库才能让 git ls-files 返回内容；这里只做空匹配。
+        let out = FindFile
+            .call(&json!({"keyword": "zzzzzz"}), &ctx)
+            .await
+            .unwrap();
+        assert_eq!(out, "(no matching files)");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
     async fn code_search_rejects_out_of_repo_subpath() {
         let (dir, ctx) = ctx_with_file();
         // 限定子路径越界应在调 git grep 前就被拒。

@@ -13,6 +13,8 @@ pub enum Dimension {
     /// 逻辑正确性：边界条件、空值、并发、错误处理等。
     Logic,
     /// 规范：命名、风格、分语言 checklist。
+    /// **不在 [`Dimension::ALL`] 默认集内**——质量闸口默认不管纯风格（噪声，交给 linter）；
+    /// 用 `--dimensions style`（或 `...,style`）显式开启。
     Style,
     /// AI 代码专项：幻觉 API、看似合理实则错误、假设漂移、复制未适配等。
     AiSmell,
@@ -56,12 +58,14 @@ impl IntentStatus {
 }
 
 impl Dimension {
-    /// 全部维度，顺序即并行编排顺序。
-    pub const ALL: [Dimension; 5] = [
+    /// 默认自动运行的缺陷维度集（`--dimensions all` 即此集），顺序即并行编排顺序。
+    /// **Style 不在默认集**：作为质量闸口，纯风格/格式问题属噪声（评测证实 style 命中真缺陷≈0
+    /// 却拉低精度），交给 linter/formatter；需要时用 `--dimensions style` 显式开启。
+    /// 这与 Business/Intent 同为 opt-in 维度。
+    pub const ALL: [Dimension; 4] = [
         Dimension::Security,
         Dimension::Perf,
         Dimension::Logic,
-        Dimension::Style,
         Dimension::AiSmell,
     ];
 
@@ -191,5 +195,94 @@ impl Finding {
     /// 行号重定位是否成功。
     pub fn located(&self) -> bool {
         self.start_line > 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dimension_all_and_strings() {
+        assert_eq!(Dimension::ALL.len(), 4);
+        assert!(Dimension::ALL.contains(&Dimension::Security));
+        // Style/Business/Intent 都是 opt-in，不在默认集。
+        assert!(!Dimension::ALL.contains(&Dimension::Style));
+        assert!(!Dimension::ALL.contains(&Dimension::Business));
+        assert!(!Dimension::ALL.contains(&Dimension::Intent));
+        assert_eq!(Dimension::AiSmell.as_str(), "ai_smell");
+        assert_eq!(format!("{}", Dimension::Logic), "logic");
+    }
+
+    #[test]
+    fn severity_order_and_strings() {
+        assert!(Severity::Low < Severity::Med);
+        assert!(Severity::Med < Severity::High);
+        assert_eq!(Severity::High.as_str(), "high");
+        assert_eq!(format!("{}", Severity::Low), "low");
+    }
+
+    #[test]
+    fn reachability_defaults_to_unknown() {
+        let r: Reachability = Default::default();
+        assert_eq!(r, Reachability::Unknown);
+        assert_eq!(Reachability::Reachable.as_str(), "reachable");
+        assert_eq!(Reachability::Latent.as_str(), "latent");
+    }
+
+    #[test]
+    fn intent_status_strings() {
+        assert_eq!(IntentStatus::Met.as_str(), "met");
+        assert_eq!(IntentStatus::Deviation.as_str(), "deviation");
+        assert_eq!(IntentStatus::Unknown.as_str(), "unknown");
+    }
+
+    #[test]
+    fn finding_located_only_when_start_positive() {
+        let mut f = Finding {
+            dimension: Dimension::Security,
+            confidence: 0.8,
+            severity: Severity::High,
+            path: "a.rs".into(),
+            start_line: 0,
+            end_line: 0,
+            message: "m".into(),
+            existing_code: "x".into(),
+            evidence: String::new(),
+            suggestion: None,
+            suggestion_code: String::new(),
+            reachability: Reachability::Unknown,
+            filtered: false,
+            agreed_dimensions: 1,
+            criterion: None,
+            intent_status: None,
+        };
+        assert!(!f.located());
+        f.start_line = 5;
+        assert!(f.located());
+    }
+
+    #[test]
+    fn finding_with_suggestion_serializes_it() {
+        let f = Finding {
+            dimension: Dimension::Security,
+            confidence: 0.8,
+            severity: Severity::High,
+            path: "a.rs".into(),
+            start_line: 1,
+            end_line: 1,
+            message: "m".into(),
+            existing_code: "x".into(),
+            evidence: String::new(),
+            suggestion: Some("fix it".into()),
+            suggestion_code: String::new(),
+            reachability: Reachability::Unknown,
+            filtered: false,
+            agreed_dimensions: 1,
+            criterion: None,
+            intent_status: None,
+        };
+        let json = serde_json::to_string(&f).unwrap();
+        assert!(json.contains("\"suggestion\":\"fix it\""));
     }
 }
