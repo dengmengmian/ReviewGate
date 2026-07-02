@@ -214,15 +214,18 @@ reviewgate review --no-judge
 reviewgate review --show-filtered
 reviewgate review --timeout 120
 reviewgate review --samples 3
-reviewgate review --fix
+reviewgate review --fix                   # apply suggestions after per-finding y/N (acts on whatever this review covers)
 reviewgate review --fix-all               # apply all fixes without per-finding prompts (works non-interactively, for CI/scripts)
 reviewgate review --fix-all --fix-branch  # add --fix-branch (works with --fix or --fix-all): apply on a new branch (optionally named), keeping the current one clean
+reviewgate review --commit HEAD --fix     # review the committed change and apply fixes (see note below)
 reviewgate review --judge-concurrency 4
 reviewgate review --fanout-concurrency 6
 reviewgate review --verbose
 reviewgate review --commit <sha>
 reviewgate review --commit <sha> --intent-from-commit
 ```
+
+> **Note: `--fix` / `--fix-all` only act on the diff this review covers.** With no range, review defaults to your **uncommitted working-tree changes** (`git diff HEAD`) — if the change is already committed and the working tree is clean, `--fix` will report "no changes / no applicable fixes". To fix **committed** changes, pass a range, e.g. `reviewgate review --commit HEAD --fix` or `reviewgate review --from main --to HEAD --fix`.
 
 </details>
 

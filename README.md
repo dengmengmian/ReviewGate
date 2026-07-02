@@ -216,15 +216,18 @@ reviewgate review --no-judge             # 更快，误报略多
 reviewgate review --show-filtered        # 展开被过滤的低置信项
 reviewgate review --timeout 120          # 单维度墙钟上限（秒）
 reviewgate review --samples 3            # 每维度多采样取并集
-reviewgate review --fix                  # 逐条 y/N 确认后应用建议代码
+reviewgate review --fix                  # 逐条 y/N 确认后应用建议代码（作用于本次 review 覆盖的改动）
 reviewgate review --fix-all              # 不逐条确认，直接全部应用（可非交互，供 CI/脚本）
 reviewgate review --fix-all --fix-branch # 可叠加 --fix-branch（对 --fix / --fix-all 都适用）：先新建分支再改，保持原分支干净，可选跟分支名
+reviewgate review --commit HEAD --fix    # 审查已提交的改动并应用修复（见下方注意）
 reviewgate review --judge-concurrency 4  # 限制 Judge 并发
 reviewgate review --fanout-concurrency 6 # 限制 fan-out 并发
 reviewgate review --verbose              # 打印 token/缓存/轮数
 reviewgate review --commit <sha>         # 审查单个 commit
 reviewgate review --commit <sha> --intent-from-commit
 ```
+
+> **注意：`--fix` / `--fix-all` 只作用于本次 review 覆盖的那份 diff。** 不带范围时，review 默认审**工作区未提交的改动**（`git diff HEAD`）——如果改动已经 commit、工作区是干净的，`--fix` 会「未检测到变更、无可应用修复」。要修**已提交**的改动，请带上范围，例如 `reviewgate review --commit HEAD --fix` 或 `reviewgate review --from main --to HEAD --fix`。
 
 </details>
 
