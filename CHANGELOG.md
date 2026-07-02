@@ -4,6 +4,12 @@
 每条变更先中文、后英文。
 Changes are listed in Chinese first, then English.
 
+## [Unreleased]
+
+### Fixed
+- 收敛 ai_smell 的「幻觉 API」误判：以前把「本仓库搜不到定义的符号」直接当成「该 API 不存在」并高置信拦截，会误杀真实的外部依赖/标准库/内核/系统头符号（如内核的 `krealloc_array`）。现在「找不到 ≠ 不存在」，仅凭仓内缺失不再判幻觉、不再据此 BLOCK；仍保留对有正面证据的真幻觉的拦截。
+  Tightened ai_smell's "hallucinated API" false positives: it used to treat any symbol whose definition wasn't found in the repo as a nonexistent API and block with high confidence, wrongly flagging real external/stdlib/kernel/system-header symbols (e.g. the kernel's `krealloc_array`). Now "not found ≠ nonexistent" — repo-absence alone no longer marks a symbol hallucinated or triggers a BLOCK, while genuine hallucinations backed by positive evidence are still caught.
+
 ## [0.4.0] - 2026-07-01
 
 ### Added

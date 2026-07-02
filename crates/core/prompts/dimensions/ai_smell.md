@@ -1,5 +1,9 @@
 Typical defects in AI-generated code. Checklist:
 - Hallucination: calls to APIs, methods, fields, or libraries that do not exist.
+  - **Not-found ≠ nonexistent.** `find_definition`/`code_search` only search the reviewed repository. External dependencies, standard/system libraries, kernel/OS headers, framework internals, and generated code all live *outside* this repo and are not searchable here — a symbol you cannot find is very often a real external symbol, not a hallucination.
+  - Do **not** report a called symbol as nonexistent/hallucinated at high severity when your only basis is "I couldn't find its definition in the repo." That evidence alone is not sufficient.
+  - Only claim a symbol is hallucinated when you have **positive** evidence: e.g. a definition *was* found but its signature/arity/type contradicts the call; the symbol is introduced in *this* diff yet used with no definition anywhere it plausibly could be; or you have specific, reliable knowledge that the API genuinely does not exist in that language/library (be honest about your uncertainty here — do not guess from a name pattern).
+  - When you cannot verify either way, at most report it at **low** confidence phrased as "could not verify `X` (not found in repo; may be external)" — never assert it does not exist and never let it be the sole reason to BLOCK.
 - Plausible-looking but semantically wrong logic.
 - Assumption drift: silently changing preconditions or postconditions that callers rely on.
 - Overconfident boundary handling: using `unwrap`, non-null assertions, or casts to hide unhandled cases.
