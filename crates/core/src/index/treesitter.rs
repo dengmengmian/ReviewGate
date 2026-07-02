@@ -407,7 +407,7 @@ fn lang_spec(path: &str) -> Option<(tree_sitter::Language, LangSpec)> {
                 call_fn_field: "name",
             },
         )),
-        Lang::JavaScript | Lang::TypeScript => Some((
+        Lang::JavaScript => Some((
             tree_sitter_javascript::LANGUAGE.into(),
             LangSpec {
                 def_kinds: &[
@@ -417,6 +417,38 @@ fn lang_spec(path: &str) -> Option<(tree_sitter::Language, LangSpec)> {
                     "generator_function_declaration",
                 ],
                 type_kinds: &["class_declaration"],
+                var_kinds: &[],
+                call_kinds: &["call_expression", "new_expression"],
+                call_fn_field: "function",
+            },
+        )),
+        Lang::TypeScript => Some((
+            // .tsx 含 JSX，需专用 grammar；其余用纯 TS grammar。
+            if path.to_ascii_lowercase().ends_with(".tsx") {
+                tree_sitter_typescript::LANGUAGE_TSX.into()
+            } else {
+                tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
+            },
+            LangSpec {
+                def_kinds: &[
+                    "function_declaration",
+                    "class_declaration",
+                    "abstract_class_declaration",
+                    "method_definition",
+                    "generator_function_declaration",
+                    "interface_declaration",
+                    "type_alias_declaration",
+                    "enum_declaration",
+                    "abstract_method_signature",
+                    "method_signature",
+                ],
+                type_kinds: &[
+                    "class_declaration",
+                    "abstract_class_declaration",
+                    "interface_declaration",
+                    "type_alias_declaration",
+                    "enum_declaration",
+                ],
                 var_kinds: &[],
                 call_kinds: &["call_expression", "new_expression"],
                 call_fn_field: "function",
@@ -535,5 +567,49 @@ mod tests {
         assert!(lines.contains(&6), "命中调用");
         assert!(!lines.contains(&1), "不应命中注释");
         assert!(!lines.contains(&4), "不应命中字符串");
+    }
+
+    // TS 专属构造：interface / type 别名 / enum / abstract class 应被识别为类型定义。
+    const TS: &str = "interface Order {\n  id: number;\n}\ntype OrderId = number;\nenum Status {\n  Open,\n}\nabstract class BaseRepo {\n  abstract find(id: number): Order;\n}\nclass OrderRepo extends BaseRepo {\n  find(id: number): Order {\n    return fetchOrder(id);\n  }\n}\n";
+
+    #[test]
+    fn ts_interface_type_enum_abstract_are_types() {
+        for (sym, line) in [("Order", 1), ("OrderId", 4), ("Status", 5), ("BaseRepo", 8)] {
+            let d = scan("a.ts", TS, sym, Mode::Definition);
+            assert_eq!(d.len(), 1, "{sym} 应有且仅有一个定义");
+            assert_eq!(d[0].line, line, "{sym} 行号");
+            assert_eq!(d[0].kind, SymbolKind::Type, "{sym} 应是类型");
+        }
+    }
+
+    #[test]
+    fn ts_class_and_method_still_work() {
+        let d = scan("a.ts", TS, "OrderRepo", Mode::Definition);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].kind, SymbolKind::Type);
+        let m = scan("a.ts", TS, "find", Mode::Definition);
+        assert!(!m.is_empty(), "方法定义应可见（abstract 签名或实现）");
+        let c = scan("a.ts", TS, "fetchOrder", Mode::Caller);
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].line, 13);
+    }
+
+    #[test]
+    fn tsx_component_parses_with_jsx() {
+        // TSX 需要专用 grammar；JSX 语法在纯 TS grammar 下会解析失败。
+        let src = "export function App(props: { name: string }) {\n  return <div>{props.name}</div>;\n}\n";
+        let d = scan("a.tsx", src, "App", Mode::Definition);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].kind, SymbolKind::Function);
+    }
+
+    #[test]
+    fn plain_js_unaffected_by_ts_split() {
+        let src = "function greet(n) {\n  return greet(n - 1);\n}\n";
+        let d = scan("b.js", src, "greet", Mode::Definition);
+        assert_eq!(d.len(), 1);
+        let c = scan("b.js", src, "greet", Mode::Caller);
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].line, 2);
     }
 }
