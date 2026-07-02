@@ -1,0 +1,21 @@
+# ReviewGate 召回评测数据集 —— revert 法：真实修复 PR 作 ground truth
+#
+# 方法：checkout 修复后的 head，把改动文件退回 base 版本 ⇒ 工作区 diff = 修复被撤销 = bug 重新引入。
+# 期望 ReviewGate 在这个「重新引入 bug」的 diff 上命中（finding 落在 expect_path 上）。
+#
+# 列（Tab 分隔）：repo  pr  base_sha  head_sha  expect_path  revert_globs  note
+#   base_sha/head_sha —— 钉死 SHA，可复现、不依赖 gh API。
+#   expect_path —— 命中判定：至少一条未过滤 finding 的 path 含此子串。
+#   revert_globs —— 只 revert 匹配的文件（空格分隔 glob；`-` = 全部）。用于排除测试/CHANGELOG，
+#                   避免「被删的测试」提示模型、虚高召回（方法学见 2026-06-25__recall-cve-reverts.md）。
+#
+# 判定（见 scripts/eval-recall.sh）：
+#   HIT        —— 命中且 decision=block（理想）
+#   HIT(warn)  —— 命中但仅 warn（已提示，未拦截）
+#   MISS       —— 未命中（静默放行，最糟）
+#   INCOMPLETE —— 未审完且未命中（不计入分母，单独报告）
+#
+# repo	pr	base_sha	head_sha	expect_path	revert_globs	note
+date-fns/date-fns	1588	4b60347c46d92940cf66070c6c3b2e3fc25fc7b6	2330b68f3e1d2703a1efc2a3faef91cf3bfce321	addBusinessDays	src/addBusinessDays/index.js	跨周末 off-by-one；只 revert 源文件（无测试提示），历史上曾静默漏报、2026-07-01 复测已命中
+syncthing/syncthing	10738	5dbf809a4cda7cae978bdfa56d2fc86b714adbb4	de3cc7394330710bd9d56a4e3044e024ef002482	lib/scanner/blocks.go	lib/**	去掉块哈希校验（协议安全）；只 revert lib/ 源码；2026-07-02 基线为 HIT(warn) low 0.76
+syncthing/syncthing	10170	cb7cea93a2994bf27b1af8bb33eebd307496046a	f3fb846d5298987a77f741a02ae380b08d97c91a	lib/	lib/**	frontier：多文件跨状态计数 bug（LocalFlags/全局计数），2026-07-02 基线 MISS——当前召回边界的标本，预期先红

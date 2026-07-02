@@ -19,7 +19,7 @@ use context::{build_unit_prompt, new_ref_for};
 
 use crate::agent::{
     dimension_focus_block, run_agent_with_stats, shared_system_prompt, AgentConfig,
-    AgentExitReason, AgentStats,
+    AgentExitReason, AgentRun, AgentStats,
 };
 use crate::config::{Config, GateConfig, DEFAULT_MAX_INPUT_TOKENS};
 use crate::diff::{self, Diff, DiffMode};
@@ -195,55 +195,18 @@ pub async fn run_review_with_client(
     }
 
     // 为每个单元预构造 prompt：先带文件全文上下文；超预算则退化为 diff-only；仍超则跳过（未审完）。
-    let mut unit_prompts: Vec<Option<String>> = Vec::with_capacity(units.len());
-    for (ui, unit) in units.iter().enumerate() {
-        let full = build_unit_prompt(
-            &diff,
-            &unit.files,
-            true,
-            Path::new(&root),
-            &new_ref,
-            &rules_body,
-        )
-        .await;
-        if estimate_tokens(&full) + overhead <= budget {
-            unit_prompts.push(Some(full));
-            continue;
-        }
-        let diff_only = build_unit_prompt(
-            &diff,
-            &unit.files,
-            false,
-            Path::new(&root),
-            &new_ref,
-            &rules_body,
-        )
-        .await;
-        if estimate_tokens(&diff_only) + overhead <= budget {
-            unit_prompts.push(Some(diff_only));
-            continue;
-        }
-        // 单文件 diff 自身就超预算，无法再切 → 跳过并标记未审完（绝不静默放行）。
-        incomplete = true;
-        let label = unit
-            .files
-            .first()
-            .map(|&i| diff.files[i].path().to_string())
-            .unwrap_or_else(|| format!("unit{ui}"));
-        eprintln!(
-            "! file [{label}] diff exceeds input budget (~{} tok); skipped (not reviewed)",
-            unit.est_tokens
-        );
-        warnings.push(ReviewWarning {
-            dimension: format!("unit:{label}"),
-            kind: "oversized",
-            message: format!(
-                "this file's diff exceeds the input budget (~{} tok > {budget}); skipped (not reviewed); split the change or raise max_input_tokens",
-                unit.est_tokens
-            ),
-        });
-        unit_prompts.push(None);
-    }
+    let unit_prompts = build_unit_prompts(
+        &diff,
+        &units,
+        Path::new(&root),
+        &new_ref,
+        &rules_body,
+        budget,
+        overhead,
+        &mut warnings,
+        &mut incomplete,
+    )
+    .await;
 
     // fan-out：(单元 × 维度 × 样本) 并行。维度随每个 task 一起返回，以便 buffer_unordered
     // 乱序完成后仍能正确回填告警维度（不再依赖外部 labels 的下标对齐）。
@@ -301,85 +264,8 @@ pub async fn run_review_with_client(
     let (results, intent_outcome) = tokio::join!(fanout_fut, intent_fut);
 
     // 每(单元×维度)容错：单个失败只记告警，不影响其它返回部分结果；未审完则标记 incomplete。
-    let mut findings = Vec::new();
-    let mut agent_stats = AgentStats::default();
-    for (dim, r) in results {
-        match r {
-            Ok(run) => {
-                agent_stats.llm_requests += run.stats.llm_requests;
-                agent_stats.tool_calls += run.stats.tool_calls;
-                agent_stats.findings_reported += run.stats.findings_reported;
-                agent_stats.task_done_calls += run.stats.task_done_calls;
-                agent_stats.loop_guarded += run.stats.loop_guarded;
-                agent_stats.usage.add(&run.stats.usage);
-                for (name, count) in run.stats.tool_counts {
-                    *agent_stats.tool_counts.entry(name).or_default() += count;
-                }
-                match run.exit_reason {
-                    AgentExitReason::TimedOut => {
-                        incomplete = true;
-                        warnings.push(ReviewWarning {
-                            dimension: dim.as_str().to_string(),
-                            kind: "timed_out",
-                            message: "wall-clock timeout; this dimension did not finish (its partial findings are kept)".into(),
-                        });
-                    }
-                    AgentExitReason::AuthFailed => {
-                        incomplete = true;
-                        let detail = run
-                            .error_detail
-                            .as_deref()
-                            .map(|d| format!(" ({d})"))
-                            .unwrap_or_default();
-                        warnings.push(ReviewWarning {
-                            dimension: dim.as_str().to_string(),
-                            kind: "auth_failed",
-                            message: format!(
-                                "LLM authentication failed — check the API key for the active provider (api_key in the config, or REVIEWGATE_API_KEY){detail}; this dimension did not finish"
-                            ),
-                        });
-                    }
-                    AgentExitReason::RequestFailed => {
-                        incomplete = true;
-                        let detail = run
-                            .error_detail
-                            .as_deref()
-                            .map(|d| format!(" ({d})"))
-                            .unwrap_or_default();
-                        warnings.push(ReviewWarning {
-                            dimension: dim.as_str().to_string(),
-                            kind: "incomplete",
-                            message: format!(
-                                "LLM request failed{detail}; this dimension did not finish"
-                            ),
-                        });
-                    }
-                    AgentExitReason::ContextOverflow => {
-                        incomplete = true;
-                        warnings.push(ReviewWarning {
-                            dimension: dim.as_str().to_string(),
-                            kind: "incomplete",
-                            message: "context exceeded the input budget; pre-send check wrapped up early; this dimension did not finish".into(),
-                        });
-                    }
-                    AgentExitReason::Completed | AgentExitReason::MaxRounds => {}
-                }
-                findings.extend(run.findings);
-            }
-            Err(e) => {
-                incomplete = true;
-                warnings.push(ReviewWarning {
-                    dimension: dim.as_str().to_string(),
-                    kind: "failed",
-                    message: e.to_string(),
-                });
-                eprintln!(
-                    "! dimension [{}] review failed (skipped): {e}",
-                    dim.as_str()
-                );
-            }
-        }
-    }
+    let (mut findings, agent_stats) =
+        collect_agent_results(results, &mut warnings, &mut incomplete);
     // 质量闸口不能把"未审完"误读成"通过"：未审完的维度/单元已保留其部分发现，但仍要醒目提示。
     if incomplete {
         if warnings.iter().any(|w| w.kind == "auth_failed") {
@@ -489,4 +375,134 @@ pub async fn run_review_with_client(
         incomplete,
         usage,
     })
+}
+
+/// 为每个单元预构造 prompt：先带文件全文上下文；超预算则退化为 diff-only；
+/// 仍超则跳过（oversized 告警 + 标记未审完，绝不静默放行）。返回与 `units` 对齐的 `Option<String>`。
+#[allow(clippy::too_many_arguments)]
+async fn build_unit_prompts(
+    diff: &Diff,
+    units: &[ReviewUnit],
+    root: &Path,
+    new_ref: &Option<String>,
+    rules_body: &str,
+    budget: usize,
+    overhead: usize,
+    warnings: &mut Vec<ReviewWarning>,
+    incomplete: &mut bool,
+) -> Vec<Option<String>> {
+    let mut unit_prompts: Vec<Option<String>> = Vec::with_capacity(units.len());
+    for (ui, unit) in units.iter().enumerate() {
+        let full = build_unit_prompt(diff, &unit.files, true, root, new_ref, rules_body).await;
+        if estimate_tokens(&full) + overhead <= budget {
+            unit_prompts.push(Some(full));
+            continue;
+        }
+        let diff_only =
+            build_unit_prompt(diff, &unit.files, false, root, new_ref, rules_body).await;
+        if estimate_tokens(&diff_only) + overhead <= budget {
+            unit_prompts.push(Some(diff_only));
+            continue;
+        }
+        // 单文件 diff 自身就超预算，无法再切 → 跳过并标记未审完（绝不静默放行）。
+        *incomplete = true;
+        let label = unit
+            .files
+            .first()
+            .map(|&i| diff.files[i].path().to_string())
+            .unwrap_or_else(|| format!("unit{ui}"));
+        eprintln!(
+            "! file [{label}] diff exceeds input budget (~{} tok); skipped (not reviewed)",
+            unit.est_tokens
+        );
+        warnings.push(ReviewWarning {
+            dimension: format!("unit:{label}"),
+            kind: "oversized",
+            message: format!(
+                "this file's diff exceeds the input budget (~{} tok > {budget}); skipped (not reviewed); split the change or raise max_input_tokens",
+                unit.est_tokens
+            ),
+        });
+        unit_prompts.push(None);
+    }
+    unit_prompts
+}
+
+/// 汇总 fan-out 结果：聚合各 Agent 统计、按退出原因回填告警与未审完标记、收集 findings。
+fn collect_agent_results(
+    results: Vec<(Dimension, Result<AgentRun>)>,
+    warnings: &mut Vec<ReviewWarning>,
+    incomplete: &mut bool,
+) -> (Vec<Finding>, AgentStats) {
+    let mut findings = Vec::new();
+    let mut agent_stats = AgentStats::default();
+    for (dim, r) in results {
+        match r {
+            Ok(run) => {
+                if let Some(w) = warning_for_exit(dim, &run) {
+                    *incomplete = true;
+                    warnings.push(w);
+                }
+                agent_stats.llm_requests += run.stats.llm_requests;
+                agent_stats.tool_calls += run.stats.tool_calls;
+                agent_stats.findings_reported += run.stats.findings_reported;
+                agent_stats.task_done_calls += run.stats.task_done_calls;
+                agent_stats.loop_guarded += run.stats.loop_guarded;
+                agent_stats.usage.add(&run.stats.usage);
+                for (name, count) in run.stats.tool_counts {
+                    *agent_stats.tool_counts.entry(name).or_default() += count;
+                }
+                findings.extend(run.findings);
+            }
+            Err(e) => {
+                *incomplete = true;
+                warnings.push(ReviewWarning {
+                    dimension: dim.as_str().to_string(),
+                    kind: "failed",
+                    message: e.to_string(),
+                });
+                eprintln!(
+                    "! dimension [{}] review failed (skipped): {e}",
+                    dim.as_str()
+                );
+            }
+        }
+    }
+    (findings, agent_stats)
+}
+
+/// 非正常退出原因 → 告警（返回 Some 即应标记未审完）。正常完成/走满轮次返回 None。
+fn warning_for_exit(dim: Dimension, run: &AgentRun) -> Option<ReviewWarning> {
+    let detail = || {
+        run.error_detail
+            .as_deref()
+            .map(|d| format!(" ({d})"))
+            .unwrap_or_default()
+    };
+    match run.exit_reason {
+        AgentExitReason::TimedOut => Some(ReviewWarning {
+            dimension: dim.as_str().to_string(),
+            kind: "timed_out",
+            message: "wall-clock timeout; this dimension did not finish (its partial findings are kept)".into(),
+        }),
+        AgentExitReason::AuthFailed => Some(ReviewWarning {
+            dimension: dim.as_str().to_string(),
+            kind: "auth_failed",
+            message: format!(
+                "LLM authentication failed — check the API key for the active provider (api_key in the config, or REVIEWGATE_API_KEY){}; this dimension did not finish",
+                detail()
+            ),
+        }),
+        AgentExitReason::RequestFailed => Some(ReviewWarning {
+            dimension: dim.as_str().to_string(),
+            kind: "incomplete",
+            message: format!("LLM request failed{}; this dimension did not finish", detail()),
+        }),
+        AgentExitReason::ContextOverflow => Some(ReviewWarning {
+            dimension: dim.as_str().to_string(),
+            kind: "incomplete",
+            message: "context exceeded the input budget; pre-send check wrapped up early; this dimension did not finish".into(),
+        }),
+        AgentExitReason::Completed | AgentExitReason::MaxRounds => None,
+    }
 }
