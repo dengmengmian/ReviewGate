@@ -12,6 +12,10 @@ Changes are listed in Chinese first, then English.
 - TypeScript 换用专用语法解析：`interface` / `type` 别名 / `enum` / `abstract class` 现在能被 `find_definition` 等精确工具识别为定义（此前 TS 复用 JS 语法，这些构造会被漏掉或解析错位）；`.tsx` 用 JSX 感知的语法解析。
   TypeScript now uses its dedicated grammar: `interface` / `type` aliases / `enum` / `abstract class` are recognized as definitions by `find_definition` and friends (previously TS reused the JS grammar, which missed or mis-parsed these constructs); `.tsx` is parsed with the JSX-aware grammar.
 
+### Changed
+- 评审 Agent 现在会把互不依赖的查询（读多个文件、追多个符号）合并到一轮里发起，同样时间预算内多看 ~40-55% 的上下文（实测于 19 文件大 diff，logic 维度）。大 PR 单维度审不完的根本瓶颈仍在（见 LIMITATIONS），此项是缓解不是根治。
+  Review agents now batch independent lookups (multiple file reads, multiple symbol traces) into a single turn, covering ~40-55% more context within the same time budget (measured on a 19-file diff, logic dimension). The underlying bottleneck for very large PRs remains (see LIMITATIONS); this is mitigation, not a cure.
+
 ### Fixed
 - `--timeout` 现在会软着陆：时间预算耗到 75% 时自动切入收口轮，把剩余时间用来上报已确信的发现，而不是继续探索直到硬超时、一条都没报就被标「未审完」。大 PR / 慢服务商下的超时维度从「空手 incomplete」变成「带部分发现的 incomplete」。
   `--timeout` now lands softly: once 75% of the time budget is spent the agent switches to a wrap-up round, spending the remainder reporting findings it is already confident about instead of exploring until the hard cutoff with nothing reported. On large PRs / slow providers a timing-out dimension now yields partial findings instead of an empty "incomplete".
