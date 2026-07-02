@@ -20,14 +20,23 @@ fn tmp_repo(prefix: &str) -> PathBuf {
     dir
 }
 
+/// 直接调 `git`（不经 `bash -c`），跨平台可靠（windows CI 上 bash 依赖易 flaky）。
+/// 仅支持 git 命令、参数可按空白拆分（本测试足够）；`&&` 链式受支持。
 fn run(dir: &std::path::Path, cmd: &str) {
-    let status = std::process::Command::new("bash")
-        .arg("-c")
-        .arg(cmd)
-        .current_dir(dir)
-        .status()
-        .expect(cmd);
-    assert!(status.success(), "command failed: {cmd}");
+    for seg in cmd.split("&&") {
+        let parts: Vec<&str> = seg.split_whitespace().collect();
+        assert_eq!(
+            parts.first().copied(),
+            Some("git"),
+            "run() only supports git commands: {seg}"
+        );
+        let status = std::process::Command::new("git")
+            .args(&parts[1..])
+            .current_dir(dir)
+            .status()
+            .unwrap_or_else(|e| panic!("failed to spawn git for `{seg}`: {e}"));
+        assert!(status.success(), "command failed: {seg}");
+    }
 }
 
 /// Run an async closure with the current working directory temporarily set to `dir`.

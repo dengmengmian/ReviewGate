@@ -19,15 +19,24 @@ fn temp_dir(prefix: &str) -> PathBuf {
     path
 }
 
-/// Run a shell command in the given directory, panicking on failure.
+/// Run `git ...` command(s) in `dir`, panicking on failure. `&&`-chained commands are supported.
+/// Calls `git` directly (no `bash -c`) so it works on Windows CI, where the bash dependency is flaky.
+/// Only git commands with whitespace-separable args are supported (sufficient for these tests).
 fn run(dir: &std::path::Path, cmd: &str) {
-    let status = Command::new("bash")
-        .arg("-c")
-        .arg(cmd)
-        .current_dir(dir)
-        .status()
-        .expect(cmd);
-    assert!(status.success(), "command failed: {cmd}");
+    for seg in cmd.split("&&") {
+        let parts: Vec<&str> = seg.split_whitespace().collect();
+        assert_eq!(
+            parts.first().copied(),
+            Some("git"),
+            "run() only supports git commands: {seg}"
+        );
+        let status = Command::new("git")
+            .args(&parts[1..])
+            .current_dir(dir)
+            .status()
+            .unwrap_or_else(|e| panic!("failed to spawn git for `{seg}`: {e}"));
+        assert!(status.success(), "command failed: {seg}");
+    }
 }
 
 #[test]
