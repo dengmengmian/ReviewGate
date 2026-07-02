@@ -303,7 +303,7 @@ mod tests {
             decision: GateDecision::Warn,
             warnings: vec![crate::review::ReviewWarning {
                 dimension: "logic".into(),
-                kind: "timed_out".into(),
+                kind: "timed_out",
                 message: "timeout".into(),
             }],
             incomplete: true,

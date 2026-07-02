@@ -259,6 +259,12 @@ fn is_placeholder_key(key: &str) -> bool {
 }
 
 #[cfg(test)]
+use std::sync::Mutex;
+/// 串行化改动进程级 env（REVIEWGATE_CONFIG 等）的测试，避免并发互相污染。
+#[cfg(test)]
+static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -427,8 +433,3 @@ api_key = "REPLACE_WITH_YOUR_API_KEY"
         std::fs::remove_dir_all(&dir).ok();
     }
 }
-
-#[cfg(test)]
-use std::sync::Mutex;
-#[cfg(test)]
-static ENV_LOCK: Mutex<()> = Mutex::new(());

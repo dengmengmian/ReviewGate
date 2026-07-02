@@ -31,6 +31,9 @@ fn run(dir: &std::path::Path, cmd: &str) {
 }
 
 /// Run an async closure with the current working directory temporarily set to `dir`.
+// 进程级 cwd 不能并发修改：这里**有意**跨 await 持锁，把依赖 cwd 的测试串行化。
+// 测试专用、无死锁风险（无嵌套加锁），故豁免 await_holding_lock。
+#[allow(clippy::await_holding_lock)]
 async fn with_cwd_async<Fut, R>(dir: &std::path::Path, f: impl FnOnce() -> Fut) -> R
 where
     Fut: std::future::Future<Output = R>,

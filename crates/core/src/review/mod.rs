@@ -559,9 +559,11 @@ mod tests {
     }
 
     fn run_with(findings: Vec<Finding>, reason: AgentExitReason) -> AgentRun {
-        let mut stats = AgentStats::default();
-        stats.llm_requests = 1;
-        stats.findings_reported = findings.len();
+        let stats = AgentStats {
+            llm_requests: 1,
+            findings_reported: findings.len(),
+            ..Default::default()
+        };
         AgentRun {
             findings,
             stats,
