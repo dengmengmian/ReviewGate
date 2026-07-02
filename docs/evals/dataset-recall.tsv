@@ -18,4 +18,4 @@
 # repo	pr	base_sha	head_sha	expect_path	revert_globs	note
 date-fns/date-fns	1588	4b60347c46d92940cf66070c6c3b2e3fc25fc7b6	2330b68f3e1d2703a1efc2a3faef91cf3bfce321	addBusinessDays	src/addBusinessDays/index.js	跨周末 off-by-one；只 revert 源文件（无测试提示），历史上曾静默漏报、2026-07-01 复测已命中
 syncthing/syncthing	10738	5dbf809a4cda7cae978bdfa56d2fc86b714adbb4	de3cc7394330710bd9d56a4e3044e024ef002482	lib/scanner/blocks.go	lib/**	去掉块哈希校验（协议安全）；只 revert lib/ 源码；2026-07-02 基线为 HIT(warn) low 0.76
-syncthing/syncthing	10170	cb7cea93a2994bf27b1af8bb33eebd307496046a	f3fb846d5298987a77f741a02ae380b08d97c91a	lib/	lib/**	frontier：多文件跨状态计数 bug（LocalFlags/全局计数），2026-07-02 基线 MISS——当前召回边界的标本，预期先红
+syncthing/syncthing	10170	cb7cea93a2994bf27b1af8bb33eebd307496046a	f3fb846d5298987a77f741a02ae380b08d97c91a	lib/	-	frontier：多文件跨状态计数 bug（RawInvalid/LocalFlags 双事实源→全局计数漂移）。必须全量 revert：部分 revert（lib/**）会留下仓内悬空引用，被 ai_smell 当「重构不完整」抓住 → 假 HIT（2026-07-02 实测）。语义 bug 本身 logic 维度 0 命中，是当前召回边界
