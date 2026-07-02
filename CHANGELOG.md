@@ -11,6 +11,8 @@ Changes are listed in Chinese first, then English.
   TypeScript now uses its dedicated grammar: `interface` / `type` aliases / `enum` / `abstract class` are recognized as definitions by `find_definition` and friends (previously TS reused the JS grammar, which missed or mis-parsed these constructs); `.tsx` is parsed with the JSX-aware grammar.
 
 ### Fixed
+- `--timeout` 现在会软着陆：时间预算耗到 75% 时自动切入收口轮，把剩余时间用来上报已确信的发现，而不是继续探索直到硬超时、一条都没报就被标「未审完」。大 PR / 慢服务商下的超时维度从「空手 incomplete」变成「带部分发现的 incomplete」。
+  `--timeout` now lands softly: once 75% of the time budget is spent the agent switches to a wrap-up round, spending the remainder reporting findings it is already confident about instead of exploring until the hard cutoff with nothing reported. On large PRs / slow providers a timing-out dimension now yields partial findings instead of an empty "incomplete".
 - 收敛 ai_smell 的「幻觉 API」误判：以前把「本仓库搜不到定义的符号」直接当成「该 API 不存在」并高置信拦截，会误杀真实的外部依赖/标准库/内核/系统头符号（如内核的 `krealloc_array`）。现在「找不到 ≠ 不存在」，仅凭仓内缺失不再判幻觉、不再据此 BLOCK；仍保留对有正面证据的真幻觉的拦截。
   Tightened ai_smell's "hallucinated API" false positives: it used to treat any symbol whose definition wasn't found in the repo as a nonexistent API and block with high confidence, wrongly flagging real external/stdlib/kernel/system-header symbols (e.g. the kernel's `krealloc_array`). Now "not found ≠ nonexistent" — repo-absence alone no longer marks a symbol hallucinated or triggers a BLOCK, while genuine hallucinations backed by positive evidence are still caught.
 

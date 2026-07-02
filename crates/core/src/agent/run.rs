@@ -14,6 +14,16 @@ use crate::model::{ContentBlock, Dimension, Finding, Message, Role, StopReason, 
 use crate::tool::{ToolContext, ToolRegistry};
 use anyhow::Result;
 use std::collections::HashMap;
+use std::time::Duration;
+
+/// 墙钟软着陆阈值：预算耗到该比例即切入收口轮，把剩余时间留给上报而不是继续探索。
+/// 修复的失败模式：慢 provider 上探索烧满整个 timeout，一条都没上报就被硬超时标 incomplete。
+const LANDING_FRACTION: f32 = 0.75;
+
+/// 墙钟预算是否已消耗到「该收口」的程度。无 timeout（无预算可压）恒 false。
+fn past_landing_threshold(elapsed: Duration, timeout: Option<Duration>) -> bool {
+    timeout.is_some_and(|t| elapsed >= t.mul_f32(LANDING_FRACTION))
+}
 
 /// 跑一个维度 Agent，返回它上报的 Finding（行号尚未重定位）。
 pub async fn run_agent(
@@ -112,13 +122,21 @@ pub async fn run_agent_with_stats(
                 break;
             }
         }
-        // 预留最后一轮强制收口：还差 1 轮时停止调研，要求直接结论。
-        let is_final = round + 1 >= cfg.max_rounds;
+        // 强制收口：还差 1 轮（轮次预算），或墙钟预算将尽（软着陆，见 LANDING_FRACTION）——
+        // 停止调研，把剩余预算用来上报已确信的发现，而不是探索到硬超时一无所报。
+        let time_landing = past_landing_threshold(start.elapsed(), cfg.timeout);
+        let is_final = round + 1 >= cfg.max_rounds || time_landing;
         let round_tools = if is_final { &final_tools } else { &tools };
         if is_final {
-            messages.push(Message::user(format!(
-                "This is the final round. Conclude from the information you already have: call {report_name} for confirmed issues, or call task_done if there are no credible issues. Do not call additional investigation tools."
-            )));
+            messages.push(Message::user(if time_landing {
+                format!(
+                    "The time budget for this review is nearly exhausted. Conclude now from the information you already have: call {report_name} for confirmed issues, or call task_done if there are no credible issues. Do not call additional investigation tools."
+                )
+            } else {
+                format!(
+                    "This is the final round. Conclude from the information you already have: call {report_name} for confirmed issues, or call task_done if there are no credible issues. Do not call additional investigation tools."
+                )
+            }));
         }
         if cfg.verbose {
             eprintln!(
@@ -623,5 +641,78 @@ mod tests {
         assert_eq!(run.exit_reason, AgentExitReason::TimedOut);
         assert!(start.elapsed() < Duration::from_millis(150));
         assert_eq!(run.stats.llm_requests, 1);
+    }
+
+    #[test]
+    fn landing_threshold_is_75_percent_of_timeout() {
+        let t = Some(Duration::from_secs(100));
+        assert!(!past_landing_threshold(Duration::from_secs(74), t));
+        assert!(past_landing_threshold(Duration::from_secs(75), t));
+        assert!(past_landing_threshold(Duration::from_secs(99), t));
+        // 无 timeout → 永不触发（无预算可压）。
+        assert!(!past_landing_threshold(Duration::from_secs(9999), None));
+    }
+
+    /// 每次调用 sleep 170ms 的"慢探索"客户端：拿到全量工具时继续探索（code_search，
+    /// 参数随轮变化避开循环熔断）；一旦被切到收口工具集（无 code_search），上报 task_done。
+    struct SlowExplorer {
+        calls: Mutex<usize>,
+        landing_seen: Mutex<Vec<String>>,
+    }
+
+    #[async_trait::async_trait]
+    impl LlmClient for SlowExplorer {
+        async fn complete(
+            &self,
+            _system: &str,
+            messages: &[Message],
+            tools: &[ToolDef],
+        ) -> Result<LlmResponse> {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let mut n = self.calls.lock().unwrap();
+            *n += 1;
+            if let Some(last) = messages.last() {
+                self.landing_seen.lock().unwrap().push(last.text());
+            }
+            if tools.iter().any(|t| t.name == "code_search") {
+                Ok(resp(vec![(
+                    "code_search",
+                    json!({ "pattern": format!("probe_{}", *n) }),
+                )]))
+            } else {
+                Ok(resp(vec![("task_done", json!({}))]))
+            }
+        }
+        fn model(&self) -> &str {
+            "slow-explorer"
+        }
+    }
+
+    #[tokio::test]
+    async fn wall_clock_landing_forces_wrapup_before_timeout() {
+        // timeout=1000ms，阈值 75% = 750ms；每轮 ~100ms：r1..r7 正常探索，
+        // r8@~750+ ≥阈值 → 收口轮（只剩上报工具 + 注入收口消息），且剩余 ~25% 预算足够收口调用完成。
+        // 期望：客户端调 task_done → Completed（软着陆），而不是撞 1000ms 硬超时丢轮。
+        let mut c = cfg(20);
+        c.timeout = Some(Duration::from_millis(1000));
+        let client = SlowExplorer {
+            calls: Mutex::new(0),
+            landing_seen: Mutex::new(Vec::new()),
+        };
+
+        let run = run_agent_with_stats(&client, &registry(), &ctx(), &c, "审查".into())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            run.exit_reason,
+            AgentExitReason::Completed,
+            "应软着陆完成而非硬超时"
+        );
+        let seen = client.landing_seen.lock().unwrap();
+        assert!(
+            seen.iter().any(|m| m.contains("time budget")),
+            "应收到临近墙钟的收口提示，got: {seen:?}"
+        );
     }
 }
