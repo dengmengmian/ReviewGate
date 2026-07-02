@@ -412,19 +412,16 @@ api_key = "REPLACE_WITH_YOUR_API_KEY"
     }
 
     #[test]
-    fn discover_prefers_env_over_cwd_and_home() {
+    fn discover_prefers_env_pointer() {
+        // 不改 cwd：lib 测试并发跑，别的测试（如 repo_root）读进程级 cwd，改 cwd 会引发竞态。
+        // 只验证 REVIEWGATE_CONFIG 指针被采纳并优先——这是本测试的核心意图；
+        // 无指针时回退 cwd/home 属实现细节，且依赖运行时 cwd（不可移植），不在此断言。
         let _guard = ENV_LOCK.lock().unwrap();
 
         let dir = std::env::temp_dir().join(format!("rg_discover_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let env_path = dir.join("env.toml");
         std::fs::write(&env_path, "provider = \"env\"\n").unwrap();
-
-        // Remove any existing env pointer so discover falls back to cwd/home logic.
-        std::env::remove_var("REVIEWGATE_CONFIG");
-        let without_env = Config::discover();
-        // We are running in the workspace root, which has reviewgate.toml.
-        assert!(without_env.is_some());
 
         std::env::set_var("REVIEWGATE_CONFIG", env_path.to_str().unwrap());
         assert_eq!(Config::discover().unwrap().file_name().unwrap(), "env.toml");
