@@ -59,22 +59,26 @@ def load_judge_env_from_toml():
     os.environ.setdefault("LLM_API_KEY", key)
 
 
+# 浅层拉取深度：只取 PR 两端 commit 附近的历史（够算 base...head 的 merge-base）。
+# 不做全量 blob:none clone——那会拉整个提交图，ClickHouse/opencv 这类巨仓会卡死。
+FETCH_DEPTH = int(os.environ.get("AACR_FETCH_DEPTH", "30"))
+# 单次 fetch 墙钟上限：巨仓（ClickHouse 等）超时即快速失败跳过，不卡死整批（可另行专门处理）。
+FETCH_TIMEOUT = int(os.environ.get("AACR_FETCH_TIMEOUT", "240"))
+
+
 def ensure_repo(repo: str) -> Path:
-    clone = WORK_DIR / repo.replace("/", "_")
-    if (clone / ".git").exists():
-        return clone
+    """git init + remote，不 clone。具体 commit 由 fetch 浅层拉取（巨仓友好）。"""
+    d = WORK_DIR / repo.replace("/", "_")
+    if (d / ".git").exists():
+        return d
     WORK_DIR.mkdir(parents=True, exist_ok=True)
-    for _ in range(5):
-        r = subprocess.run(["git", "clone", "--quiet", "--filter=blob:none",
-                            f"https://github.com/{repo}.git", str(clone)])
-        if r.returncode == 0:
-            return clone
-        subprocess.run(["rm", "-rf", str(clone)])
-    raise RuntimeError(f"clone failed: {repo}")
+    d.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q"], cwd=d, check=True)
+    subprocess.run(["git", "remote", "add", "origin", f"https://github.com/{repo}.git"], cwd=d)
+    return d
 
 
 def _commits_present(repo_dir: Path, *shas) -> bool:
-    """确认 commit 对象已在本地（blobless clone 下按需 fetch 可能未落地）。"""
     for sha in shas:
         if subprocess.run(["git", "cat-file", "-e", f"{sha}^{{commit}}"],
                           cwd=repo_dir, capture_output=True).returncode != 0:
@@ -82,15 +86,26 @@ def _commits_present(repo_dir: Path, *shas) -> bool:
     return True
 
 
-def fetch(repo_dir: Path, *shas):
-    # 拉两个 commit 的完整树（--filter=tree:0 只延迟 blob；但 diff 需要 blob，
-    # 故这里不加 filter，确保 diff 所需对象都在本地，避免运行 RG 时按需 fetch 撞网络抖动）。
+def _diffable(repo_dir: Path, source: str, target: str) -> bool:
+    # RG 用 base...head（三点，需 merge-base）。确认能算出来 → 深度够。
+    return subprocess.run(["git", "merge-base", source, target],
+                          cwd=repo_dir, capture_output=True).returncode == 0
+
+
+def fetch(repo_dir: Path, source: str, target: str):
+    # 不加 --filter=blob:none：diff 需要改动文件的 blob，blobless 下按需拉 blob 会撞
+    # promisor remote 失败。--depth 限制历史即可把巨仓的下载量压到有界（PR 附近历史 + 其 blob）。
+    depth = FETCH_DEPTH
     for _ in range(4):
-        subprocess.run(["git", "fetch", "--quiet", "origin", *shas],
-                       cwd=repo_dir, capture_output=True)
-        if _commits_present(repo_dir, *shas):
+        try:
+            subprocess.run(["git", "fetch", "--quiet", f"--depth={depth}", "origin", source, target],
+                           cwd=repo_dir, capture_output=True, timeout=FETCH_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"fetch timed out (>{FETCH_TIMEOUT}s, likely a giant repo): {source[:10]}")
+        if _commits_present(repo_dir, source, target) and _diffable(repo_dir, source, target):
             return
-    raise RuntimeError(f"fetch failed (commits not present): {shas}")
+        depth *= 3  # merge-base 不在浅层历史里 → 加深重试（大 PR 兜底）
+    raise RuntimeError(f"fetch/merge-base failed at depth {depth}: {source} {target}")
 
 
 def run_rg(repo_dir: Path, source: str, target: str) -> dict:
