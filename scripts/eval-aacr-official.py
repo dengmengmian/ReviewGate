@@ -263,7 +263,7 @@ def main():
             r = json.loads(slug_file.read_text())
         except Exception:
             continue
-        key = f"{r.get('repo')}#{r.get('pr_number')}"
+        key = f"{r.get('owner')}/{r.get('repo')}#{r.get('pr_number')}"
         if key not in all_keys or "positive_match_nums" not in r:
             continue
         done += 1
