@@ -134,6 +134,8 @@ def main():
     ap.add_argument("--limit", type=int, default=3)
     ap.add_argument("--lang", default=None, help="只跑某语言（project_main_language 精确匹配）")
     ap.add_argument("--pr", action="append", default=[], help="只跑指定 repo#num（可多次）")
+    ap.add_argument("--all", action="store_true", help="跑全部 196 个 positive_samples（可断点续跑）")
+    ap.add_argument("--rescore", action="store_true", help="忽略已存在的 .eval.json，重跑 judge")
     args = ap.parse_args()
 
     aacr = os.environ.get("AACR_REPO")
@@ -156,6 +158,10 @@ def main():
 
     if args.pr:
         picked = [by_key[k] for k in args.pr if k in by_key]
+    elif args.all:
+        pool = [e for e in samples if not args.lang or e.get("project_main_language") == args.lang]
+        # 小改动优先：中断时已完成的 PR 更多，且早期出信号快。
+        picked = sorted(pool, key=lambda e: e.get("change_line_count", 0))
     else:
         pool = [e for e in samples if not args.lang or e.get("project_main_language") == args.lang]
         picked = pool[: args.limit]
@@ -177,6 +183,16 @@ def main():
         key = f"{repo}#{parts[-1]}"
         slug = f"{repo.replace('/', '_')}__pr{parts[-1]}"
         good = e.get("comments", [])
+        eval_cache = resdir / f"{slug}.eval.json"
+        # 断点续跑：已有完整 eval 结果 → 跳过（RG + judge 都不重跑）。--rescore 强制重评。
+        if eval_cache.exists() and not args.rescore and not os.environ.get("RG_NOCACHE"):
+            try:
+                res = json.loads(eval_cache.read_text())
+                if "positive_match_nums" in res:
+                    print(f"  ✓ cached {key} (match={res.get('positive_match_nums')}/{res.get('total_generated_nums')})")
+                    continue
+            except Exception:
+                pass
         print(f"▶ {key} [{e.get('project_main_language')}] good={len(good)}")
         try:
             rd = ensure_repo(repo)
@@ -213,24 +229,53 @@ def main():
             print(f"  ERROR: {ex}")
             rows.append({"key": key, "error": str(ex)})
 
-    ok = [r for r in rows if "error" not in r]
-    tg = sum(r["gen"] for r in ok)
-    tgood = sum(r["good"] for r in ok)
-    tm = sum(r["match"] for r in ok)
-    P = tm / tg if tg else 0.0
-    R = tm / tgood if tgood else 0.0
-    F1 = 2 * P * R / (P + R) if (P + R) else 0.0
+    # 汇总从磁盘扫描全部 .eval.json（跨重启累积），并按 196 参考集统计覆盖度与分语言指标。
+    from collections import defaultdict
+    lang_of = {key_of(e): e.get("project_main_language", "?") for e in samples}
+    all_keys = set(by_key.keys())
+    tg = tgood = tm = 0
+    done = 0
+    by_lang = defaultdict(lambda: {"gen": 0, "good": 0, "match": 0, "prs": 0})
+    detail = []
+    for slug_file in resdir.glob("*.eval.json"):
+        try:
+            r = json.loads(slug_file.read_text())
+        except Exception:
+            continue
+        key = f"{r.get('repo')}#{r.get('pr_number')}"
+        if key not in all_keys or "positive_match_nums" not in r:
+            continue
+        done += 1
+        g = r.get("total_generated_nums", 0); gd = r.get("positive_expected_nums", 0); mm = r.get("positive_match_nums", 0)
+        tg += g; tgood += gd; tm += mm
+        lang = lang_of.get(key, "?")
+        b = by_lang[lang]; b["gen"] += g; b["good"] += gd; b["match"] += mm; b["prs"] += 1
+        detail.append({"key": key, "lang": lang, "gen": g, "good": gd, "match": mm})
+
+    def prf(m, g, gd):
+        p = m / g if g else 0.0; rr = m / gd if gd else 0.0
+        return p, rr, (2 * p * rr / (p + rr) if (p + rr) else 0.0)
+
+    P, R, F1 = prf(tm, tg, tgood)
     print(f"\n==== 官方口径（语义匹配）micro 汇总 ====")
-    print(f"PRs={len(ok)}  generated={tg}  good={tgood}  semantic_match={tm}")
+    print(f"覆盖 {done}/196 PR  generated={tg}  good={tgood}  semantic_match={tm}")
     print(f"Precision={P:.1%}  Recall={R:.1%}  F1={F1:.1%}")
+    print("按语言：")
+    for lang, b in sorted(by_lang.items()):
+        p, rr, f = prf(b["match"], b["gen"], b["good"])
+        print(f"  {lang:12s} PRs={b['prs']:2d}  P={p:.0%} R={rr:.0%} F1={f:.0%}")
 
     out = {"judge_model": os.environ.get("LLM_MODEL"),
            "note": "非同底座对照：RG 与 judge 均走本地端点；对标 OCR 需读其公开配置",
-           "micro": {"prs": len(ok), "generated": tg, "good": tgood, "semantic_match": tm,
+           "coverage": f"{done}/196",
+           "micro": {"prs": done, "generated": tg, "good": tgood, "semantic_match": tm,
                      "precision": round(P, 4), "recall": round(R, 4), "f1": round(F1, 4)},
-           "rows": rows}
+           "by_language": {lang: dict(v, **dict(zip(("precision", "recall", "f1"),
+                            (round(x, 4) for x in prf(v["match"], v["gen"], v["good"])))))
+                           for lang, v in sorted(by_lang.items())},
+           "detail": sorted(detail, key=lambda d: d["key"])}
     (resdir / "official-summary.json").write_text(json.dumps(out, ensure_ascii=False, indent=2))
-    print(f"\n✓ {resdir / 'official-summary.json'}")
+    print(f"\n✓ {resdir / 'official-summary.json'}  (rows this run: {len(rows)})")
 
 
 if __name__ == "__main__":
