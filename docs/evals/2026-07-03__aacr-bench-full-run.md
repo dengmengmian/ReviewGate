@@ -5,20 +5,37 @@
 脚本 `scripts/eval-aacr-official.py`，分批可断点续跑。**目的是用 benchmark 发现并修复 RG 缺陷，不是刷分。**
 
 ## 诚实边界（先读）
-- **非同底座对照**：RG 与 LLM judge 都走本地 deepseek 端点；OCR 用它自己的模型。任何"RG vs OCR"直接结论不成立。
 - **run-to-run 变异大**（同一 PR 语义命中会 ±1 抖动），n 小时误差棒宽。
 - **默认 style 已移出**（0.6.0），本轮用缺陷四维（security/perf/logic/ai_smell）。
+- **RG 走代理端点、OCR 可能直连**：模型同（Deepseek-V4-Pro）、延迟不同。
+- 更正：早前误引的 **F1 60.1% 是 Qodo 2.0（闭源、非同底座），不是 OCR**。OCR 官方在本 benchmark 上
+  用 Deepseek-V4-Pro 的真实成绩是 F1 17.9%——见下"同底座对照"。
 
-## 阶段结果（32/196，滚动更新）
+## 阶段结果（49/196，滚动更新）
 
 | 指标 | 值 |
 |---|---|
-| 覆盖 | 32/196 |
-| incomplete | 9/32（30%，见下"超时"） |
-| Precision | 41.9% |
-| Recall | 8.6% |
-| F1 | 14.3% |
-| 参考：OCR 公开 F1（其配置） | 60.1% |
+| 覆盖 | 49/196 |
+| incomplete | 12（见下"超时"，压低召回） |
+| Precision | 50.0% |
+| Recall | 8.0% |
+| F1 | 13.8% |
+
+## 同底座对照：与 open-code-review（都用 Deepseek-V4-Pro）
+
+OCR 官方 leaderboard（全量 200 PR）与 RG（49/196，进行中）：
+
+| 工具（同底座 Deepseek-V4-Pro） | F1 | Precision | Recall | avg token |
+|---|---|---|---|---|
+| open-code-review（官方） | 17.9% | 30.6% | 12.7% | 394K |
+| **ReviewGate**（进行中） | 13.8% | **50.0%** | 8.0% | ~100-350K |
+
+**差距很小且方向清晰——RG 用召回换精度：**
+- **Precision：RG 50% ≫ OCR 30.6%**（RG 明显更少误报）；
+- Recall：RG 8.0% < OCR 12.7%（RG 更保守 + 超时低估，见下）；
+- F1 差 ~4 点，主要来自召回；token RG 更省。
+
+> OCR 全系最高 F1 是 Claude-4.6-Opus 的 25.1%（换更强模型）；同底座 Deepseek 下就是 17.9%。
 
 分语言（样本小，仅趋势）：Python P=71%/R=31%、C++ P=50%、PHP P=100%/R=7%、C# R=3%（多超时）。
 
@@ -41,9 +58,15 @@
 2. **保守召回（设计取舍）**：1505 GT comment，RG 只报了 31 条高置信——"精度优先、低置信折叠"的既定定位，与 OCR 同向、更极端。
 3. **超时 incomplete 30%**：`REVIEWGATE_EVAL_TIMEOUT=240` 在慢代理（~50s/轮）下只够 4-5 轮，饿死 RG → gen=0 → 召回被低估。**这是 harness/端点问题，不是 RG 能力。** 计划：全量跑完后只把 incomplete 子集用更高超时（600s）重跑，给公平召回口径并列报告。
 
-## 抽查发现的两个真缺陷（罕见，暂不改）
-- **去重按精确 start_line 分组**：区间重叠但起始行不同的同一问题跨维度会漏合（dbeaver `423-429`(logic) vs `426-429`(ai_smell) 双报）。**全量仅 1/29 出现**，改重叠合并有"误合并相邻不同发现"的反向风险 → 记录、覆盖扩大再看。
-- **ai_smell 偶报纯格式 nit**：electron#46660「缩进 6 空格 vs 8 空格」ai_smell/low/0.95。**仅 1/11**，低严重度 → 记录、待观察。
+## benchmark 驱动修复的 RG 缺陷
+
+- **去重漏合同一问题（已修 ✅）**：去重原按精确 start_line 分组，同一问题被不同维度锚在略不同行时漏合
+  （logic@423-429 + ai_smell@426-429 双报）。复现 4 次（dbeaver/cline/ComfyUI×2）跨阈值 → 修：
+  located 组再按「行区间重叠 **且** existing_code 显著行相交」二次合并，双条件防误合（3 个 TDD：
+  重叠+同内容合并、重叠+异内容不合并、不重叠同模式不合并）。复测受影响 PR：重叠漏合 4→0、
+  gen 下降、语义命中不减、precision 全升。commit `3ede490`。
+- **ai_smell 偶报纯格式 nit（观察中）**：electron#46660「缩进 6 空格 vs 8 空格」ai_smell/low/0.95。
+  **仅 1/11**，低严重度 → 未达阈值，继续观察。
 
 ## harness 修复留痕（本轮）
 - 巨仓（ClickHouse 等）：全量 blobless clone 拉整个提交图卡死 → 改**浅层 fetch**（`--depth`，无 blob-filter，diff 需真 blob）+ **fetch 超时 240s** 快速失败跳过，不卡整批。
