@@ -117,14 +117,80 @@ pub fn dedupe(findings: Vec<Finding>) -> Vec<Finding> {
         }
     }
 
+    // located 分组按精确 start_line；再合并「区间重叠 **且** 内容指纹相交」的组——
+    // 同一问题被不同维度锚在略不同行时（如 logic@423-429 + ai_smell@426-429）精确分组会漏合。
+    // 双重条件（行重叠 + 共享显著代码行）防误合：相邻但不同的问题不会共享 existing_code 内容。
+    let located_groups: Vec<Vec<Finding>> = located_order
+        .into_iter()
+        .map(|key| located.remove(&key).unwrap())
+        .collect();
+
     let mut out = Vec::new();
-    for key in located_order {
-        out.push(merge_group(located.remove(&key).unwrap()));
+    for g in merge_overlapping_located(located_groups) {
+        out.push(merge_group(g));
     }
     for c in clusters {
         out.push(merge_group(c.items));
     }
     out
+}
+
+/// 合并「同 path、行区间重叠、且 existing_code 显著行相交」的已定位组。
+fn merge_overlapping_located(groups: Vec<Vec<Finding>>) -> Vec<Vec<Finding>> {
+    struct G {
+        path: String,
+        start: u32,
+        end: u32,
+        sig: HashSet<String>,
+        items: Vec<Finding>,
+    }
+    let mut gs: Vec<G> = groups
+        .into_iter()
+        .map(|items| {
+            let path = items[0].path.clone();
+            let start = items.iter().map(|f| f.start_line).min().unwrap_or(0);
+            let end = items
+                .iter()
+                .map(|f| f.end_line.max(f.start_line))
+                .max()
+                .unwrap_or(0);
+            let mut sig = HashSet::new();
+            for f in &items {
+                sig.extend(significant_lines(&f.existing_code));
+            }
+            G {
+                path,
+                start,
+                end,
+                sig,
+                items,
+            }
+        })
+        .collect();
+
+    // 贪心合并：反复找一对可合并的组并入，直到不动点。每 PR 发现数少，足够。
+    let mut merged = true;
+    while merged {
+        merged = false;
+        'scan: for i in 0..gs.len() {
+            for j in (i + 1)..gs.len() {
+                let overlap = gs[i].path == gs[j].path
+                    && gs[i].start <= gs[j].end
+                    && gs[j].start <= gs[i].end;
+                let shared = gs[i].sig.intersection(&gs[j].sig).next().is_some();
+                if overlap && shared {
+                    let b = gs.remove(j);
+                    gs[i].start = gs[i].start.min(b.start);
+                    gs[i].end = gs[i].end.max(b.end);
+                    gs[i].sig.extend(b.sig);
+                    gs[i].items.extend(b.items);
+                    merged = true;
+                    break 'scan;
+                }
+            }
+        }
+    }
+    gs.into_iter().map(|g| g.items).collect()
 }
 
 #[cfg(test)]
@@ -269,6 +335,66 @@ mod tests {
     #[test]
     fn normalize_collapses_whitespace() {
         assert_eq!(super::normalize("  a\t b  c "), "a b c");
+    }
+
+    /// 带行范围 + existing_code 的构造。
+    fn frc(dim: Dimension, conf: f32, start: u32, end: u32, code: &str) -> Finding {
+        Finding {
+            start_line: start,
+            end_line: end,
+            existing_code: code.into(),
+            message: format!("{dim} 说明"),
+            ..f(dim, conf, start)
+        }
+    }
+
+    #[test]
+    fn overlapping_ranges_with_shared_code_merge() {
+        // 同一问题被两维度锚在略不同的行（logic@10-16 + ai_smell@13-16），
+        // 区间重叠 + 共享显著代码行 → 合并为一条（真实复现自 dbeaver/cline/ComfyUI）。
+        let shared = "log.error(\"failed to get content\");";
+        let input = vec![
+            frc(Dimension::Logic, 0.72, 10, 16, shared),
+            frc(Dimension::AiSmell, 0.6, 13, 16, shared),
+        ];
+        let out = dedupe(input);
+        assert_eq!(out.len(), 1, "重叠+同内容应合并: {out:#?}");
+        assert_eq!(out[0].agreed_dimensions, 2);
+    }
+
+    #[test]
+    fn overlapping_ranges_but_different_code_do_not_merge() {
+        // 防误合：区间重叠但 existing_code 无共同显著行（不同问题）→ 保留两条。
+        let input = vec![
+            frc(
+                Dimension::Logic,
+                0.9,
+                10,
+                20,
+                "let sql = format!(\"select ...\");",
+            ),
+            frc(
+                Dimension::Perf,
+                0.9,
+                15,
+                16,
+                "for item in huge_list.clone() {}",
+            ),
+        ];
+        let out = dedupe(input);
+        assert_eq!(out.len(), 2, "重叠但内容不同不应合并: {out:#?}");
+    }
+
+    #[test]
+    fn non_overlapping_same_pattern_stays_separate() {
+        // 同 bug 模式但在不同位置（不重叠）→ 每处都要修，分开报（真实来自 lvgl 两个函数）。
+        let code = "span->txt == NULL && span->static_flag";
+        let input = vec![
+            frc(Dimension::AiSmell, 0.83, 216, 221, code),
+            frc(Dimension::AiSmell, 0.83, 274, 279, code),
+        ];
+        let out = dedupe(input);
+        assert_eq!(out.len(), 2, "不重叠的两处即使同模式也不合并: {out:#?}");
     }
 
     #[test]
