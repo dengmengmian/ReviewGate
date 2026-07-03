@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How ReviewGate Handles Big PRs — Mechanism, Guarantees, Stress Tests</title>
+<meta name="description" content="How ReviewGate reviews diffs larger than the model context window: unit planning, overhead reservation, adaptive degradation, and the invariant that an unfinished review is never reported as a clean PASS. Stress-tested up to 132 files across 5 languages.">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://dengmengmian.github.io/ReviewGate/en/big-pr-handling.html">
+<link rel="alternate" hreflang="zh" href="https://dengmengmian.github.io/ReviewGate/BIG_PR_HANDLING.html">
+<link rel="alternate" hreflang="en" href="https://dengmengmian.github.io/ReviewGate/en/big-pr-handling.html">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="sitemap" type="application/xml" href="/sitemap.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--teal:#14B8A6;--teal-dark:#0F766E;--ink:#0B1220;--muted:#64748B;--bg:#ffffff;--border:#E2E8F0;--font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;--mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font);color:var(--ink);background:var(--bg);line-height:1.7;-webkit-font-smoothing:antialiased}
+  a{color:var(--teal-dark);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:840px;margin:0 auto;padding:0 24px}
+  nav{border-bottom:1px solid var(--border);background:linear-gradient(180deg,#f8fafc,#fff)}
+  nav .wrap{display:flex;align-items:center;gap:28px;height:64px}
+  nav .brand img{height:30px;display:block}
+  nav .back{margin-left:auto;font-size:15px;font-weight:600;color:var(--muted)}
+  nav .back:hover{color:var(--ink)}
+  header{padding:56px 0 32px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#f8fafc,#fff)}
+  header h1{font-size:34px;font-weight:800;letter-spacing:-.02em;color:var(--ink);line-height:1.15}
+  main{padding:48px 0 80px}
+  main h2{font-size:22px;font-weight:700;margin:36px 0 14px;color:var(--ink)}
+  main h3{font-size:18px;font-weight:700;margin:28px 0 10px;color:var(--ink)}
+  main p{color:var(--muted);margin-bottom:16px;font-size:16px}
+  main ul,main ol{margin:0 0 20px 24px;color:var(--muted)}
+  main li{margin-bottom:8px;font-size:16px}
+  main code{font-family:var(--mono);font-size:.9em;background:#f1f5f9;padding:2px 6px;border-radius:5px;color:var(--teal-dark)}
+  main table{width:100%;border-collapse:collapse;margin:20px 0;font-size:14px}
+  main th,main td{padding:12px 14px;border:1px solid var(--border);text-align:left;vertical-align:top}
+  main th{background:#f8fafc;font-weight:700;color:var(--ink)}
+  footer{border-top:1px solid var(--border);padding:40px 0;color:var(--muted);font-size:14px;text-align:center}
+  @media(max-width:720px){header h1{font-size:28px}main table{font-size:13px}main th,main td{padding:8px}}
+</style>
+<script data-goatcounter="https://agentgate.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="/ReviewGate/en/"><img src="../assets/logo.svg" alt="ReviewGate"></a>
+    <a class="back" href="/ReviewGate/en/">← Back to home</a>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <h1>How ReviewGate handles big PRs</h1>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+<p>ReviewGate is built for the "AI changed many files at once" reality, so it has an adaptive pipeline for diffs that exceed the model's context window. The design goal: <strong>rather mark the review as unfinished than let a big PR through as a clean PASS.</strong></p>
+
+<h2>Mechanism</h2>
+<ol>
+<li><strong>Review units (<code>plan_units</code>)</strong> — the input budget is the provider's <code>max_input_tokens</code> (default 200k). A diff within budget is one unit (zero degradation for normal PRs); over budget, files are bin-packed by directory proximity into multiple units reviewed separately.</li>
+<li><strong>Fixed-overhead reservation</strong> — splitting reserves room for the system prompt and dimension focus (<code>plan_budget = budget − overhead</code>), guaranteeing every unit can be sent on its first round. With the default 200k budget this is an invisible no-op.</li>
+<li><strong>Sampling pinned to 1 for multi-unit reviews</strong> — big PRs don't get multiplied by <code>--samples</code>; multi-sampling is reserved for single-unit (normal) PRs where it stabilizes flaky recall.</li>
+<li><strong>Per-unit adaptive degradation</strong> — a unit's prompt starts with full new-file context; if over budget it falls back to diff-only; if a single file's diff alone exceeds the budget, that unit is skipped and marked <code>oversized</code> — counted as incomplete, never silently passed.</li>
+<li><strong>Pre-flight check every agent round</strong> — during review the agent pulls context on demand (read_file / grep / navigation). If the conversation would exceed budget, the next round gracefully wraps up: findings gathered so far are kept, nothing crashes or truncates silently.</li>
+</ol>
+
+<h2>The guarantee: never a silent pass</h2>
+<p>If any unit is skipped, timed out, failed, or wrapped up early, the run always ends with <code>incomplete = true</code> plus explicit warnings (<code>oversized</code> / <code>timed_out</code> / <code>failed</code>), the verdict degrades to <strong>WARN</strong> (never PASS), and with <code>--fail-on</code> the process exits non-zero so CI cannot misread "unfinished" as "clean".</p>
+
+<h2>Stress tests (2026-06-27)</h2>
+<table>
+<thead><tr><th>Target</th><th>Lang</th><th>Size</th><th>Budget</th><th>Units</th><th>First-round over-budget</th><th>Findings</th><th>Verdict</th></tr></thead>
+<tbody>
+<tr><td>axios <code>847d89b</code></td><td>JS</td><td>9 files</td><td>4k</td><td>8</td><td><strong>0</strong></td><td>13</td><td>WARN + incomplete</td></tr>
+<tr><td>requests <code>f8bec2f</code></td><td>Python</td><td>19 files</td><td>6k</td><td>2</td><td><strong>0</strong></td><td>2</td><td>WARN + incomplete</td></tr>
+<tr><td>axios <code>HEAD~30..HEAD</code></td><td>JS</td><td><strong>55 files / ~5,000 lines</strong></td><td>16k</td><td>8</td><td><strong>0</strong></td><td>12</td><td>WARN + incomplete</td></tr>
+<tr><td>ripgrep <code>HEAD~40..HEAD</code></td><td>Rust</td><td>28 files</td><td>12k</td><td>4</td><td><strong>0</strong></td><td>6*</td><td>WARN + incomplete</td></tr>
+<tr><td>gin <code>HEAD~80..HEAD</code></td><td>Go</td><td>46 files / ~2,500 lines</td><td>16k</td><td>6</td><td><strong>0</strong></td><td>13**</td><td><strong>BLOCK</strong> + incomplete</td></tr>
+<tr><td>curl <code>HEAD~30..HEAD</code></td><td>C</td><td>132 files / ~2,400 lines</td><td>12k (tight)</td><td>11</td><td><strong>0</strong></td><td>15***</td><td>WARN + incomplete</td></tr>
+</tbody>
+</table>
+<p>* Includes a real <strong>hallucinated-API catch</strong> (<code>as_bytes_mut()</code> doesn't exist on <code>[u8]</code>).<br>
+** Includes a real <strong>Slowloris DoS</strong> (a <code>#nosec G112</code> suppression with no timeout set) and copy-paste residue referencing a nonexistent <code>maskHeaders()</code> — big PRs can BLOCK, not just WARN.<br>
+*** The honest counter-example: 12k budget is too tight for 132 dense C files; most units exhausted budget while fetching context, so real findings ≈ 0. Still safe — WARN + incomplete, not a silent pass. Match <code>max_input_tokens</code> to diff density (see tuning).</p>
+
+<h3>Takeaways</h3>
+<ul>
+<li>Validated across <strong>5 languages</strong>, up to <strong>55 files / ~5,000 lines</strong> and <strong>11 units</strong>: after unit splitting, first-round over-budget events dropped to zero at every scale.</li>
+<li>With adequate budget, splitting does not hurt recall — real findings (hallucinated APIs, copy-paste residue, a Slowloris DoS) surfaced, and big PRs can still BLOCK.</li>
+<li>With an under-sized budget the run degrades to "mostly unreviewed" — but says so, instead of impersonating a PASS.</li>
+</ul>
+
+<h3>The oversized-single-file path</h3>
+<p>When one file's diff alone exceeds the budget (nothing left to split), it is individually skipped and named. Tested on axios <code>de1a8100</code> with a 2,467-line <code>package-lock.json</code> at an 8k budget: three lockfiles (~53k / 11k / 11k tokens each) were skipped one by one with per-file callouts, the small files in the same commit were reviewed normally with no false positives, and the run ended <code>WARN, incomplete = true</code>. When AI touches a huge generated file: no crash, no silent pass — you're told exactly which files went unreviewed, with the suggestion to split the change or raise <code>max_input_tokens</code>.</p>
+
+<h2>Tuning</h2>
+<table>
+<thead><tr><th>Knob</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><code>max_input_tokens</code> (provider config)</td><td>The input budget that decides when to split. Match it to diff density: too tight and units exhaust budget while fetching context (see the curl row). Small-context models can lower it; large models keep the 200k default.</td></tr>
+<tr><td><code>--samples N</code></td><td>Per-dimension sampling for single-unit PRs (union of runs, cost ×N); automatically pinned to 1 for multi-unit reviews.</td></tr>
+<tr><td><code>--timeout S</code></td><td>Wall-clock cap per dimension; a timed-out dimension is skipped, the rest are kept, and the run counts as incomplete.</td></tr>
+<tr><td><code>--fail-on block|warn|never</code></td><td>Which verdict makes CI exit non-zero; unfinished reviews degrade to WARN.</td></tr>
+</tbody>
+</table>
+
+<p>Per-run raw records live in <a href="/ReviewGate/evals/">docs/evals/</a> (files named <code>2026-06-27__bigpr-*.md</code>). 中文原版<a href="/ReviewGate/BIG_PR_HANDLING.html">在这里</a>。</p>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">© 2026 ReviewGate · MIT License · <a href="/ReviewGate/en/">Home</a> · <a href="/ReviewGate/benchmarks.html">Benchmarks</a> · <a href="/ReviewGate/evals/">Evals</a></div>
+</footer>
+
+</body>
+</html>

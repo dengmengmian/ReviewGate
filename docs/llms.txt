@@ -31,4 +31,11 @@
 - Repository: https://github.com/dengmengmian/ReviewGate
 - Releases: https://github.com/dengmengmian/ReviewGate/releases
 - Evals (public logs): https://github.com/dengmengmian/ReviewGate/tree/main/docs/evals
+- Benchmarks (real CVEs, real PRs, honest caveats): https://dengmengmian.github.io/ReviewGate/benchmarks.html
+- Known limitations: https://dengmengmian.github.io/ReviewGate/en/limitations.html
+- Big PR handling: https://dengmengmian.github.io/ReviewGate/en/big-pr-handling.html
+- vs CodeRabbit / PR-Agent: https://dengmengmian.github.io/ReviewGate/vs-coderabbit.html
+- vs GitHub Copilot code review: https://dengmengmian.github.io/ReviewGate/vs-github-copilot-code-review.html
+- vs Greptile: https://dengmengmian.github.io/ReviewGate/vs-greptile.html
+- vs Cursor BugBot: https://dengmengmian.github.io/ReviewGate/vs-cursor-bugbot.html
 - Changelog: https://github.com/dengmengmian/ReviewGate/blob/main/CHANGELOG.md

@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReviewGate — Pre-merge Quality Gate for AI Code | AI Code Review</title>
+<meta name="description" content="ReviewGate is an open-source MIT pre-merge quality gate for AI-generated code. Reviews git diffs in parallel across security, logic, performance, style, AI-smell, and business-rule dimensions. Deduplicates and counter-evidence-judges findings, surfaces must-fix issues first, folds low-confidence noise, and degrades to WARN instead of faking a PASS.">
+<meta name="google-site-verification" content="5l9WCBqr0vGzeokclOnjnLHXpOB-AvVihUIiZK3bASI">
+<meta name="msvalidate.01" content="ED09D053766919EE4AE466FBEBDE2945">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://dengmengmian.github.io/ReviewGate/en/">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="sitemap" type="application/xml" href="/sitemap.xml">
+<link rel="alternate" type="text/markdown" href="../llms.txt" title="ReviewGate LLM context">
+<link rel="alternate" hreflang="zh" href="https://dengmengmian.github.io/ReviewGate/">
+<link rel="alternate" hreflang="en" href="https://dengmengmian.github.io/ReviewGate/en/">
+<link rel="alternate" hreflang="x-default" href="https://dengmengmian.github.io/ReviewGate/">
+<link rel="preload" as="image" type="image/svg+xml" href="../assets/logo.svg">
+<link rel="preload" as="image" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="dns-prefetch" href="https://fonts.googleapis.com">
+<link rel="dns-prefetch" href="https://fonts.gstatic.com">
+<meta name="author" content="dengmengmian">
+<meta name="keywords" content="AI code review,pre-merge quality gate,AI-generated code,static analysis,LLM code review,CI gate,GitHub Action,code review tool,Rust,open source">
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://dengmengmian.github.io/ReviewGate/en/">
+<meta property="og:site_name" content="ReviewGate">
+<meta property="og:title" content="ReviewGate — Pre-merge Quality Gate for AI Code">
+<meta property="og:description" content="Catch high-risk issues first, fold low-value review noise, never fake a PASS. Open-source MIT, written in Rust, runs as CLI / Claude Skill / GitHub Action.">
+<meta property="og:image" content="https://dengmengmian.github.io/ReviewGate/assets/og.webp">
+<meta property="og:image:type" content="image/webp">
+<meta property="og:image:width" content="2400">
+<meta property="og:image:height" content="1260">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="zh_CN">
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="ReviewGate — Pre-merge Quality Gate for AI Code">
+<meta name="twitter:description" content="Catch high-risk issues first, fold low-value review noise, never fake a PASS. Open-source MIT.">
+<meta name="twitter:image" content="https://dengmengmian.github.io/ReviewGate/assets/og.webp">
+<meta name="theme-color" content="#14B8A6">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "name": "ReviewGate",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Linux, macOS, Windows",
+      "description": "A pre-merge quality gate for AI-generated code. Reviews a git diff in parallel across security, logic, performance, style, AI-smell, and business-rule dimensions, deduplicates and counter-evidence-judges findings, surfaces must-fix issues first, folds low-confidence noise, and degrades to WARN on timeout or oversized context instead of faking a PASS.",
+      "url": "https://dengmengmian.github.io/ReviewGate/en/",
+      "downloadUrl": "https://github.com/dengmengmian/ReviewGate/releases/latest",
+      "softwareVersion": "0.2.0",
+      "license": "https://opensource.org/licenses/MIT",
+      "programmingLanguage": "Rust",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": { "@type": "Person", "name": "dengmengmian", "url": "https://github.com/dengmengmian" }
+    },
+    {
+      "@type": "SoftwareSourceCode",
+      "name": "ReviewGate",
+      "codeRepository": "https://github.com/dengmengmian/ReviewGate",
+      "programmingLanguage": "Rust",
+      "license": "https://opensource.org/licenses/MIT"
+    },
+    {
+      "@type": "WebSite",
+      "name": "ReviewGate",
+      "url": "https://dengmengmian.github.io/ReviewGate/en/",
+      "description": "ReviewGate is an open-source MIT pre-merge quality gate for AI-generated code. Reviews git diffs in parallel across security, logic, performance, style, AI-smell, and business-rule dimensions.",
+      "inLanguage": ["en", "zh"],
+      "publisher": { "@type": "Person", "name": "dengmengmian", "url": "https://github.com/dengmengmian" }
+    }
+  ]
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --teal:#14B8A6; --teal-dark:#0F766E; --teal-light:#F0FDFA;
+    --slate:#94A3B8; --ink:#0B1220; --ink-2:#111a2e;
+    --bg:#ffffff; --muted:#64748B; --text:#1E293B; --border:#E2E8F0;
+    --red:#F43F5E; --amber:#F59E0B; --green:#10B981;
+    --radius:16px; --maxw:1120px;
+    --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:var(--font);color:var(--text);background:var(--bg);line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  section{padding:96px 0}
+  h2{font-size:34px;font-weight:800;letter-spacing:-.02em;color:var(--ink)}
+  .sec-head{text-align:center;max-width:680px;margin:0 auto 56px}
+  .sec-head p{color:var(--muted);font-size:17px;margin-top:14px}
+  .eyebrow{color:var(--teal-dark);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase}
+
+  /* nav */
+  nav{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.82);backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--border)}
+  nav .wrap{display:flex;align-items:center;gap:28px;height:64px}
+  nav .brand img{height:30px;display:block}
+  nav .links{display:flex;gap:26px;margin-left:8px;font-size:15px;font-weight:500;color:var(--muted)}
+  nav .links a:hover{color:var(--ink)}
+  nav .right{margin-left:auto;display:flex;align-items:center;gap:14px}
+  .langbtn{font:inherit;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:#fff;color:var(--muted);padding:6px 12px;border-radius:9px}
+  .langbtn:hover{border-color:var(--teal);color:var(--teal-dark)}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:15px;padding:11px 20px;border-radius:11px;cursor:pointer;border:1px solid transparent;transition:.15s}
+  .btn-primary{background:var(--teal);color:#fff}
+  .btn-primary:hover{background:var(--teal-dark)}
+  .btn-ghost{background:#fff;color:var(--ink);border-color:var(--border)}
+  .btn-ghost:hover{border-color:var(--slate)}
+  nav .btn{padding:9px 16px;font-size:14px}
+  .links a, nav .langbtn{white-space:nowrap}
+
+  /* hero */
+  .hero{background:radial-gradient(1200px 600px at 70% -10%,rgba(20,184,166,.12),transparent 60%),linear-gradient(180deg,#fff,#f8fafc);padding:80px 0 72px;border-bottom:1px solid var(--border)}
+  .hero-grid{display:grid;grid-template-columns:1.05fr 1fr;gap:56px;align-items:center}
+  .pill{display:inline-flex;align-items:center;gap:8px;background:var(--teal-light);color:var(--teal-dark);font-weight:600;font-size:13px;padding:6px 13px;border-radius:999px;border:1px solid #ccfbf1}
+  .pill b{color:var(--teal-dark)}
+  h1{font-size:52px;line-height:1.08;font-weight:800;letter-spacing:-.03em;color:var(--ink);margin:22px 0 0}
+  h1 .accent{color:var(--teal)}
+  .lead{font-size:19px;color:var(--muted);margin-top:20px;max-width:540px}
+  .cta{display:flex;gap:14px;margin-top:32px;flex-wrap:wrap}
+  .trust{display:flex;gap:22px;flex-wrap:wrap;margin-top:30px;font-size:13.5px;color:var(--muted)}
+  .trust span{display:inline-flex;align-items:center;gap:7px}
+  .trust .dot{width:7px;height:7px;border-radius:50%;background:var(--teal)}
+
+  /* code one-liner */
+  .oneliner{margin-top:26px;display:flex;align-items:center;background:var(--ink);border-radius:12px;padding:4px 4px 4px 18px;max-width:560px;box-shadow:0 10px 30px rgba(11,18,32,.16)}
+  .oneliner code{font-family:var(--mono);font-size:13.5px;color:#cbd5e1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+  .oneliner code .prompt{color:var(--teal)}
+  .copy{font:inherit;font-size:12.5px;font-weight:600;color:#fff;background:#1f2c47;border:0;border-radius:9px;padding:9px 14px;cursor:pointer;white-space:nowrap}
+  .copy:hover{background:#28385a}
+  .copy.ok{background:var(--teal-dark)}
+
+  /* terminal */
+  .term{background:#0c1424;border-radius:14px;box-shadow:0 24px 60px rgba(11,18,32,.28);overflow:hidden;border:1px solid #1c2740}
+  .term-bar{display:flex;align-items:center;gap:8px;padding:13px 16px;background:#111c30;border-bottom:1px solid #1c2740}
+  .term-bar i{width:12px;height:12px;border-radius:50%;display:block}
+  .term-bar .r{background:#ff5f57}.term-bar .y{background:#febc2e}.term-bar .g{background:#28c840}
+  .term-bar span{margin-left:8px;color:#5b6b86;font-family:var(--mono);font-size:12px}
+  .term pre{margin:0;padding:18px 20px;font-family:var(--mono);font-size:12.5px;line-height:1.7;color:#cbd5e1;overflow-x:auto;tab-size:2}
+  .term .rule{color:#334866}
+  .term .block{color:var(--red);font-weight:700}
+  .term .sev{color:#fda4af}
+  .term .label{color:#7dd3fc;font-weight:700}
+  .term .file{color:#a5b4fc}
+  .term .del{color:#fb7185}
+  .term .add{color:#34d399}
+  .term .dim{color:#64748b}
+
+  /* feature cards */
+  .pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:30px;transition:.18s}
+  .card:hover{border-color:#bdeae3;box-shadow:0 14px 34px rgba(20,184,166,.10);transform:translateY(-2px)}
+  .card h3{font-size:19px;color:var(--ink);font-weight:700}
+  .card h3::before{content:"";display:block;width:30px;height:3px;border-radius:2px;background:var(--teal);margin-bottom:16px}
+  .card p{color:var(--muted);font-size:15px;margin-top:9px}
+
+  /* how it works */
+  .alt{background:linear-gradient(180deg,#f8fafc,#fff)}
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;counter-reset:s}
+  .step{position:relative;background:#fff;border:1px solid var(--border);border-radius:14px;padding:26px 22px}
+  .step::before{counter-increment:s;content:counter(s);position:absolute;top:-15px;left:22px;width:30px;height:30px;border-radius:9px;background:var(--teal);color:#fff;font-weight:700;display:grid;place-items:center;font-size:15px}
+  .step h3{font-size:16.5px;color:var(--ink);margin:8px 0 8px;font-weight:700}
+  .step p{font-size:14px;color:var(--muted)}
+
+  /* dimensions */
+  .dims{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .dim-card{padding:18px 20px;border:1px solid var(--border);border-left:3px solid var(--teal);border-radius:0 13px 13px 0;background:#fff}
+  .dim-card h4{font-family:var(--mono);font-size:14px;color:var(--teal-dark);font-weight:700}
+  .dim-card p{font-size:13.5px;color:var(--muted);margin-top:4px}
+
+  /* trust + when */
+  .trust-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  .col{border:1px solid var(--border);border-radius:var(--radius);padding:30px;background:#fff}
+  .col.good{border-color:#bbf0e7;background:linear-gradient(180deg,#f0fdfa,#fff)}
+  .col h3{font-size:18px;color:var(--ink);display:flex;align-items:center;gap:9px}
+  .col ul{list-style:none;margin-top:16px;display:flex;flex-direction:column;gap:12px}
+  .col li{font-size:15px;color:var(--text);display:flex;gap:10px;align-items:flex-start}
+  .col li::before{content:"";flex:none;width:18px;height:18px;border-radius:50%;margin-top:3px;background-size:contain}
+  .col.good li::before{background:var(--teal);-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M9 16.2l-3.5-3.5L4 14.2 9 19l11-11-1.5-1.5z'/%3E%3C/svg%3E") center/14px no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M9 16.2l-3.5-3.5L4 14.2 9 19l11-11-1.5-1.5z'/%3E%3C/svg%3E") center/14px no-repeat}
+  .col.bad li::before{background:var(--slate);-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z'/%3E%3C/svg%3E") center/13px no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M19 6.4L17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z'/%3E%3C/svg%3E") center/13px no-repeat}
+
+  /* install */
+  .install-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start}
+  .codeblock{background:var(--ink);border-radius:14px;overflow:hidden;border:1px solid #1c2740}
+  .codeblock .cb-head{display:flex;align-items:center;justify-content:space-between;padding:11px 16px;border-bottom:1px solid #1c2740;background:#111c30}
+  .codeblock .cb-head span{font-family:var(--mono);font-size:12px;color:#7e8ca6}
+  .codeblock pre{margin:0;padding:18px 20px;font-family:var(--mono);font-size:13px;line-height:1.75;color:#cbd5e1;overflow-x:auto}
+  .codeblock .prompt{color:var(--teal)}.codeblock .cm{color:#64748b}.codeblock .k{color:#7dd3fc}
+  .cb-head .copy{padding:6px 11px;font-size:11.5px}
+  .note{font-size:14px;color:var(--muted);margin-top:14px}
+
+  /* integrations */
+  .ints{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+  .int{border:1px solid var(--border);border-radius:var(--radius);padding:28px;background:#fff}
+  .int .tag{display:inline-block;font-size:12px;font-weight:700;color:var(--teal-dark);background:var(--teal-light);padding:4px 10px;border-radius:7px}
+  .int .tag.exp{color:#92400e;background:#fef3c7}
+  .int h3{font-size:18px;color:var(--ink);margin:14px 0 8px}
+  .int p{font-size:14.5px;color:var(--muted)}
+  .int pre{margin-top:14px;background:#0c1424;border-radius:10px;padding:12px 14px;font-family:var(--mono);font-size:12px;color:#cbd5e1;white-space:pre-wrap;overflow-wrap:anywhere}
+  .int pre .prompt{color:var(--teal)}
+
+  /* cta band */
+  .band{background:linear-gradient(135deg,var(--teal-dark),var(--teal));border-radius:24px;padding:60px;text-align:center;color:#fff}
+  .band h2{color:#fff;font-size:32px}
+  .band p{color:#d7fbf4;margin:14px auto 28px;max-width:520px;font-size:17px}
+  .band .btn-primary{background:#fff;color:var(--teal-dark)}
+  .band .btn-primary:hover{background:#ecfeff}
+  .band .btn-ghost{background:transparent;color:#fff;border-color:rgba(255,255,255,.5)}
+  .band .btn-ghost:hover{border-color:#fff}
+
+  /* faq */
+  .faq{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .qa{border:1px solid var(--border);border-radius:14px;padding:24px 26px;background:#fff}
+  .qa h3{font-size:17px;color:var(--ink);font-weight:700;margin-bottom:10px}
+  .qa p{font-size:14.5px;color:var(--muted)}
+
+  /* footer */
+  footer{border-top:1px solid var(--border);padding:48px 0;color:var(--muted);font-size:14px}
+  footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}
+  footer .fl{display:flex;gap:22px;flex-wrap:wrap}
+  footer a:hover{color:var(--ink)}
+
+  @media(max-width:880px){
+    section{padding:64px 0}
+    .hero-grid,.install-grid,.two{grid-template-columns:1fr}
+    .pillars,.steps,.dims,.trust-cards,.ints,.faq{grid-template-columns:1fr}
+    h1{font-size:38px}h2{font-size:27px}
+    nav .links{display:none}
+    .band{padding:40px 24px}
+  }
+</style>
+<script data-goatcounter="https://agentgate.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="/ReviewGate/en/"><img src="../assets/logo.svg" alt="ReviewGate"></a>
+    <div class="links">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#install">Install</a>
+      <a href="#integrations">Integrations</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <div class="right">
+      <a class="langbtn" href="/ReviewGate/">中</a>
+      <a class="btn btn-primary" href="https://github.com/dengmengmian/ReviewGate" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="pill">MIT License · <b>Rust</b></span>
+      <h1>
+        A pre-merge<br>
+        <span class="accent">quality gate for AI code</span>
+      </h1>
+      <p class="lead">
+        Catch high-risk issues first, fold low-value review noise. It doesn't replace tests or human review — it filters PRs before merge: risks up front, low-confidence findings folded by default.
+      </p>
+
+      <div class="oneliner">
+        <code><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh</code>
+        <button class="copy" data-copy="curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh">Copy</button>
+      </div>
+
+      <div class="cta">
+        <a class="btn btn-primary" href="#install">Get started</a>
+        <a class="btn btn-ghost" href="https://github.com/dengmengmian/ReviewGate" target="_blank" rel="noopener">View on GitHub</a>
+      </div>
+
+      <div class="trust">
+        <span><i class="dot"></i>Read-only by default</span>
+        <span><i class="dot"></i>45-language evals</span>
+        <span><i class="dot"></i>Revert gold set</span>
+      </div>
+    </div>
+
+    <div class="term" aria-hidden="true">
+      <div class="term-bar"><i class="r"></i><i class="y"></i><i class="g"></i><span>reviewgate review</span></div>
+<pre><span class="rule">━━ ReviewGate ━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+  <span class="block">✖ BLOCK</span>   1 files · 1 must-fix · 0 warn · <span class="dim">3 hidden</span>
+  <span class="dim">LLM 120k in (cache 88%) · 2.1k out</span>
+<span class="rule">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</span>
+
+<span class="label">▌ MUST FIX</span>
+
+  1  <span class="file">handler.rs:3</span>          <span class="sev">security · high · 100%</span>
+
+     SQL injection: req.user_id concatenated into
+     a DELETE statement via format!.
+
+     Patch
+       <span class="del">- format!("DELETE FROM users WHERE id={}", id)</span>
+       <span class="add">+ "DELETE FROM users WHERE id = $1"</span>
+
+<span class="label">▌ NOT SHOWN</span>
+  <span class="dim">3 low-confidence findings hidden.</span></pre>
+    </div>
+  </div>
+</header>
+
+<!-- PILLARS -->
+<section id="features" aria-labelledby="features-heading">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Why ReviewGate</span>
+      <h2 id="features-heading">Three jobs, done right</h2>
+      <p>Not another AI reviewer — a gate that promotes risk, suppresses noise, and refuses to fake a pass.</p>
+    </div>
+    <div class="pillars">
+      <div class="card">
+        <h3>Catch high-risk</h3>
+        <p>Parallel review across security, logic, performance, and business-rule dimensions — must-fix issues surface first.</p>
+      </div>
+      <div class="card">
+        <h3>Cut the noise</h3>
+        <p>Cross-dimension dedup, counter-evidence judging, and confidence filtering fold low-value feedback by default.</p>
+      </div>
+      <div class="card">
+        <h3>No fake pass</h3>
+        <p>Timeouts, oversized context, and incomplete units degrade to WARN with a non-zero exit — never a fake PASS.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how" class="alt" aria-labelledby="how-heading">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">How it works</span>
+      <h2 id="how-heading">From diff to gate, in four steps</h2>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <h3>Parallel review</h3>
+        <p>Multiple agents each focus on one dimension and scan your diff in parallel, tracing callers across files as needed.</p>
+      </div>
+      <div class="step">
+        <h3>Line anchoring</h3>
+        <p>Models annotate line numbers; the engine validates and relocates them via code anchors to reduce drift.</p>
+      </div>
+      <div class="step">
+        <h3>Dedup + judge</h3>
+        <p>Same-spot findings merge and gain confidence; each is then independently judged with evidence before it survives.</p>
+      </div>
+      <div class="step">
+        <h3>Confidence gate</h3>
+        <p>High-confidence issues block (BLOCK), low-confidence folds by default, incomplete reviews degrade to WARN.</p>
+      </div>
+    </div>
+
+    <div class="sec-head" style="margin-top:72px;margin-bottom:32px">
+      <h2 style="font-size:24px">Six review dimensions</h2>
+    </div>
+    <div class="dims">
+      <div class="dim-card"><h4>security</h4><p>Injection, authz bypass, secret leaks, unsafe deserialization</p></div>
+      <div class="dim-card"><h4>perf</h4><p>N+1 queries, needless copies, hot-path complexity, blocking calls</p></div>
+      <div class="dim-card"><h4>logic</h4><p>Edge cases, nulls, error paths, concurrency races</p></div>
+      <div class="dim-card"><h4>style</h4><p>Naming, readability, duplicated code</p></div>
+      <div class="dim-card"><h4>ai_smell</h4><p>Hallucinated APIs, plausible-but-wrong code, assumption drift</p></div>
+      <div class="dim-card"><h4>business</h4><p>Business rules, permission boundaries, state machines, money/orders/inventory</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- WHY TRUST -->
+<section aria-labelledby="trust-heading">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Why trust it</span>
+      <h2 id="trust-heading">Conservative, verifiable, scoped</h2>
+    </div>
+    <div class="trust-cards">
+      <div class="card">
+        <h3>Public eval logs</h3>
+        <p>Real PRs, revert gold sets, 45-language samples, large PRs, and intent reviews are all logged under docs/evals/.</p>
+      </div>
+      <div class="card">
+        <h3>Read-only by default</h3>
+        <p>Except for explicit --fix with per-finding confirmation, it never writes your worktree or runs arbitrary shell.</p>
+      </div>
+      <div class="card">
+        <h3>Conservative gate</h3>
+        <p>Low-confidence folds by default; timeouts, overflow, and incomplete reviews degrade to WARN rather than wave a PR through.</p>
+      </div>
+    </div>
+
+    <div class="two" style="margin-top:40px">
+      <div class="col good">
+        <h3>Good fit</h3>
+        <ul>
+          <li>AI changes many files and reviewers need risk prioritization</li>
+          <li>Permission, money, or state-machine rules need repeated checks</li>
+          <li>You want a high-confidence PR/CI gate</li>
+          <li>You want --intent to check implementation against requirements</li>
+        </ul>
+      </div>
+      <div class="col bad">
+        <h3>Not a fit</h3>
+        <ul>
+          <li>Replacing unit tests, integration tests, or human review</li>
+          <li>Auto-merging model-generated fixes with no review</li>
+          <li>Teams that cannot tolerate conservative WARNs</li>
+          <li>No LLM API key, or code cannot be sent to a model</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INSTALL -->
+<section id="install" class="alt" aria-labelledby="install-heading">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Quick start</span>
+      <h2 id="install-heading">Three things to get going</h2>
+      <p>A git repo, an LLM API key, and the reviewgate command. Model-agnostic — any OpenAI-compatible or Anthropic endpoint.</p>
+    </div>
+    <div class="install-grid">
+      <div>
+        <div class="codeblock">
+          <div class="cb-head"><span>① Install — Linux / macOS</span>
+            <button class="copy" data-copy="curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh">Copy</button></div>
+<pre><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/\
+    dengmengmian/ReviewGate/main/install.sh | sh</pre>
+        </div>
+        <div class="codeblock" style="margin-top:16px">
+          <div class="cb-head"><span>Windows (PowerShell)</span>
+            <button class="copy" data-copy="irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex">Copy</button></div>
+<pre><span class="prompt">PS&gt;</span> irm https://raw.githubusercontent.com/\
+     dengmengmian/ReviewGate/main/install.ps1 | iex</pre>
+        </div>
+        <p class="note">Prefer not to pipe a remote script? Download install.sh to inspect, or grab the binary from GitHub Releases. Upgrade anytime with reviewgate upgrade.</p>
+      </div>
+      <div>
+        <div class="codeblock">
+          <div class="cb-head"><span>② Configure + review</span>
+            <button class="copy" data-copy='mkdir -p ~/.reviewgate
+cat > ~/.reviewgate/config.toml <<EOF
+provider = "deepseek"
+[providers.deepseek]
+protocol = "openai"
+base_url = "https://api.deepseek.com/v1"
+model = "deepseek-v4-pro"
+EOF
+export REVIEWGATE_API_KEY="your key"
+reviewgate llm test
+reviewgate review'>Copy</button></div>
+<pre><span class="cm"># Global config shared across repos</span>
+<span class="prompt">$</span> cat > ~/.reviewgate/config.toml <<EOF
+provider = <span class="k">"deepseek"</span>
+[providers.deepseek]
+protocol = <span class="k">"openai"</span>
+base_url = <span class="k">"https://api.deepseek.com/v1"</span>
+model    = <span class="k">"deepseek-v4-pro"</span>
+EOF
+
+<span class="cm"># Inject key via env, not config file</span>
+<span class="prompt">$</span> export REVIEWGATE_API_KEY=<span class="k">"your key"</span>
+
+<span class="prompt">$</span> reviewgate llm test     <span class="cm"># verify connectivity</span>
+<span class="prompt">$</span> reviewgate review       <span class="cm"># review current changes</span></pre>
+        </div>
+        <p class="note">In CI: reviewgate review --fail-on block. Exit 0 pass · 1 blocked by the gate · 2 tool error (config/network) — distinct codes so CI can retry or alert.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INTEGRATIONS -->
+<section id="integrations" aria-labelledby="integrations-heading">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Integrations</span>
+      <h2 id="integrations-heading">One engine, several forms</h2>
+      <p>All just call the same reviewgate CLI. CLI is primary and the Action is for PR/CI; the Claude Skill, Codex, and AtomCode are thinner agent shells (experimental).</p>
+    </div>
+    <div class="ints">
+      <div class="int">
+        <span class="tag">Primary</span>
+        <h3>CLI</h3>
+        <p>Run locally or in CI. Workspace / commit / branch range, JSON output, and --intent technical review.</p>
+        <pre><span class="prompt">$</span> reviewgate review --from main --to HEAD</pre>
+      </div>
+      <div class="int">
+        <span class="tag">CI</span>
+        <h3>GitHub Action</h3>
+        <p>Auto-review PRs and post a summary plus inline suggestions the author can apply in one click.</p>
+        <pre><span class="prompt">uses:</span> dengmengmian/ReviewGate/
+      integrations/github-action@v0</pre>
+      </div>
+      <div class="int">
+        <span class="tag exp">experimental</span>
+        <h3>Agent shells: Claude / Codex / AtomCode</h3>
+        <p>Drop into Claude Code (trigger with /reviewgate), Codex (AGENTS.md), or AtomCode (.atomcode/skills) to call the same engine from chat. Thinner and newer than CLI/Action.</p>
+        <pre><span class="prompt">$</span> integrations/claude-skill/install-into-project.sh
+<span class="prompt">$</span> integrations/codex/install-into-project.sh
+<span class="prompt">$</span> integrations/atomcode/install-into-project.sh</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" class="alt" aria-labelledby="faq-heading">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">FAQ</span>
+      <h2 id="faq-heading">Questions you might have</h2>
+    </div>
+    <div class="faq">
+      <div class="qa">
+        <h3>How is it different from a normal AI code reviewer?</h3>
+        <p>It's a gate, not another reviewer. Findings are deduplicated, independently counter-evidence-judged, and confidence-filtered; low-value feedback folds by default; timeouts or incomplete reviews degrade to WARN with a non-zero exit instead of faking a PASS.</p>
+      </div>
+      <div class="qa">
+        <h3>Which models or providers are supported?</h3>
+        <p>Model-agnostic — any OpenAI-compatible or Anthropic endpoint works: DeepSeek, Kimi, GLM, Qwen, Claude, and more, chosen by your team's cost, latency, and context-window needs.</p>
+      </div>
+      <div class="qa">
+        <h3>Does it send my code to a third party?</h3>
+        <p>Only to the LLM endpoint you configure — no other server. The review path is read-only by default: unless you pass --fix with per-finding confirmation, it never writes your worktree or runs arbitrary shell.</p>
+      </div>
+      <div class="qa">
+        <h3>How do I add it to CI?</h3>
+        <p>Run reviewgate review --fail-on block (exit 0 pass / 1 blocked by the gate / 2 tool error), or use the GitHub Action to auto-review PRs and post inline suggestions.</p>
+      </div>
+      <div class="qa">
+        <h3>Is it free?</h3>
+        <p>The tool itself is open source under MIT and free. You only pay for your own LLM API usage.</p>
+      </div>
+      <div class="qa">
+        <h3>Will there be too many false positives?</h3>
+        <p>Every finding passes a counter-evidence judge and a confidence gate; low-confidence ones fold by default. Tune block/warn thresholds, raise recall with --samples, or speed up with --no-judge.</p>
+      </div>
+      <div class="qa">
+        <h3>How is it different from CodeRabbit or PR-Agent?</h3>
+        <p>ReviewGate doesn't run on a third-party SaaS; it only calls the LLM endpoint you configure and is read-only by default, so code never leaves your infrastructure. It is intentionally conservative: it degrades to WARN rather than mark an incomplete review as PASS, and puts deduplication, counter-evidence judging, and a confidence gate at the core.</p>
+      </div>
+      <div class="qa">
+        <h3>Does it support GitLab or Azure DevOps?</h3>
+        <p>The CLI works in any CI that can run a shell (GitLab CI, Azure Pipelines, Jenkins, Buildkite, etc.) as long as reviewgate gets a git worktree and an API key. The GitHub Action is GitHub-only for now.</p>
+      </div>
+      <div class="qa">
+        <h3>Does it modify my code?</h3>
+        <p>Read-only by default. It only writes suggested patches to the worktree when you explicitly use --fix and confirm each finding; it never auto-commits or auto-merges.</p>
+      </div>
+    </div>
+  </div>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      { "@type": "Question", "name": "How is ReviewGate different from a normal AI code reviewer?", "acceptedAnswer": { "@type": "Answer", "text": "It's a gate, not another reviewer. Findings are deduplicated, independently counter-evidence-judged, and confidence-filtered; low-value feedback folds by default; timeouts or incomplete reviews degrade to WARN with a non-zero exit instead of faking a PASS." } },
+      { "@type": "Question", "name": "Which models or providers does ReviewGate support?", "acceptedAnswer": { "@type": "Answer", "text": "Model-agnostic — any OpenAI-compatible or Anthropic endpoint works: DeepSeek, Kimi, GLM, Qwen, Claude, and more, chosen by your team's cost, latency, and context-window needs." } },
+      { "@type": "Question", "name": "Does ReviewGate send my code to a third party?", "acceptedAnswer": { "@type": "Answer", "text": "Only to the LLM endpoint you configure — no other server. The review path is read-only by default: unless you pass --fix with per-finding confirmation, it never writes your worktree or runs arbitrary shell." } },
+      { "@type": "Question", "name": "How do I add ReviewGate to CI?", "acceptedAnswer": { "@type": "Answer", "text": "Run reviewgate review --fail-on block (exit 0 pass / 1 blocked by the gate / 2 tool error), or use the GitHub Action to auto-review PRs and post inline suggestions." } },
+      { "@type": "Question", "name": "Is ReviewGate free?", "acceptedAnswer": { "@type": "Answer", "text": "The tool itself is open source under MIT and free. You only pay for your own LLM API usage." } },
+      { "@type": "Question", "name": "Will ReviewGate produce too many false positives?", "acceptedAnswer": { "@type": "Answer", "text": "Every finding passes a counter-evidence judge and a confidence gate; low-confidence ones fold by default. Tune block/warn thresholds, raise recall with --samples, or speed up with --no-judge." } },
+      { "@type": "Question", "name": "How is ReviewGate different from CodeRabbit or PR-Agent?", "acceptedAnswer": { "@type": "Answer", "text": "ReviewGate doesn't run on a third-party SaaS; it only calls the LLM endpoint you configure and is read-only by default, so code never leaves your infrastructure. It is intentionally conservative: it degrades to WARN rather than mark an incomplete review as PASS, and puts deduplication, counter-evidence judging, and a confidence gate at the core." } },
+      { "@type": "Question", "name": "Does ReviewGate support GitLab or Azure DevOps?", "acceptedAnswer": { "@type": "Answer", "text": "The CLI works in any CI that can run a shell (GitLab CI, Azure Pipelines, Jenkins, Buildkite, etc.) as long as reviewgate gets a git worktree and an API key. The GitHub Action is GitHub-only for now." } },
+      { "@type": "Question", "name": "Does ReviewGate modify my code?", "acceptedAnswer": { "@type": "Answer", "text": "Read-only by default. It only writes suggested patches to the worktree when you explicitly use --fix and confirm each finding; it never auto-commits or auto-merges." } }
+    ]
+  }
+  </script>
+</section>
+
+<!-- CTA BAND -->
+<section>
+  <div class="wrap">
+    <div class="band">
+      <h2>Put a gate in front of your PRs</h2>
+      <p>Open source, MIT, model-agnostic. Roll out in WARN / comment-only mode first, then enforce BLOCK once you trust it.</p>
+      <div class="cta" style="justify-content:center">
+        <a class="btn btn-primary" href="#install">Install now</a>
+        <a class="btn btn-ghost" href="https://github.com/dengmengmian/ReviewGate" target="_blank" rel="noopener">Read the docs</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <a class="brand" href="/ReviewGate/en/"><img src="../assets/logo.svg" alt="ReviewGate" style="height:26px"></a>
+      <div style="margin-top:8px">© 2026 ReviewGate · MIT License</div>
+    </div>
+    <div class="fl">
+      <a href="https://github.com/dengmengmian/ReviewGate" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/dengmengmian/ReviewGate/releases/latest" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/dengmengmian/ReviewGate/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+      <a href="/ReviewGate/benchmarks.html">Benchmarks</a>
+      <a href="/ReviewGate/en/big-pr-handling.html">Big PRs</a>
+      <a href="/ReviewGate/en/limitations.html">Limitations</a>
+      <a href="/ReviewGate/vs-coderabbit.html">vs CodeRabbit</a>
+      <a href="/ReviewGate/vs-github-copilot-code-review.html">vs Copilot review</a>
+      <a href="/ReviewGate/vs-greptile.html">vs Greptile</a>
+      <a href="/ReviewGate/vs-cursor-bugbot.html">vs Cursor BugBot</a>
+      <a href="/ReviewGate/ai-code-review.html">AI code review</a>
+      <a href="/ReviewGate/evals/" target="_blank" rel="noopener">Evals</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Copy buttons
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click',function(){
+      var text=b.getAttribute('data-copy')||b.parentElement.querySelector('code,pre').innerText;
+      navigator.clipboard.writeText(text).then(function(){
+        var old=b.textContent;
+        b.textContent='Copied ✓';
+        b.classList.add('ok');
+        setTimeout(function(){b.textContent=old;b.classList.remove('ok');},1600);
+      });
+    });
+  });
+</script>
+</body>
+</html>

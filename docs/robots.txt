@@ -1,5 +1,7 @@
 User-agent: *
 Allow: /
+Crawl-delay: 1
+Host: https://dengmengmian.github.io
 
 # AI / answer-engine crawlers are welcome
 User-agent: GPTBot

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReviewGate vs Greptile — Codebase-aware SaaS or Self-hosted Gate?</title>
+<meta name="description" content="Compare ReviewGate with Greptile for AI code review. Greptile indexes your whole codebase as a hosted service; ReviewGate is a self-hosted, model-agnostic pre-merge gate that fetches context on demand and never fakes a PASS.">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://dengmengmian.github.io/ReviewGate/vs-greptile.html">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="sitemap" type="application/xml" href="/sitemap.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--teal:#14B8A6;--teal-dark:#0F766E;--teal-light:#F0FDFA;--ink:#0B1220;--muted:#64748B;--bg:#ffffff;--border:#E2E8F0;--red:#F43F5E;--green:#10B981;--font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font);color:var(--ink);background:var(--bg);line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1000px;margin:0 auto;padding:0 24px}
+  nav{border-bottom:1px solid var(--border);background:linear-gradient(180deg,#f8fafc,#fff)}
+  nav .wrap{display:flex;align-items:center;gap:28px;height:64px}
+  nav .brand img{height:30px;display:block}
+  nav .back{margin-left:auto;font-size:15px;font-weight:600;color:var(--muted)}
+  nav .back:hover{color:var(--ink)}
+  header{padding:64px 0 48px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#f8fafc,#fff)}
+  h1{font-size:38px;font-weight:800;letter-spacing:-.02em;color:var(--ink);line-height:1.1}
+  .lead{color:var(--muted);font-size:18px;margin-top:16px;max-width:720px}
+  main{padding:56px 0 80px}
+  h2{font-size:26px;font-weight:800;margin:48px 0 20px;color:var(--ink)}
+  h3{font-size:20px;font-weight:700;margin:32px 0 12px;color:var(--ink)}
+  p{color:var(--muted);margin-bottom:16px;font-size:16px}
+  ul{margin:0 0 20px 20px;color:var(--muted)}
+  li{margin-bottom:8px;font-size:16px}
+  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:14px;margin:24px 0}
+  table{width:100%;border-collapse:collapse;font-size:15px}
+  th,td{padding:14px 18px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}
+  th{background:#f8fafc;font-weight:700;color:var(--ink)}
+  tr:last-child td{border-bottom:none}
+  .yes{color:var(--green);font-weight:700}
+  .no{color:var(--red);font-weight:700}
+  .na{color:var(--muted)}
+  .highlight{background:var(--teal-light)}
+  .cta-box{background:linear-gradient(135deg,var(--teal-dark),var(--teal));border-radius:20px;padding:40px;margin-top:48px;color:#fff;text-align:center}
+  .cta-box h2{color:#fff;font-size:26px;margin-bottom:12px}
+  .cta-box p{color:#d7fbf4;margin-bottom:24px}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:15px;padding:12px 22px;border-radius:11px;background:#fff;color:var(--teal-dark)}
+  .btn:hover{background:#ecfeff}
+  footer{border-top:1px solid var(--border);padding:40px 0;color:var(--muted);font-size:14px;text-align:center}
+  @media(max-width:720px){
+    h1{font-size:30px}
+    .table-wrap{font-size:14px}
+    th,td{padding:12px}
+  }
+</style>
+<script data-goatcounter="https://agentgate.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="/ReviewGate/"><img src="assets/logo.svg" alt="ReviewGate"></a>
+    <a class="back" href="/ReviewGate/">← Back to home</a>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <h1>ReviewGate vs Greptile</h1>
+    <p class="lead">Greptile is a hosted AI reviewer that indexes your whole codebase and comments on PRs with full-repo context. ReviewGate is a self-hosted CLI gate that pulls context on demand with code-navigation tools and turns findings into a BLOCK / WARN / pass verdict for CI.</p>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <h2>At a glance</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Capability</th>
+            <th>ReviewGate</th>
+            <th>Greptile</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="highlight">
+            <td>Deployment / data residency</td>
+            <td><span class="yes">Self-hosted CLI; nothing leaves your infra except calls to your own LLM endpoint</span></td>
+            <td><span class="no">Hosted SaaS by default; your repo is indexed on their side (enterprise deployment options exist)</span></td>
+          </tr>
+          <tr>
+            <td>Codebase context</td>
+            <td>On-demand: tree-sitter navigation (find_definition / callers / references), file reads, grep during review</td>
+            <td><span class="yes">Full-repo index built ahead of time</span></td>
+          </tr>
+          <tr class="highlight">
+            <td>LLM provider choice</td>
+            <td><span class="yes">Any OpenAI-compatible or Anthropic endpoint you configure</span></td>
+            <td>Vendor-managed models</td>
+          </tr>
+          <tr>
+            <td>Output form</td>
+            <td><span class="yes">Verdict + exit codes for CI (0 clean / 1 blocked / 2 tool failure)</span></td>
+            <td>PR comments and summaries</td>
+          </tr>
+          <tr class="highlight">
+            <td>Incomplete review handling</td>
+            <td><span class="yes">Timeout / oversized diffs degrade to WARN + non-zero exit; never a fake PASS</span></td>
+            <td><span class="na">No public incomplete-review contract</span></td>
+          </tr>
+          <tr>
+            <td>Findings validation</td>
+            <td><span class="yes">Dedup + counter-evidence judge; low-confidence findings folded by default</span></td>
+            <td>Learns from comment feedback (thumbs up/down)</td>
+          </tr>
+          <tr class="highlight">
+            <td>Pricing model</td>
+            <td><span class="yes">MIT open source; pay only your LLM usage</span></td>
+            <td>Commercial SaaS subscription</td>
+          </tr>
+          <tr>
+            <td>Public evaluation logs</td>
+            <td><span class="yes">Raw runs committed under <a href="/ReviewGate/evals/">docs/evals/</a></span></td>
+            <td><span class="na">Marketing benchmarks; raw logs not public</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>When Greptile is the better fit</h2>
+    <ul>
+      <li>You want deep, always-on full-repo context without thinking about token budgets.</li>
+      <li>You prefer a managed service with a web dashboard over running a CLI in CI.</li>
+      <li>Your changes frequently depend on distant parts of a very large codebase, and pre-indexing pays off.</li>
+      <li>You are comfortable with a vendor indexing and storing a copy of your repository.</li>
+    </ul>
+
+    <h2>When ReviewGate is the better fit</h2>
+    <ul>
+      <li>Your code cannot be indexed or stored by a third party — the diff only ever goes to the LLM endpoint you chose.</li>
+      <li>You want to pick the model yourself (DeepSeek, Kimi, GLM, Qwen, Claude, a private deployment) and pay raw API prices.</li>
+      <li>You need gate semantics: a deterministic BLOCK / WARN / pass verdict with exit codes, and honest WARN when the review could not finish.</li>
+      <li>You review diffs locally before pushing, or run CI outside GitHub.</li>
+    </ul>
+
+    <h2>The context trade-off, honestly</h2>
+    <p>Full-repo indexing genuinely helps for changes whose blast radius is far from the diff. ReviewGate approaches the same problem differently: the review agent navigates the repo on demand with structural tools, which keeps everything local but is bounded by the model's context budget. On oversized diffs ReviewGate splits the review into units and — when budget runs out — reports WARN with an explicit "incomplete" marker instead of pretending it reviewed everything. Which trade-off is right depends on whether data residency or effortless whole-repo context matters more to you.</p>
+
+    <div class="cta-box">
+      <h2>Try ReviewGate on your next PR</h2>
+      <p>Install the CLI in one command, point it at your LLM endpoint, and run reviewgate review --fail-on block in CI.</p>
+      <a class="btn" href="/ReviewGate/">Get started →</a>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    © 2026 ReviewGate · MIT License · <a href="/ReviewGate/">Home</a> · <a href="/ReviewGate/benchmarks.html">Benchmarks</a> · <a href="/ReviewGate/vs-coderabbit.html">vs CodeRabbit</a>
+  </div>
+</footer>
+
+</body>
+</html>

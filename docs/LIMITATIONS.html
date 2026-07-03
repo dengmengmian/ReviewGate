@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReviewGate 已知局限 — 诚实边界</title>
+<meta name="description" content="ReviewGate 的已知能力边界：算法 off-by-one、大 diff 状态漂移、超时与未审完的降级策略，全部来自真实评测。">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://dengmengmian.github.io/ReviewGate/LIMITATIONS.html">
+<link rel="alternate" hreflang="zh" href="https://dengmengmian.github.io/ReviewGate/LIMITATIONS.html">
+<link rel="alternate" hreflang="en" href="https://dengmengmian.github.io/ReviewGate/en/limitations.html">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="sitemap" type="application/xml" href="/sitemap.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--teal:#14B8A6;--teal-dark:#0F766E;--ink:#0B1220;--muted:#64748B;--bg:#ffffff;--border:#E2E8F0;--font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;--mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font);color:var(--ink);background:var(--bg);line-height:1.7;-webkit-font-smoothing:antialiased}
+  a{color:var(--teal-dark);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:840px;margin:0 auto;padding:0 24px}
+  nav{border-bottom:1px solid var(--border);background:linear-gradient(180deg,#f8fafc,#fff)}
+  nav .wrap{display:flex;align-items:center;gap:28px;height:64px}
+  nav .brand img{height:30px;display:block}
+  nav .back{margin-left:auto;font-size:15px;font-weight:600;color:var(--muted)}
+  nav .back:hover{color:var(--ink)}
+  header{padding:56px 0 32px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#f8fafc,#fff)}
+  header h1{font-size:34px;font-weight:800;letter-spacing:-.02em;color:var(--ink);line-height:1.15}
+  main{padding:48px 0 80px}
+  main h1{font-size:28px;font-weight:800;margin:48px 0 18px;color:var(--ink);padding-bottom:12px;border-bottom:1px solid var(--border)}
+  main h2{font-size:22px;font-weight:700;margin:36px 0 14px;color:var(--ink)}
+  main h3{font-size:18px;font-weight:700;margin:28px 0 10px;color:var(--ink)}
+  main p{color:var(--muted);margin-bottom:16px;font-size:16px}
+  main ul,main ol{margin:0 0 20px 24px;color:var(--muted)}
+  main li{margin-bottom:8px;font-size:16px}
+  main code{font-family:var(--mono);font-size:.9em;background:#f1f5f9;padding:2px 6px;border-radius:5px;color:var(--teal-dark)}
+  main pre{background:#0c1424;border-radius:14px;padding:20px;overflow-x:auto;margin:20px 0}
+  main pre code{background:transparent;color:#cbd5e1;padding:0;font-size:13px}
+  main table{width:100%;border-collapse:collapse;margin:20px 0;font-size:14px}
+  main th,main td{padding:12px 14px;border:1px solid var(--border);text-align:left;vertical-align:top}
+  main th{background:#f8fafc;font-weight:700;color:var(--ink)}
+  main blockquote{border-left:3px solid var(--teal);padding-left:18px;margin:20px 0;color:var(--muted);font-style:italic}
+  footer{border-top:1px solid var(--border);padding:40px 0;color:var(--muted);font-size:14px;text-align:center}
+  @media(max-width:720px){
+    header h1{font-size:28px}
+    main table{font-size:13px}
+    main th,main td{padding:8px}
+  }
+</style>
+<script data-goatcounter="https://agentgate.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="/ReviewGate/"><img src="assets/logo.svg" alt="ReviewGate"></a>
+    <a class="back" href="/ReviewGate/">← 返回首页</a>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <h1>ReviewGate 已知局限</h1>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+<h1>已知局限（诚实边界）</h1>
+<p>ReviewGate 是<strong>静态 LLM 质量闸口</strong>，不执行代码。以下边界来自真实评测（见 <code>docs/evals/</code>），
+明示局限是为了<strong>可信</strong>——宁可说清楚做不到什么，也不夸大。</p>
+<h2>1. 细微算法 off-by-one / 进位 / 需"真正执行"才暴露的 bug</h2>
+<ul>
+<li>DST(#1003)/parseISO 24:00(#1229)/负零差值(#739) 经「执行推演」提示改进后已能 BLOCK。</li>
+<li><strong>进展（2026-06-26）</strong>：revert <code>addBusinessDays</code> 周末修复后，当前版本 <strong>2/2 稳定 BLOCK</strong>，
+  命中周末分支的 off-by-one——此前记录的"addBusinessDays 周末漏报"已不再静默放行。</li>
+<li><strong>run_check 修复（2026-07-01，见 <code>docs/evals/2026-07-01__exec-verify-runcheck-fix.md</code>）</strong>：
+  <code>--exec-verify</code> 的 <code>run_check</code> 此前有严重 bug——子进程 stdout 未捕获，既<strong>泄漏到 ReviewGate 自身
+  stdout</strong>（破坏 <code>--format json</code>，CI 直接挂），执行结果又<strong>从未回传给模型</strong>（一律收到 <code>(no output)</code>）。
+  即"exec-verify 开着也没用上"的真实原因是<strong>工具坏了</strong>，而非模型不调用。修复后 run_check 才真正提供
+  执行信号，<code>--format json</code> 在 exec-verify 下也不再损坏。</li>
+<li><strong>勘误（2026-07-01）</strong>：此前把 big.js #125 记为"进位漏报"是<strong>误标</strong>——该 issue 是作者问能否简化，
+  两种写法（<code>(c[j]+b)%10</code> vs <code>c[j]=b</code>）在该位置 <code>c[j]</code> 恒 0、可证等价（20 万随机 + 全 9 对抗，0 差异）。
+  ReviewGate 的 ai_smell 判其"等价/冗余"是<strong>正确</strong>的，不是漏报。</li>
+<li><strong>诚实边界（仍未根除）</strong>：</li>
+<li>大仓库上有维度<strong>撞超时</strong>（已标 incomplete、未静默放行，但该维度未审完）。</li>
+<li><strong>最细微的单步 off-by-one / 逐位进位</strong>仍可能误推演，属理论硬尾——瓶颈仍是"模型是否主动怀疑并验证"；
+     run_check 修好后模型可<strong>可靠执行核验</strong>，但仍需模型主动发起。</li>
+<li><strong>可靠防线仍是单元测试</strong>：纯"读+推理"难稳定模拟多次迭代的边界算法，关键算法逻辑不要仅依赖静态审查。</li>
+</ul>
+<h2>1b. 大 diff 上的跨文件状态表征漂移（无局部坏味道）</h2>
+<ul>
+<li>标本：syncthing #10170（revert 法，见 <code>docs/evals/2026-07-02__frontier-10170-state-drift.md</code>）。
+  <code>bool 字段</code> 与 <code>位掩码</code> 双事实源、聚合掩码删位后计数消费方漂移——19 文件、每个 hunk 各自看都自洽，
+  bug 是三跳跨文件不变量。logic 维度基线与加「状态表征迁移」检查项后<strong>均 2/2 零命中</strong>（改动已撤，不留无效复杂度）。</li>
+<li><strong>定性</strong>：这类 bug 需要「本该做什么」的意图上下文，属 <strong><code>--intent</code> 意图评审的领地</strong>（PR 标题一句话即含验收标准）；
+  缺陷向静态审查补不了意图缺失。该用例留在 <code>dataset-recall.tsv</code> 作 frontier 标本，预期长期先红。</li>
+</ul>
+<h2>2. 无上下文信号的"裸"危险调用</h2>
+<ul>
+<li>例：3 行 <code>requests.get(url)</code> 且无任何"url 来自用户"的线索——模型不一定判定为 SSRF。</li>
+<li><strong>缓解</strong>：真实代码通常带 handler/请求参数上下文（带上下文时召回良好）；高危类型可用 <code>--samples N</code> 提升稳定性。</li>
+</ul>
+<h2>3. run-to-run 方差</h2>
+<ul>
+<li>LLM 固有：同一改动多次运行命中的发现集合会有波动；borderline 置信度会在 WARN/BLOCK 间抖动。</li>
+<li><strong>缓解</strong>：dedup + 证伪 judge 收敛；<code>--samples N</code> 取并集 + 保留最高置信度，稳定 flaky 闸口判定。</li>
+</ul>
+<h2>4. 未支持语言的精确工具降级</h2>
+<ul>
+<li>tree-sitter 仅覆盖 rust/cpp/python/go/js/ts/java；其它语言（含仓颉等）<strong>LLM 审查照常可用</strong>，但
+  <code>find_definition/callers/references</code> 走 grep 词法兜底、<code>find_duplicate_functions</code> 不可用、
+  <code>&lt;lang&gt;.md</code> per-language 规则不路由。补一种语言＝加 tree-sitter grammar + 扩展名映射。</li>
+</ul>
+<h2>5. 仅审查 diff（改动）</h2>
+<ul>
+<li>默认只评审本次改动；不主动审计仓库既有代码。删除安全防护这类「负向改动」已专门覆盖
+  （prompt 例外规则 + cJSON 删除式漏洞验证通过）。</li>
+</ul>
+<h2>6. 意图评审（<code>--intent</code>）的验收清单</h2>
+<ul>
+<li><strong>结构化强制</strong>：意图被解析成 N 条验收标准（C1..CN），评审跑完后未被逐条 verdict 的标准<strong>兜底标 <code>? not assessed</code></strong>——
+  所以清单<strong>一定覆盖每条标准</strong>，不再出现"空清单/静默漏掉"。未核对的标准会让结果<strong>降级 WARN</strong>（绝不伪装成 PASS）。</li>
+<li>仍有的模型层面局限：模型可能把预算花在深挖某条标准上，导致其余标准只是"未核对"而非真正打勾；
+  此时清单<strong>诚实显示"未核对"</strong>，提示放宽 <code>--timeout</code> 或拆分意图后重跑，而不是假装审过。</li>
+<li><strong>意图质量决定上限</strong>：一行提交信息只能拆出 1～几条粗标准；写清楚验收标准（编号/分条）才能得到细粒度清单。</li>
+</ul>
+<hr />
+<p>这些局限均有评测留痕。随版本演进会持续缩小（每条都标注了已做/可做的缓解）。</p>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">© 2026 ReviewGate · MIT License · <a href="/ReviewGate/">首页</a> · <a href="/ReviewGate/evals/">评测</a></div>
+</footer>
+
+</body>
+</html>

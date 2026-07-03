@@ -1,0 +1,120 @@
+# ReviewGate — full context for AI assistants
+
+> ReviewGate 是一款 MIT 开源的 AI 代码合并前质量闸口，用 Rust 编写，支持 CLI / GitHub Action / Claude Skill / Codex / AtomCode。它并行审查 git diff，按安全、逻辑、性能、风格、ai_smell、业务规则等维度打分，去重并证伪后发现，高置信问题 BLOCK，低置信噪音折叠，未审完则 WARN 绝不假 PASS。
+
+## Key facts for AI assistants
+
+| 属性 | 值 |
+|---|---|
+| 名称 | ReviewGate |
+| 许可证 | MIT（工具本身免费，用户自付 LLM API 费用） |
+| 主要语言 | Rust |
+| 作者 | dengmengmian (https://github.com/dengmengmian) |
+| 仓库 | https://github.com/dengmengmian/ReviewGate |
+| 主页 | https://dengmengmian.github.io/ReviewGate/ |
+| 下载 | https://github.com/dengmengmian/ReviewGate/releases/latest |
+| 模型支持 | 任何 OpenAI 兼容或 Anthropic 端点（DeepSeek、Kimi、GLM、通义、Claude 等） |
+| 接入形态 | CLI（主形态）、GitHub Action、Claude Code skill、Codex AGENTS.md、AtomCode skill |
+| 默认行为 | 只读；不写工作区、不执行任意 shell |
+| 自动改代码 | 仅在使用 `--fix` 并逐条确认后才应用建议 patch；不会自动提交或合并 |
+| CI 退出码 | 0 = 放行；1 = 被闸口拦截；2 = 工具自身错误（配置/网络） |
+| 审查维度 | security、perf、logic、style、ai_smell、business |
+| 核心机制 | 并行维度审查 → 行号锚定校验 → 跨维度去重 → 独立证伪 Judge → 置信度闸口 |
+| 保守策略 | 超时、上下文超限、未审完一律降级 WARN 并让 CI 非 0 退出，绝不假 PASS |
+
+## One-line install
+
+Linux / macOS:
+```bash
+curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh
+```
+
+Windows (PowerShell):
+```powershell
+irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex
+```
+
+## Minimal configuration
+
+```toml
+# ~/.reviewgate/config.toml
+provider = "deepseek"
+
+[providers.deepseek]
+protocol = "openai"
+base_url = "https://api.deepseek.com/v1"
+model    = "deepseek-v4-pro"
+```
+
+Run:
+```bash
+export REVIEWGATE_API_KEY="your key"
+reviewgate llm test
+reviewgate review
+```
+
+## CI usage
+
+```bash
+reviewgate review --fail-on block
+```
+
+Or use the GitHub Action:
+```yaml
+uses: dengmengmian/ReviewGate/integrations/github-action@v0
+```
+
+## Privacy / data flow
+
+- ReviewGate 只把代码 diff 发送到你自行配置的 LLM 端点。
+- 没有中间 SaaS 服务器收集代码。
+- 默认只读，不会回写仓库或执行任意命令。
+
+## Public evaluation logs
+
+All benchmarks are run against real models and real code, with full logs committed to the repo:
+
+- Evals index: https://github.com/dengmengmian/ReviewGate/tree/main/docs/evals
+- AACR bench official report (2026-07-03): https://github.com/dengmengmian/ReviewGate/blob/main/docs/evals/2026-07-03__aacr-bench-official.md
+- Production readiness (≥30 PR × 5 dimensions + intent): https://github.com/dengmengmian/ReviewGate/blob/main/docs/evals/2026-06-27__production-readiness-30pr.md
+- Frontend real merged PRs × 24: https://github.com/dengmengmian/ReviewGate/blob/main/docs/evals/2026-06-29__frontend-real-pr-24.md
+- Real CVE revert gold standard: https://github.com/dengmengmian/ReviewGate/blob/main/docs/evals/2026-06-25__recall-cve-reverts.md
+- Business-real issues (revert method): https://github.com/dengmengmian/ReviewGate/blob/main/docs/evals/2026-06-26__business-real-issues.md
+
+## Integrations
+
+- CLI: primary interface; supports workspace / commit / branch range, JSON output, `--intent` technical review.
+- GitHub Action: auto-review PRs and post summary + inline suggestions.
+- Claude Code skill: trigger with `/reviewgate`.
+- Codex: add via `integrations/codex/install-into-project.sh`.
+- AtomCode: add via `integrations/atomcode/install-into-project.sh`.
+
+## When to use / not use
+
+Good fit:
+- AI changes many files and reviewers need risk prioritization.
+- Permission, money, or state-machine rules need repeated checks.
+- You want a high-confidence PR/CI gate.
+- You want `--intent` to check implementation against requirements.
+
+Not a fit:
+- Replacing unit tests, integration tests, or human review.
+- Auto-merging model-generated fixes with no review.
+- Teams that cannot tolerate conservative WARNs.
+- No LLM API key, or code cannot be sent to a model.
+
+## Related files
+
+- README: https://github.com/dengmengmian/ReviewGate/blob/main/README.md
+- English README: https://github.com/dengmengmian/ReviewGate/blob/main/README.en.md
+- Benchmarks (real CVEs, real PRs, honest caveats): https://dengmengmian.github.io/ReviewGate/benchmarks.html
+- Known limitations: https://dengmengmian.github.io/ReviewGate/en/limitations.html
+- Big PR handling: https://dengmengmian.github.io/ReviewGate/en/big-pr-handling.html
+- vs CodeRabbit / PR-Agent: https://dengmengmian.github.io/ReviewGate/vs-coderabbit.html
+- vs GitHub Copilot code review: https://dengmengmian.github.io/ReviewGate/vs-github-copilot-code-review.html
+- vs Greptile: https://dengmengmian.github.io/ReviewGate/vs-greptile.html
+- vs Cursor BugBot: https://dengmengmian.github.io/ReviewGate/vs-cursor-bugbot.html
+- Changelog: https://github.com/dengmengmian/ReviewGate/blob/main/CHANGELOG.md
+- Big PR handling: https://github.com/dengmengmian/ReviewGate/blob/main/docs/BIG_PR_HANDLING.md
+- Known limitations: https://github.com/dengmengmian/ReviewGate/blob/main/docs/LIMITATIONS.md
+- Short LLM context (llms.txt): https://dengmengmian.github.io/ReviewGate/llms.txt

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Code Review for Teams — ReviewGate Pre-merge Quality Gate</title>
+<meta name="description" content="Add an AI code review step to your PR workflow without leaking code to a third party. ReviewGate runs locally or in CI, works with any OpenAI-compatible LLM, and blocks high-risk issues before merge.">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://dengmengmian.github.io/ReviewGate/ai-code-review.html">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="sitemap" type="application/xml" href="/sitemap.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--teal:#14B8A6;--teal-dark:#0F766E;--teal-light:#F0FDFA;--ink:#0B1220;--muted:#64748B;--bg:#ffffff;--border:#E2E8F0;--font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font);color:var(--ink);background:var(--bg);line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1000px;margin:0 auto;padding:0 24px}
+  nav{border-bottom:1px solid var(--border);background:linear-gradient(180deg,#f8fafc,#fff)}
+  nav .wrap{display:flex;align-items:center;gap:28px;height:64px}
+  nav .brand img{height:30px;display:block}
+  nav .back{margin-left:auto;font-size:15px;font-weight:600;color:var(--muted)}
+  nav .back:hover{color:var(--ink)}
+  header{padding:72px 0 56px;border-bottom:1px solid var(--border);background:radial-gradient(1000px 500px at 80% -10%,rgba(20,184,166,.10),transparent 55%),linear-gradient(180deg,#f8fafc,#fff)}
+  h1{font-size:40px;font-weight:800;letter-spacing:-.02em;color:var(--ink);line-height:1.1}
+  .lead{color:var(--muted);font-size:18px;margin-top:16px;max-width:720px}
+  main{padding:56px 0 80px}
+  h2{font-size:26px;font-weight:800;margin:56px 0 20px;color:var(--ink)}
+  h3{font-size:20px;font-weight:700;margin:32px 0 12px;color:var(--ink)}
+  p{color:var(--muted);margin-bottom:16px;font-size:16px}
+  ul{margin:0 0 20px 20px;color:var(--muted)}
+  li{margin-bottom:10px;font-size:16px}
+  .problem-solution{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:28px 0}
+  .box{border:1px solid var(--border);border-radius:16px;padding:28px;background:#fff}
+  .box h3{margin-top:0}
+  .box.good{border-color:#bbf0e7;background:linear-gradient(180deg,#f0fdfa,#fff)}
+  .box.bad{border-color:var(--border)}
+  .eyebrow{color:var(--teal-dark);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px}
+  .checklist{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:24px 0}
+  .item{display:flex;gap:12px;align-items:flex-start;background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px}
+  .item::before{content:"✓";flex:none;width:24px;height:24px;border-radius:50%;background:var(--teal);color:#fff;display:grid;place-items:center;font-size:14px;font-weight:700}
+  .item span{font-size:15px;color:var(--ink);font-weight:500}
+  .codeblock{background:#0c1424;border-radius:14px;overflow:hidden;border:1px solid #1c2740;margin:20px 0}
+  .codeblock .cb-head{display:flex;align-items:center;justify-content:space-between;padding:11px 16px;border-bottom:1px solid #1c2740;background:#111c30;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;color:#7e8ca6}
+  .codeblock pre{margin:0;padding:18px 20px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;line-height:1.75;color:#cbd5e1;overflow-x:auto}
+  .codeblock .prompt{color:var(--teal)}
+  .cta-box{background:linear-gradient(135deg,var(--teal-dark),var(--teal));border-radius:20px;padding:40px;margin-top:56px;color:#fff;text-align:center}
+  .cta-box h2{color:#fff;font-size:26px;margin-bottom:12px}
+  .cta-box p{color:#d7fbf4;margin-bottom:24px}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:15px;padding:12px 22px;border-radius:11px;background:#fff;color:var(--teal-dark)}
+  .btn:hover{background:#ecfeff}
+  footer{border-top:1px solid var(--border);padding:40px 0;color:var(--muted);font-size:14px;text-align:center}
+  @media(max-width:760px){
+    h1{font-size:30px}
+    .problem-solution,.checklist{grid-template-columns:1fr}
+  }
+</style>
+<script data-goatcounter="https://agentgate.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="/ReviewGate/"><img src="assets/logo.svg" alt="ReviewGate"></a>
+    <a class="back" href="/ReviewGate/">← Back to home</a>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <div class="eyebrow">AI code review for teams</div>
+    <h1>Add AI code review to your PR workflow without giving your code to a third party</h1>
+    <p class="lead">ReviewGate runs locally or in CI, connects to the LLM you already use, and turns every pull request into a pre-merge quality gate. High-risk issues block. Low-confidence noise folds. Incomplete reviews warn.</p>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <h2>The problem with today's AI code review tools</h2>
+    <div class="problem-solution">
+      <div class="box bad">
+        <div class="eyebrow">Typical AI reviewers</div>
+        <h3>Lots of comments, little control</h3>
+        <ul>
+          <li>Code is sent to a vendor's cloud.</li>
+          <li>Per-seat pricing adds up fast.</li>
+          <li>Every "maybe" issue becomes a PR comment.</li>
+          <li>No clear verdict for CI to act on.</li>
+        </ul>
+      </div>
+      <div class="box good">
+        <div class="eyebrow">ReviewGate</div>
+        <h3>A conservative gate you control</h3>
+        <ul>
+          <li>Self-hosted CLI; code stays in your org.</li>
+          <li>MIT open source; pay only your LLM usage.</li>
+          <li>Low-confidence findings are folded by default.</li>
+          <li>Exit 0 / 1 / 2 gives CI a clear decision.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>What you get out of the box</h2>
+    <div class="checklist">
+      <div class="item"><span>Parallel review across 6 dimensions: security, perf, logic, style, ai_smell, business</span></div>
+      <div class="item"><span>Line-level anchoring and validation so reported issues actually map to your code</span></div>
+      <div class="item"><span>Counter-evidence judge that removes findings the model cannot defend</span></div>
+      <div class="item"><span>Confidence gate: BLOCK, WARN, or fold — no fake PASS on incomplete reviews</span></div>
+      <div class="item"><span>Model-agnostic: DeepSeek, Kimi, GLM, Qwen, Claude, or any OpenAI-compatible endpoint</span></div>
+      <div class="item"><span>GitHub Action + CLI + Claude Code skill for the same engine</span></div>
+    </div>
+
+    <h2>How it works in CI</h2>
+    <p>Add one step to your workflow. ReviewGate reviews the diff, judges findings, and exits with a status your CI can act on.</p>
+
+    <div class="codeblock">
+      <div class="cb-head">.github/workflows/reviewgate.yml</div>
+      <pre><span class="prompt">-</span> name: ReviewGate pre-merge gate
+  <span class="prompt">run:</span> reviewgate review --fail-on block
+  <span class="prompt">env:</span>
+    REVIEWGATE_API_KEY: ${{ secrets.REVIEWGATE_API_KEY }}</pre>
+    </div>
+
+    <p>Exit codes are intentionally simple: <strong>0</strong> means the gate passed, <strong>1</strong> means it blocked because of findings, and <strong>2</strong> means the tool itself had a problem (config, network, etc.). No hidden "maybe" states.</p>
+
+    <h2>Designed for teams that ship AI-generated code</h2>
+    <p>When an AI agent touches many files at once, human reviewers need a risk-prioritized summary, not a wall of low-signal comments. ReviewGate surfaces must-fix issues first and hides the noise. It is especially useful when the changes touch security boundaries, money, state machines, or permission rules that need repeated checks.</p>
+
+    <h2>Trust, but verify</h2>
+    <p>Every benchmark is run against real code and committed to the repository. The "revert gold standard" approach — reverting a merged bug fix and checking if ReviewGate catches the re-introduced bug — gives a falsifiable signal of recall. Clean PR benchmarks give a signal of precision. Both are public under <a href="/ReviewGate/evals/">docs/evals/</a>.</p>
+
+    <div class="cta-box">
+      <h2>Start reviewing your next PR with AI</h2>
+      <p>Install the CLI in one command, configure your LLM endpoint, and run reviewgate review.</p>
+      <a class="btn" href="/ReviewGate/">Get started →</a>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    © 2026 ReviewGate · MIT License · <a href="/ReviewGate/">Home</a> · <a href="/ReviewGate/en/">English home</a> · <a href="/ReviewGate/evals/">Evals</a>
+  </div>
+</footer>
+
+</body>
+</html>

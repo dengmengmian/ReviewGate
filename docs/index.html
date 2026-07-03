@@ -5,8 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ReviewGate — AI 代码的合并前质量闸口 | Pre-merge quality gate for AI code</title>
 <meta name="description" content="ReviewGate：给 AI 生成代码准备的合并前质量闸口。按安全、逻辑、性能、业务规则等维度并行审查，优先拦截高风险问题，去重证伪降低噪音，未审完降级 WARN 绝不假 PASS。开源 MIT，Rust 编写，CLI / Claude Skill / GitHub Action 三种形态接入。">
+<meta name="google-site-verification" content="5l9WCBqr0vGzeokclOnjnLHXpOB-AvVihUIiZK3bASI">
+<meta name="msvalidate.01" content="ED09D053766919EE4AE466FBEBDE2945">
+<meta name="robots" content="index, follow, max-image-preview:large">
 <link rel="canonical" href="https://dengmengmian.github.io/ReviewGate/">
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="sitemap" type="application/xml" href="/sitemap.xml">
+<link rel="alternate" type="text/markdown" href="llms.txt" title="ReviewGate LLM context">
+<link rel="alternate" hreflang="zh" href="https://dengmengmian.github.io/ReviewGate/">
+<link rel="alternate" hreflang="en" href="https://dengmengmian.github.io/ReviewGate/en/">
+<link rel="alternate" hreflang="x-default" href="https://dengmengmian.github.io/ReviewGate/">
+<link rel="preload" as="image" type="image/svg+xml" href="assets/logo.svg">
+<link rel="preload" as="image" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="dns-prefetch" href="https://fonts.googleapis.com">
+<link rel="dns-prefetch" href="https://fonts.gstatic.com">
 <meta name="author" content="dengmengmian">
 <meta name="keywords" content="AI code review,代码审查,质量闸口,quality gate,pre-merge,CI,GitHub Action,Claude Skill,code review tool,ReviewGate,LLM code review">
 <!-- Open Graph -->
@@ -15,7 +27,8 @@
 <meta property="og:site_name" content="ReviewGate">
 <meta property="og:title" content="ReviewGate — AI 代码的合并前质量闸口">
 <meta property="og:description" content="优先拦截高风险问题，减少低价值 review 噪音，绝不把不完整审查伪装成 PASS。开源 MIT，CLI / Claude Skill / GitHub Action 三种形态接入。">
-<meta property="og:image" content="https://dengmengmian.github.io/ReviewGate/assets/og.png">
+<meta property="og:image" content="https://dengmengmian.github.io/ReviewGate/assets/og.webp">
+<meta property="og:image:type" content="image/webp">
 <meta property="og:image:width" content="2400">
 <meta property="og:image:height" content="1260">
 <meta property="og:locale" content="zh_CN">
@@ -24,7 +37,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="ReviewGate — 合并前质量闸口">
 <meta name="twitter:description" content="给 AI 生成代码准备的合并前质量闸口：拦高危、降噪音、不假通过。开源 MIT。">
-<meta name="twitter:image" content="https://dengmengmian.github.io/ReviewGate/assets/og.png">
+<meta name="twitter:image" content="https://dengmengmian.github.io/ReviewGate/assets/og.webp">
 <meta name="theme-color" content="#14B8A6">
 <script type="application/ld+json">
 {
@@ -50,6 +63,14 @@
       "codeRepository": "https://github.com/dengmengmian/ReviewGate",
       "programmingLanguage": "Rust",
       "license": "https://opensource.org/licenses/MIT"
+    },
+    {
+      "@type": "WebSite",
+      "name": "ReviewGate",
+      "url": "https://dengmengmian.github.io/ReviewGate/",
+      "description": "ReviewGate 是一款给 AI 生成代码准备的合并前质量闸口。按安全、逻辑、性能、业务规则等维度并行审查，优先拦截高风险问题，去重证伪降低噪音，未审完降级 WARN 绝不假 PASS。",
+      "inLanguage": ["zh", "en"],
+      "publisher": { "@type": "Person", "name": "dengmengmian", "url": "https://github.com/dengmengmian" }
     }
   ]
 }
@@ -220,6 +241,7 @@
     .band{padding:40px 24px}
   }
 </style>
+<script data-goatcounter="https://agentgate.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </head>
 <body>
 
@@ -295,11 +317,11 @@
 </header>
 
 <!-- PILLARS -->
-<section id="features">
+<section id="features" aria-labelledby="features-heading">
   <div class="wrap">
     <div class="sec-head">
       <span class="eyebrow" data-zh="为什么用它" data-en="Why ReviewGate">为什么用它</span>
-      <h2 data-zh="三件事，做到位" data-en="Three jobs, done right">三件事，做到位</h2>
+      <h2 id="features-heading" data-zh="三件事，做到位" data-en="Three jobs, done right">三件事，做到位</h2>
       <p data-zh="不是又一个 AI reviewer，而是一道把高危推前、把噪音压下、不假装通过的闸口。"
          data-en="Not another AI reviewer — a gate that promotes risk, suppresses noise, and refuses to fake a pass.">
         不是又一个 AI reviewer，而是一道把高危推前、把噪音压下、不假装通过的闸口。
@@ -332,11 +354,11 @@
 </section>
 
 <!-- HOW IT WORKS -->
-<section id="how" class="alt">
+<section id="how" class="alt" aria-labelledby="how-heading">
   <div class="wrap">
     <div class="sec-head">
       <span class="eyebrow" data-zh="工作原理" data-en="How it works">工作原理</span>
-      <h2 data-zh="从 diff 到闸口，四步" data-en="From diff to gate, in four steps">从 diff 到闸口，四步</h2>
+      <h2 id="how-heading" data-zh="从 diff 到闸口，四步" data-en="From diff to gate, in four steps">从 diff 到闸口，四步</h2>
     </div>
     <div class="steps">
       <div class="step">
@@ -384,11 +406,11 @@
 </section>
 
 <!-- WHY TRUST -->
-<section>
+<section aria-labelledby="trust-heading">
   <div class="wrap">
     <div class="sec-head">
       <span class="eyebrow" data-zh="为什么可以信" data-en="Why trust it">为什么可以信</span>
-      <h2 data-zh="保守、可验证、不越权" data-en="Conservative, verifiable, scoped">保守、可验证、不越权</h2>
+      <h2 id="trust-heading" data-zh="保守、可验证、不越权" data-en="Conservative, verifiable, scoped">保守、可验证、不越权</h2>
     </div>
     <div class="trust-cards">
       <div class="card">
@@ -438,11 +460,11 @@
 </section>
 
 <!-- INSTALL -->
-<section id="install" class="alt">
+<section id="install" class="alt" aria-labelledby="install-heading">
   <div class="wrap">
     <div class="sec-head">
       <span class="eyebrow" data-zh="快速开始" data-en="Quick start">快速开始</span>
-      <h2 data-zh="三样东西就能跑" data-en="Three things to get going">三样东西就能跑</h2>
+      <h2 id="install-heading" data-zh="三样东西就能跑" data-en="Three things to get going">三样东西就能跑</h2>
       <p data-zh="一个 git 仓库、一个 LLM API key、reviewgate 命令。不绑定模型，OpenAI 兼容或 Anthropic 端点都行。"
          data-en="A git repo, an LLM API key, and the reviewgate command. Model-agnostic — any OpenAI-compatible or Anthropic endpoint.">
         一个 git 仓库、一个 LLM API key、reviewgate 命令。不绑定模型，OpenAI 兼容或 Anthropic 端点都行。
@@ -506,11 +528,11 @@ EOF
 </section>
 
 <!-- INTEGRATIONS -->
-<section id="integrations">
+<section id="integrations" aria-labelledby="integrations-heading">
   <div class="wrap">
     <div class="sec-head">
       <span class="eyebrow" data-zh="接入方式" data-en="Integrations">接入方式</span>
-      <h2 data-zh="一个引擎，多种形态" data-en="One engine, several forms">一个引擎，多种形态</h2>
+      <h2 id="integrations-heading" data-zh="一个引擎，多种形态" data-en="One engine, several forms">一个引擎，多种形态</h2>
       <p data-zh="都只是调同一个 reviewgate CLI。CLI 为主、Action 用于 PR/CI；Claude Skill、Codex 与 AtomCode 是更薄的 agent 壳（experimental）。" data-en="All just call the same reviewgate CLI. CLI is primary and the Action is for PR/CI; the Claude Skill, Codex, and AtomCode are thinner agent shells (experimental).">都只是调同一个 reviewgate CLI。CLI 为主、Action 用于 PR/CI；Claude Skill、Codex 与 AtomCode 是更薄的 agent 壳（experimental）。</p>
     </div>
     <div class="ints">
@@ -549,11 +571,11 @@ EOF
 </section>
 
 <!-- FAQ -->
-<section id="faq" class="alt">
+<section id="faq" class="alt" aria-labelledby="faq-heading">
   <div class="wrap">
     <div class="sec-head">
       <span class="eyebrow" data-zh="常见问题" data-en="FAQ">常见问题</span>
-      <h2 data-zh="你可能想问的" data-en="Questions you might have">你可能想问的</h2>
+      <h2 id="faq-heading" data-zh="你可能想问的" data-en="Questions you might have">你可能想问的</h2>
     </div>
     <div class="faq">
       <div class="qa">
@@ -598,6 +620,27 @@ EOF
           每条发现都过一遍带证据的证伪 Judge，再按置信度闸口过滤，低置信默认折叠。可调 block / warn 阈值，也可用 --samples 提高召回或 --no-judge 加速。
         </p>
       </div>
+      <div class="qa">
+        <h3 data-zh="和 CodeRabbit / PR-Agent 有什么不同？" data-en="How is it different from CodeRabbit or PR-Agent?">和 CodeRabbit / PR-Agent 有什么不同？</h3>
+        <p data-zh="ReviewGate 不跑在第三方 SaaS 上，只调用你自己配置的 LLM 端点；审查链路默认只读，代码不离开你的基础设施。设计上更保守：宁可 WARN 也不把没审完的 PR 标成 PASS，并把去重、证伪、置信度闸口放在核心流程。"
+           data-en="ReviewGate doesn't run on a third-party SaaS; it only calls the LLM endpoint you configure and is read-only by default, so code never leaves your infrastructure. It is intentionally conservative: it degrades to WARN rather than mark an incomplete review as PASS, and puts deduplication, counter-evidence judging, and a confidence gate at the core.">
+          ReviewGate 不跑在第三方 SaaS 上，只调用你自己配置的 LLM 端点；审查链路默认只读，代码不离开你的基础设施。设计上更保守：宁可 WARN 也不把没审完的 PR 标成 PASS，并把去重、证伪、置信度闸口放在核心流程。
+        </p>
+      </div>
+      <div class="qa">
+        <h3 data-zh="支持 GitLab / Azure DevOps 吗？" data-en="Does it support GitLab or Azure DevOps?">支持 GitLab / Azure DevOps 吗？</h3>
+        <p data-zh="CLI 可在任何能跑 shell 的 CI 里使用（GitLab CI、Azure Pipelines、Jenkins、Buildkite 等），只要给 reviewgate 一个 git 工作区和 API key。GitHub Action 目前只支持 GitHub。"
+           data-en="The CLI works in any CI that can run a shell (GitLab CI, Azure Pipelines, Jenkins, Buildkite, etc.) as long as reviewgate gets a git worktree and an API key. The GitHub Action is GitHub-only for now.">
+          CLI 可在任何能跑 shell 的 CI 里使用（GitLab CI、Azure Pipelines、Jenkins、Buildkite 等），只要给 reviewgate 一个 git 工作区和 API key。GitHub Action 目前只支持 GitHub。
+        </p>
+      </div>
+      <div class="qa">
+        <h3 data-zh="会修改我的代码吗？" data-en="Does it modify my code?">会修改我的代码吗？</h3>
+        <p data-zh="默认只读。只有在显式使用 --fix 并且逐条确认后，才会把建议 patch 应用到工作区；不会自动提交或合并。"
+           data-en="Read-only by default. It only writes suggested patches to the worktree when you explicitly use --fix and confirm each finding; it never auto-commits or auto-merges.">
+          默认只读。只有在显式使用 --fix 并且逐条确认后，才会把建议 patch 应用到工作区；不会自动提交或合并。
+        </p>
+      </div>
     </div>
   </div>
   <script type="application/ld+json">
@@ -610,7 +653,10 @@ EOF
       { "@type": "Question", "name": "ReviewGate 会把我的代码发给第三方吗？", "acceptedAnswer": { "@type": "Answer", "text": "只发给你自己在配置里指定的 LLM 端点，没有别的服务器。审查链路默认只读：除非显式 --fix 且逐条确认，不写工作区、不执行任意 shell。" } },
       { "@type": "Question", "name": "怎么把 ReviewGate 接入 CI？", "acceptedAnswer": { "@type": "Answer", "text": "reviewgate review --fail-on block，退出码 0 放行 / 1 被闸口拦截 / 2 工具自身出错；或直接用 GitHub Action 在 PR 上自动审查并回贴行内 suggestion。" } },
       { "@type": "Question", "name": "ReviewGate 免费吗？", "acceptedAnswer": { "@type": "Answer", "text": "工具本身 MIT 开源、免费。你只需要为自己 LLM API 的用量付费。" } },
-      { "@type": "Question", "name": "ReviewGate 误报会不会很多？", "acceptedAnswer": { "@type": "Answer", "text": "每条发现都过一遍带证据的证伪 Judge，再按置信度闸口过滤，低置信默认折叠。可调 block / warn 阈值，也可用 --samples 提高召回或 --no-judge 加速。" } }
+      { "@type": "Question", "name": "ReviewGate 误报会不会很多？", "acceptedAnswer": { "@type": "Answer", "text": "每条发现都过一遍带证据的证伪 Judge，再按置信度闸口过滤，低置信默认折叠。可调 block / warn 阈值，也可用 --samples 提高召回或 --no-judge 加速。" } },
+      { "@type": "Question", "name": "ReviewGate 和 CodeRabbit / PR-Agent 有什么区别？", "acceptedAnswer": { "@type": "Answer", "text": "ReviewGate 不跑在第三方 SaaS 上，只调用你自己配置的 LLM 端点；审查链路默认只读，代码不离开你的基础设施。设计上更保守：宁可 WARN 也不把没审完的 PR 标成 PASS，并把去重、证伪、置信度闸口放在核心流程。" } },
+      { "@type": "Question", "name": "ReviewGate 支持 GitLab 或 Azure DevOps 吗？", "acceptedAnswer": { "@type": "Answer", "text": "CLI 可在任何能跑 shell 的 CI 里使用（GitLab CI、Azure Pipelines、Jenkins、Buildkite 等），只要给 reviewgate 一个 git 工作区和 API key。GitHub Action 目前只支持 GitHub。" } },
+      { "@type": "Question", "name": "ReviewGate 会修改我的代码吗？", "acceptedAnswer": { "@type": "Answer", "text": "默认只读。只有在显式使用 --fix 并且逐条确认后，才会把建议 patch 应用到工作区；不会自动提交或合并。" } }
     ]
   }
   </script>
@@ -643,7 +689,14 @@ EOF
       <a href="https://github.com/dengmengmian/ReviewGate" target="_blank" rel="noopener">GitHub</a>
       <a href="https://github.com/dengmengmian/ReviewGate/releases/latest" target="_blank" rel="noopener" data-zh="下载" data-en="Releases">下载</a>
       <a href="https://github.com/dengmengmian/ReviewGate/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
-      <a href="https://github.com/dengmengmian/ReviewGate/tree/main/docs/evals" target="_blank" rel="noopener" data-zh="评测" data-en="Evals">评测</a>
+      <a href="/ReviewGate/benchmarks.html" data-zh="评测数据" data-en="Benchmarks">评测数据</a>
+      <a href="/ReviewGate/BIG_PR_HANDLING.html" data-zh="大 PR 处理" data-en="Big PRs">大 PR 处理</a>
+      <a href="/ReviewGate/LIMITATIONS.html" data-zh="已知局限" data-en="Limitations">已知局限</a>
+      <a href="/ReviewGate/vs-coderabbit.html">vs CodeRabbit</a>
+      <a href="/ReviewGate/vs-github-copilot-code-review.html">vs Copilot review</a>
+      <a href="/ReviewGate/vs-greptile.html">vs Greptile</a>
+      <a href="/ReviewGate/vs-cursor-bugbot.html">vs Cursor BugBot</a>
+      <a href="/ReviewGate/ai-code-review.html">AI code review</a>
     </div>
   </div>
 </footer>

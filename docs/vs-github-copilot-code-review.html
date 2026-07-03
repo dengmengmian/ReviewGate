@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReviewGate vs GitHub Copilot Code Review — Gate or Reviewer?</title>
+<meta name="description" content="Compare ReviewGate with GitHub Copilot code review. Copilot reviews PRs inside GitHub with managed models; ReviewGate is a self-hosted, model-agnostic pre-merge gate with explicit BLOCK/WARN verdicts and CI exit codes.">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://dengmengmian.github.io/ReviewGate/vs-github-copilot-code-review.html">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="sitemap" type="application/xml" href="/sitemap.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--teal:#14B8A6;--teal-dark:#0F766E;--teal-light:#F0FDFA;--ink:#0B1220;--muted:#64748B;--bg:#ffffff;--border:#E2E8F0;--red:#F43F5E;--green:#10B981;--font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font);color:var(--ink);background:var(--bg);line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1000px;margin:0 auto;padding:0 24px}
+  nav{border-bottom:1px solid var(--border);background:linear-gradient(180deg,#f8fafc,#fff)}
+  nav .wrap{display:flex;align-items:center;gap:28px;height:64px}
+  nav .brand img{height:30px;display:block}
+  nav .back{margin-left:auto;font-size:15px;font-weight:600;color:var(--muted)}
+  nav .back:hover{color:var(--ink)}
+  header{padding:64px 0 48px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#f8fafc,#fff)}
+  h1{font-size:38px;font-weight:800;letter-spacing:-.02em;color:var(--ink);line-height:1.1}
+  .lead{color:var(--muted);font-size:18px;margin-top:16px;max-width:720px}
+  main{padding:56px 0 80px}
+  h2{font-size:26px;font-weight:800;margin:48px 0 20px;color:var(--ink)}
+  h3{font-size:20px;font-weight:700;margin:32px 0 12px;color:var(--ink)}
+  p{color:var(--muted);margin-bottom:16px;font-size:16px}
+  ul{margin:0 0 20px 20px;color:var(--muted)}
+  li{margin-bottom:8px;font-size:16px}
+  .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:14px;margin:24px 0}
+  table{width:100%;border-collapse:collapse;font-size:15px}
+  th,td{padding:14px 18px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}
+  th{background:#f8fafc;font-weight:700;color:var(--ink)}
+  tr:last-child td{border-bottom:none}
+  .yes{color:var(--green);font-weight:700}
+  .no{color:var(--red);font-weight:700}
+  .na{color:var(--muted)}
+  .highlight{background:var(--teal-light)}
+  .cta-box{background:linear-gradient(135deg,var(--teal-dark),var(--teal));border-radius:20px;padding:40px;margin-top:48px;color:#fff;text-align:center}
+  .cta-box h2{color:#fff;font-size:26px;margin-bottom:12px}
+  .cta-box p{color:#d7fbf4;margin-bottom:24px}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:15px;padding:12px 22px;border-radius:11px;background:#fff;color:var(--teal-dark)}
+  .btn:hover{background:#ecfeff}
+  footer{border-top:1px solid var(--border);padding:40px 0;color:var(--muted);font-size:14px;text-align:center}
+  @media(max-width:720px){
+    h1{font-size:30px}
+    .table-wrap{font-size:14px}
+    th,td{padding:12px}
+  }
+</style>
+<script data-goatcounter="https://agentgate.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="/ReviewGate/"><img src="assets/logo.svg" alt="ReviewGate"></a>
+    <a class="back" href="/ReviewGate/">← Back to home</a>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <h1>ReviewGate vs GitHub Copilot code review</h1>
+    <p class="lead">Copilot code review lives inside GitHub and posts review comments with GitHub-managed models. ReviewGate is a self-hosted CLI gate: it produces a BLOCK / WARN / pass verdict with CI exit codes, using any LLM endpoint you choose. They solve overlapping but different problems — many teams run both.</p>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <h2>At a glance</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Capability</th>
+            <th>ReviewGate</th>
+            <th>GitHub Copilot code review</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="highlight">
+            <td>Deployment / data residency</td>
+            <td><span class="yes">Self-hosted CLI; diffs go only to the LLM endpoint you configure</span></td>
+            <td><span class="no">Hosted by GitHub; code processed on GitHub's infrastructure</span></td>
+          </tr>
+          <tr>
+            <td>LLM provider choice</td>
+            <td><span class="yes">Any OpenAI-compatible or Anthropic endpoint (DeepSeek, Kimi, GLM, Qwen, Claude, …)</span></td>
+            <td>GitHub-managed models; no bring-your-own endpoint</td>
+          </tr>
+          <tr class="highlight">
+            <td>Output form</td>
+            <td><span class="yes">A verdict: BLOCK / WARN / pass, with exit codes 0 / 1 / 2 for CI</span></td>
+            <td>Review comments and suggestions on the PR</td>
+          </tr>
+          <tr>
+            <td>Gate semantics</td>
+            <td><span class="yes">Designed as a merge gate; <code>--fail-on block|warn</code> fails the pipeline</span></td>
+            <td>Advisory by default; gating requires wiring branch-protection rules around it</td>
+          </tr>
+          <tr class="highlight">
+            <td>Incomplete review handling</td>
+            <td><span class="yes">Timeout / oversized context degrade to WARN + non-zero exit; never a fake PASS</span></td>
+            <td><span class="na">No explicit incomplete-review contract</span></td>
+          </tr>
+          <tr>
+            <td>Findings validation</td>
+            <td><span class="yes">Line anchoring, cross-dimension dedup, counter-evidence judge</span></td>
+            <td>Model-side filtering; internals not public</td>
+          </tr>
+          <tr class="highlight">
+            <td>Works outside GitHub</td>
+            <td><span class="yes">Any git repo — GitLab, Gitea, local, air-gapped CI</span></td>
+            <td><span class="no">GitHub only</span></td>
+          </tr>
+          <tr>
+            <td>Pricing model</td>
+            <td><span class="yes">MIT open source; you pay only your own LLM usage</span></td>
+            <td>Part of Copilot subscription plans</td>
+          </tr>
+          <tr class="highlight">
+            <td>Public evaluation logs</td>
+            <td><span class="yes">Raw benchmark runs committed under <a href="/ReviewGate/evals/">docs/evals/</a></span></td>
+            <td><span class="na">Not public</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>When Copilot code review is the better fit</h2>
+    <ul>
+      <li>Your team already pays for Copilot and lives entirely inside GitHub PRs.</li>
+      <li>You want zero setup: no binary, no CI step, no API key management.</li>
+      <li>You mainly want inline suggestions and conversational review, not a hard gate.</li>
+      <li>Your org is fine with code being processed by GitHub's managed models.</li>
+    </ul>
+
+    <h2>When ReviewGate is the better fit</h2>
+    <ul>
+      <li>Code cannot leave your infrastructure, or you must pick the exact LLM endpoint (including domestic providers like DeepSeek, Kimi, GLM, Qwen).</li>
+      <li>You need a real merge gate in CI: exit 0 clean, exit 1 blocked, exit 2 tool failure — not just comments someone may ignore.</li>
+      <li>You review AI-generated changes in bulk and care about "never fake a PASS" semantics when the review times out or the diff is oversized.</li>
+      <li>You are not on GitHub, or you also review local diffs before pushing.</li>
+    </ul>
+
+    <h2>Can you use both?</h2>
+    <p>Yes, and it is a reasonable setup: Copilot code review for conversational, in-PR feedback, and ReviewGate as the last pre-merge gate in CI that decides whether the pipeline goes red. They do not conflict — one produces comments, the other produces a verdict.</p>
+
+    <div class="cta-box">
+      <h2>Try ReviewGate on your next PR</h2>
+      <p>Install the CLI in one command, point it at your LLM endpoint, and run reviewgate review --fail-on block in CI.</p>
+      <a class="btn" href="/ReviewGate/">Get started →</a>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    © 2026 ReviewGate · MIT License · <a href="/ReviewGate/">Home</a> · <a href="/ReviewGate/benchmarks.html">Benchmarks</a> · <a href="/ReviewGate/vs-coderabbit.html">vs CodeRabbit</a>
+  </div>
+</footer>
+
+</body>
+</html>

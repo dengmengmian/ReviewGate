@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReviewGate 评测记录 | Public Evaluation Logs</title>
+<meta name="description" content="ReviewGate 全部公开评测记录：真实 PR、revert 金标准、多语言能力、大 PR、意图评审、AACR bench 等，所有结果可复查。">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://dengmengmian.github.io/ReviewGate/evals/">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="sitemap" type="application/xml" href="/sitemap.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--teal:#14B8A6;--teal-dark:#0F766E;--teal-light:#F0FDFA;--ink:#0B1220;--muted:#64748B;--bg:#ffffff;--border:#E2E8F0;--font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;--mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font);color:var(--ink);background:var(--bg);line-height:1.6;-webkit-font-smoothing:antialiased}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+  nav{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.82);backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--border)}
+  nav .wrap{display:flex;align-items:center;gap:28px;height:64px}
+  nav .brand img{height:30px;display:block}
+  nav .back{margin-left:auto;font-size:15px;font-weight:600;color:var(--muted)}
+  nav .back:hover{color:var(--ink)}
+  header{padding:64px 0 40px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#f8fafc,#fff)}
+  h1{font-size:38px;font-weight:800;letter-spacing:-.02em;color:var(--ink)}
+  .lead{color:var(--muted);font-size:17px;margin-top:12px;max-width:680px}
+  .stats{display:flex;gap:32px;margin-top:28px;flex-wrap:wrap}
+  .stat{background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px 22px;min-width:140px}
+  .stat b{display:block;font-size:24px;color:var(--teal-dark)}
+  .stat span{font-size:13px;color:var(--muted)}
+  main{padding:48px 0 80px}
+  .day{margin-bottom:42px}
+  .day h2{font-size:18px;font-weight:700;color:var(--ink);margin-bottom:16px;display:flex;align-items:center;gap:10px}
+  .day h2::before{content:"";display:block;width:8px;height:8px;border-radius:50%;background:var(--teal)}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:20px;transition:.15s}
+  .card:hover{border-color:#bdeae3;box-shadow:0 10px 28px rgba(20,184,166,.10)}
+  .card .meta{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+  .tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 8px;border-radius:6px;background:var(--teal-light);color:var(--teal-dark)}
+  .tag.recall{background:#fef2f2;color:#991b1b}
+  .tag.intent{background:#eff6ff;color:#1e40af}
+  .tag.big-pr{background:#f3e8ff;color:#6b21a8}
+  .tag.language{background:#fff7ed;color:#9a3412}
+  .tag.business{background:#ecfdf5;color:#065f46}
+  .tag.improvement{background:#f8fafc;color:#475569}
+  .tag.summary{background:#fffbeb;color:#92400e}
+  .date{font-size:13px;color:var(--muted);font-family:var(--mono)}
+  .card h3{font-size:16px;font-weight:700;color:var(--ink);line-height:1.4}
+  .card a::after{content:" →";color:var(--teal)}
+  footer{border-top:1px solid var(--border);padding:40px 0;color:var(--muted);font-size:14px;text-align:center}
+  @media(max-width:760px){
+    h1{font-size:30px}
+    .grid{grid-template-columns:1fr}
+    .stats{gap:16px}
+  }
+</style>
+<script data-goatcounter="https://agentgate.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="/ReviewGate/"><img src="../assets/logo.svg" alt="ReviewGate"></a>
+    <a class="back" href="/ReviewGate/">← 返回首页</a>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <h1>评测记录</h1>
+    <p class="lead">所有评测用真实模型跑真实代码，结果全部留痕。方法学核心：干净 PR 应 PASS，已知 bug 应 BLOCK；真实 bug 用 revert 法重新引入后审查。</p>
+    <div class="stats">
+      <div class="stat"><b>63</b><span>评测记录</span></div>
+      <div class="stat"><b>7</b><span>记录日期</span></div>
+      <div class="stat"><b>6</b><span>审查维度</span></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <section class="day">
+      <h2>2026-07-03</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="meta"><span class="tag capability">capability</span><span class="date">2026-07-03</span></div>
+          <h3><a href="2026-07-03__aacr-bench-official.md">AACR-Bench × ReviewGate —— 官方评分器（语义匹配）评测 · 2026-07-03</a></h3>
+        </article>
+      </div>
+    </section>
+    <section class="day">
+      <h2>2026-07-02</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="meta"><span class="tag capability">capability</span><span class="date">2026-07-02</span></div>
+          <h3><a href="2026-07-02__aacr-bench-summary.md">AACR-Bench × ReviewGate 评测汇总</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag other">other</span><span class="date">2026-07-02</span></div>
+          <h3><a href="2026-07-02__ai-smell-nonexistent-symbol-overclaim.md">ai_smell「找不到=不存在」过度自信假阳性 — 复现与修复 — 2026-07-02</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag capability">capability</span><span class="date">2026-07-02</span></div>
+          <h3><a href="2026-07-02__frontier-10170-state-drift.md">Frontier 攻坚未果：跨文件状态表征漂移（syncthing #10170）— 2026-07-02</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag recall">recall</span><span class="date">2026-07-02</span></div>
+          <h3><a href="2026-07-02__recall-summary--dataset-recall.md">召回评测汇总（revert 法）— 2026-07-02</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag recall">recall</span><span class="date">2026-07-02</span></div>
+          <h3><a href="2026-07-02__recall-summary.md">召回评测汇总（revert 法）— 2026-07-02</a></h3>
+        </article>
+      </div>
+    </section>
+    <section class="day">
+      <h2>2026-07-01</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="meta"><span class="tag improvement">improvement</span><span class="date">2026-07-01</span></div>
+          <h3><a href="2026-07-01__exec-verify-runcheck-fix.md">exec-verify / run_check 修复 + 硬尾用例复核 — 2026-07-01</a></h3>
+        </article>
+      </div>
+    </section>
+    <section class="day">
+      <h2>2026-06-29</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="meta"><span class="tag capability">capability</span><span class="date">2026-06-29</span></div>
+          <h3><a href="2026-06-29__frontend-real-pr-24.md">前端真实 PR 验证：24 PR × 5 维 + judge（全保真）</a></h3>
+        </article>
+      </div>
+    </section>
+    <section class="day">
+      <h2>2026-06-27</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="meta"><span class="tag big-pr">big-pr</span><span class="date">2026-06-27</span></div>
+          <h3><a href="2026-06-27__big-pr-units.md">大 PR 实测：axios 847d89b(URL对象支持,9文件) + 小预算(2000tok)强制多单元</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag big-pr">big-pr</span><span class="date">2026-06-27</span></div>
+          <h3><a href="2026-06-27__bigpr-axios-4k.md">大PR实测[axios-4k]: 847d89b @ 预算 4000 tok</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag big-pr">big-pr</span><span class="date">2026-06-27</span></div>
+          <h3><a href="2026-06-27__bigpr-axios-range-16k.md">大PR实测[axios-range-16k]: HEAD~30..HEAD @ 预算 16000 tok</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag big-pr">big-pr</span><span class="date">2026-06-27</span></div>
+          <h3><a href="2026-06-27__bigpr-curl-range-12k.md">大PR实测[curl-range-12k]: HEAD~30..HEAD @ 预算 12000 tok (dims=security,logic)</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag big-pr">big-pr</span><span class="date">2026-06-27</span></div>
+          <h3><a href="2026-06-27__bigpr-gin-range-16k.md">大PR实测[gin-range-16k]: HEAD~80..HEAD @ 预算 16000 tok</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag big-pr">big-pr</span><span class="date">2026-06-27</span></div>
+          <h3><a href="2026-06-27__bigpr-oversized-axios.md">超长单文件 oversized 路径实测: axios de1a8100 @8000</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag big-pr">big-pr</span><span class="date">2026-06-27</span></div>
+          <h3><a href="2026-06-27__bigpr-requests-6k.md">大PR实测[requests-6k]: f8bec2f @ 预算 6000 tok</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag big-pr">big-pr</span><span class="date">2026-06-27</span></div>
+          <h3><a href="2026-06-27__bigpr-ripgrep-range-12k.md">大PR实测[ripgrep-range-12k]: HEAD~40..HEAD @ 预算 12000 tok</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag intent">intent</span><span class="date">2026-06-27</span></div>
+          <h3><a href="2026-06-27__intent-batch10.md">意图评审批量实测：10 个真实 commit（`--intent-from-commit`）</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag intent">intent</span><span class="date">2026-06-27</span></div>
+          <h3><a href="2026-06-27__intent-cobra-pr2356.md">意图评审实测：spf13/cobra#2356 —— Go 微妙切片别名 bug（含诚实局限）</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag intent">intent</span><span class="date">2026-06-27</span></div>
+          <h3><a href="2026-06-27__intent-mvp-ab.md">意图 / 技术评审 MVP —— 受控 A/B(ground truth)</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag intent">intent</span><span class="date">2026-06-27</span></div>
+          <h3><a href="2026-06-27__intent-structured-enforcement.md">意图评审实测：结构化强制 → 验收清单覆盖每条标准</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag capability">capability</span><span class="date">2026-06-27</span></div>
+          <h3><a href="2026-06-27__production-readiness-30pr.md">生产/开源就绪验证：≥30 PR × 5 维 + 意图（汇总矩阵）</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag intent">intent</span><span class="date">2026-06-27</span></div>
+          <h3><a href="2026-06-27__techreview-intent-axios.md">技术评审(实现 vs 意图)可行性实证 —— 反证：静态规则通道不够</a></h3>
+        </article>
+      </div>
+    </section>
+    <section class="day">
+      <h2>2026-06-26</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="meta"><span class="tag business">business</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__addbusinessdays-retry.md">addBusinessDays 硬尾再攻关(revert #1486 周末修复 + --exec-verify + 执行推演)</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag language">language</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__builtin-language-rules-ab.md">干净样例 A/B：内置规则 ON vs OFF（定位误报来源）</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag language">language</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__builtin-language-rules-clean2.md">第二轮：真正干净样例 + rules ON（期望全 PASS）</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag language">language</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__builtin-language-rules.md">内置语言规则验证（默认开，deepseek-v4-pro）</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag business">business</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__business-real-issues.md">业务 review：真实用户 issue + 修复 PR 验证</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag other">other</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__english-rules-revalidation.md">英文规则再验证(线上 main 二进制,默认全规则 ON)</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag other">other</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__exec-verify-experiment.md">实验：run_check 沙箱执行 攻克细微算术 off-by-one</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag improvement">improvement</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__fix-quality.md">修复建议质量（suggestion_code / --fix 可用性）</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag language">language</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__lang-promote-batch2.md">第二批语言验证(C#/Ruby/PHP/Swift/Kotlin) — 候选规则经 rules_dir 注入</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag language">language</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__lang-promote-batch3.md">第三批语言验证(scala/dart/objc/lua/perl/haskell/elixir/erlang + ruby重测) — rules_dir 注入</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag language">language</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__lang-promote-batch4.md">第四批语言验证(clojure/groovy/julia/r/ocaml/fsharp/zig/nim) + erlang/ruby干净重测</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag language">language</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__lang-promote-batch5.md">第五批语言验证(最后16种) + r/ruby trivial重测 — rules_dir 注入</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag language">language</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__lang-promote-batch6.md">收尾批：shell/powershell/vue/graphql 干净样例重测</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag language">language</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__lang-rules-FINAL.md">内置语言规则：45 种全部默认开 — 最终总结</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag capability">capability</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__precision-stress.md">Round 5：精度压测（干净改动的误报率）</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag capability">capability</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__real-pr-revert-goldstandard.md">真实 PR revert 金标准(默认全规则 ON)：重引入真实已修复 bug,应 BLOCK/WARN</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag capability">capability</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__real-pr-spotcheck.md">真实 PR 金标准抽查(默认全规则 ON)：审查各仓最新真实 commit</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag recall">recall</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__recall-polish.md">召回打磨复测: csharp(空catch +CS6) / terraform(TF1/TF2 加强)</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag other">other</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__round4-vuln-types.md">Round 4：更多高价值漏洞类型（真实 handler 上下文 + --samples 3）</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag other">other</span><span class="date">2026-06-26</span></div>
+          <h3><a href="2026-06-26__strong-trigger-recheck.md">强触发复查(明确真bug)：perl/groovy/julia/nim 漏抓是规则弱还是样例弱?</a></h3>
+        </article>
+      </div>
+    </section>
+    <section class="day">
+      <h2>2026-06-25</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="meta"><span class="tag other">other</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__BurntSushi_ripgrep__pr3195.md">Eval: BurntSushi/ripgrep#3195 — searcher: fix regression with `--line-buffered` flag</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag other">other</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__BurntSushi_ripgrep__pr3420.md">Eval: BurntSushi/ripgrep#3420 — ignore: scope compiled parent matchers by root</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag recall">recall</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__axios__revert-pr10750.md">召回(revert)：axios/axios#10750 — 还原安全修复以重新引入漏洞</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag summary">summary</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__batch-summary.md">真实 PR 批量评测汇总（2026-06-25）</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag recall">recall</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__cJSON__revert-pr800.md">召回(revert)：DaveGamble/cJSON#800 — 还原安全修复以重新引入漏洞</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag recall">recall</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__cangjie-planted.md">Eval: 仓颉（Cangjie）植入式漏洞 — 未支持语言的优雅降级</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag other">other</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__cli_cli__pr13705.md">Eval: cli/cli#13705 — Pin reusable triage workflows to a commit SHA</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag recall">recall</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__echo__revert-pr1718.md">召回(revert)：labstack/echo#1718 — 还原安全修复以重新引入漏洞</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag recall">recall</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__gradio__revert-pr13437.md">召回(revert)：gradio-app/gradio#13437 — 还原安全修复以重新引入漏洞</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag other">other</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__junegunn_fzf__pr4739.md">Eval: junegunn/fzf#4739 — enhancement: move server definition into go func to allocate it in stack and reduce heap allocation</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag other">other</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__junegunn_fzf__pr4803.md">Eval: junegunn/fzf#4803 — Export FZF_CURRENT_ITEM to child processes</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag language">language</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__language-coverage.md">全语言覆盖 sweep（round 1，2026-06-25）</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag other">other</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__psf_requests__pr7539.md">Eval: psf/requests#7539 — Inline pre-commit linting</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag recall">recall</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__recall-cve-reverts.md">真实 CVE 召回测试（revert 法）</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag recall">recall</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__recall-planted-bugs.md">Eval: 召回测试（植入式 bug）</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag other">other</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__round2-vuln-types.md">Round 2：跨漏洞类型召回（2026-06-25）</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag other">other</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__sindresorhus_got__pr2454.md">Eval: sindresorhus/got#2454 — Fix `searchParams` setter dropping the value when a URL is set</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag recall">recall</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__smallvec__revert-pr254.md">召回(revert)：servo/rust-smallvec#254 — 还原安全修复以重新引入漏洞</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag other">other</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__ssrf-improvement.md">SSRF 召回改进验证（prompt 强化前后）</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag language">language</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__uncommon-languages.md">冷门语言覆盖（Round 3，2026-06-25）</a></h3>
+        </article>
+        <article class="card">
+          <div class="meta"><span class="tag other">other</span><span class="date">2026-06-25</span></div>
+          <h3><a href="2026-06-25__yt-dlp_yt-dlp__pr16991.md">Eval: yt-dlp/yt-dlp#16991 — [ie/niconico] Fix error detection</a></h3>
+        </article>
+      </div>
+    </section>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">© 2026 ReviewGate · MIT License · <a href="/ReviewGate/">首页</a></div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ReviewGate Known Limitations — Honest Boundaries</title>
+<meta name="description" content="ReviewGate's known capability boundaries: subtle off-by-one bugs, cross-file state drift on large diffs, timeouts and incomplete-review degradation — all documented from real evaluations.">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://dengmengmian.github.io/ReviewGate/en/limitations.html">
+<link rel="alternate" hreflang="zh" href="https://dengmengmian.github.io/ReviewGate/LIMITATIONS.html">
+<link rel="alternate" hreflang="en" href="https://dengmengmian.github.io/ReviewGate/en/limitations.html">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="sitemap" type="application/xml" href="/sitemap.xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--teal:#14B8A6;--teal-dark:#0F766E;--ink:#0B1220;--muted:#64748B;--bg:#ffffff;--border:#E2E8F0;--font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;--mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--font);color:var(--ink);background:var(--bg);line-height:1.7;-webkit-font-smoothing:antialiased}
+  a{color:var(--teal-dark);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:840px;margin:0 auto;padding:0 24px}
+  nav{border-bottom:1px solid var(--border);background:linear-gradient(180deg,#f8fafc,#fff)}
+  nav .wrap{display:flex;align-items:center;gap:28px;height:64px}
+  nav .brand img{height:30px;display:block}
+  nav .back{margin-left:auto;font-size:15px;font-weight:600;color:var(--muted)}
+  nav .back:hover{color:var(--ink)}
+  header{padding:56px 0 32px;border-bottom:1px solid var(--border);background:linear-gradient(180deg,#f8fafc,#fff)}
+  header h1{font-size:34px;font-weight:800;letter-spacing:-.02em;color:var(--ink);line-height:1.15}
+  main{padding:48px 0 80px}
+  main h2{font-size:22px;font-weight:700;margin:36px 0 14px;color:var(--ink)}
+  main p{color:var(--muted);margin-bottom:16px;font-size:16px}
+  main ul{margin:0 0 20px 24px;color:var(--muted)}
+  main li{margin-bottom:8px;font-size:16px}
+  main code{font-family:var(--mono);font-size:.9em;background:#f1f5f9;padding:2px 6px;border-radius:5px;color:var(--teal-dark)}
+  footer{border-top:1px solid var(--border);padding:40px 0;color:var(--muted);font-size:14px;text-align:center}
+  @media(max-width:720px){header h1{font-size:28px}}
+</style>
+<script data-goatcounter="https://agentgate.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="/ReviewGate/en/"><img src="../assets/logo.svg" alt="ReviewGate"></a>
+    <a class="back" href="/ReviewGate/en/">← Back to home</a>
+  </div>
+</nav>
+
+<header>
+  <div class="wrap">
+    <h1>Known limitations (honest boundaries)</h1>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+<p>ReviewGate is a <strong>static LLM quality gate</strong> — it does not execute your code. The boundaries below come from real evaluations (see <a href="/ReviewGate/evals/">docs/evals/</a>). Stating them plainly is a trust feature: we would rather be clear about what doesn't work than oversell.</p>
+
+<h2>1. Subtle algorithmic off-by-one / carry bugs that only surface at runtime</h2>
+<ul>
+<li>Several previously missed cases (DST handling, <code>parseISO</code> 24:00, negative-zero diffs) now BLOCK after "execution-simulation" prompt improvements; the reverted <code>addBusinessDays</code> weekend fix is caught 2/2 stably.</li>
+<li>The <code>--exec-verify</code> <code>run_check</code> tool had a real bug (child stdout never captured or returned to the model) that was found and fixed on 2026-07-01 — execution signals now actually reach the model.</li>
+<li><strong>Still true</strong>: the most subtle single-step off-by-one and digit-carry bugs can be mis-simulated. The bottleneck is whether the model proactively doubts and verifies. On large repos, individual dimensions can hit the wall-clock timeout (marked incomplete, never silently passed).</li>
+<li><strong>The reliable defense remains unit tests.</strong> Do not rely on static review alone for critical algorithmic logic.</li>
+</ul>
+
+<h2>1b. Cross-file state-representation drift in large diffs</h2>
+<ul>
+<li>Frontier specimen: syncthing #10170 — a bool field and a bitmask acting as dual sources of truth, drifting across 19 files where every hunk looks locally consistent. Both the baseline and a targeted extra check scored 0/2. The case stays in the recall dataset as a known-red frontier.</li>
+<li>Qualitatively, this class of bug needs intent context ("what was this change supposed to do") — it belongs to <code>--intent</code> review territory, not diff-local static analysis.</li>
+</ul>
+
+<h2>2. "Bare" dangerous calls with no context signal</h2>
+<ul>
+<li>A three-line <code>requests.get(url)</code> with no hint that <code>url</code> is user-controlled will not reliably be flagged as SSRF.</li>
+<li>Mitigation: real code usually carries handler/parameter context (recall is good with context); <code>--samples N</code> stabilizes high-risk categories.</li>
+</ul>
+
+<h2>3. Run-to-run variance</h2>
+<ul>
+<li>Inherent to LLMs: the set of findings fluctuates between runs; borderline confidences can flip between WARN and BLOCK.</li>
+<li>Mitigation: dedup + counter-evidence judging converge results; <code>--samples N</code> takes the union across samples and keeps the highest confidence.</li>
+</ul>
+
+<h2>4. Degraded precision tooling for unsupported languages</h2>
+<ul>
+<li>tree-sitter grammars cover rust / cpp / python / go / js / ts / java. Other languages still get full LLM review, but <code>find_definition</code> / <code>callers</code> / <code>references</code> fall back to lexical grep, <code>find_duplicate_functions</code> is unavailable, and per-language rule files don't route. Adding a language = adding a grammar + extension mapping.</li>
+</ul>
+
+<h2>5. Reviews the diff, not the repository</h2>
+<ul>
+<li>By default only the change under review is examined; pre-existing code is not audited. "Negative diffs" that delete security guards are specifically covered (prompt rule + verified on a real deletion-only CVE in cJSON).</li>
+</ul>
+
+<h2>6. Intent review (<code>--intent</code>) checklist semantics</h2>
+<ul>
+<li>Intent is parsed into numbered acceptance criteria; any criterion the review didn't explicitly verdict is marked <code>? not assessed</code> and degrades the result to WARN — the checklist always covers every criterion, and an unchecked one is never silently dropped.</li>
+<li>Model-level limitation remains: the model may spend its budget deep on one criterion, leaving others honestly marked "not assessed" — the fix is a larger <code>--timeout</code> or splitting the intent, not pretending it was checked.</li>
+<li>Intent quality bounds the output: a one-line commit message yields a few coarse criteria; written acceptance criteria yield a fine-grained checklist.</li>
+</ul>
+
+<p>Every limitation above has an eval trail, and each lists its current mitigation. This page shrinks as versions progress — the Chinese original is <a href="/ReviewGate/LIMITATIONS.html">here</a>.</p>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">© 2026 ReviewGate · MIT License · <a href="/ReviewGate/en/">Home</a> · <a href="/ReviewGate/benchmarks.html">Benchmarks</a> · <a href="/ReviewGate/evals/">Evals</a></div>
+</footer>
+
+</body>
+</html>
