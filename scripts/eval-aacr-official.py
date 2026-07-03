@@ -152,6 +152,7 @@ def main():
     ap.add_argument("--all", action="store_true", help="跑全部 196 个 positive_samples（可断点续跑）")
     ap.add_argument("--rescore", action="store_true", help="忽略已存在的 .eval.json，重跑 judge")
     ap.add_argument("--max-new", type=int, default=0, help="本次最多评测多少个新 PR（0=不限；分批用）")
+    ap.add_argument("--retry-errors", action="store_true", help="忽略 _fetch_errors.json，重试之前 fetch 失败的 PR")
     args = ap.parse_args()
 
     aacr = os.environ.get("AACR_REPO")
@@ -193,6 +194,15 @@ def main():
     resdir = EVAL_DIR / "aacr-bench-results"
     resdir.mkdir(parents=True, exist_ok=True)
     new_done = 0
+    # fetch 失败/超时的 PR（巨仓 / 深历史）会每批被重试、每次白烧超时。记档跳过，
+    # 除非 --retry-errors。这样后续批次不再重复烧 ClickHouse 等的 240s。
+    errfile = resdir / "_fetch_errors.json"
+    errored = {}
+    if errfile.exists() and not args.retry_errors:
+        try:
+            errored = json.loads(errfile.read_text())
+        except Exception:
+            errored = {}
     for e in picked:
         if args.max_new and new_done >= args.max_new:
             print(f"\n[batch] 已评测 {new_done} 个新 PR，达到 --max-new，停止本批。")
@@ -213,6 +223,9 @@ def main():
                     continue
             except Exception:
                 pass
+        if key in errored:
+            print(f"  ⤫ skip {key}（前次 fetch 失败：{errored[key][:50]}，--retry-errors 可重试）")
+            continue
         print(f"▶ {key} [{e.get('project_main_language')}] good={len(good)}")
         try:
             rd = ensure_repo(repo)
@@ -249,6 +262,11 @@ def main():
         except Exception as ex:
             print(f"  ERROR: {ex}")
             rows.append({"key": key, "error": str(ex)})
+            # fetch/merge-base 失败或超时 → 记档，后续批次跳过（巨仓/深历史，重试也白烧超时）。
+            msg = str(ex)
+            if "fetch" in msg or "merge-base" in msg or "timed out" in msg:
+                errored[key] = msg
+                errfile.write_text(json.dumps(errored, ensure_ascii=False, indent=2))
 
     # 汇总从磁盘扫描全部 .eval.json（跨重启累积），并按 196 参考集统计覆盖度与分语言指标。
     from collections import defaultdict
