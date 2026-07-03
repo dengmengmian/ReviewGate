@@ -105,7 +105,23 @@ def fetch(repo_dir: Path, source: str, target: str):
         if _commits_present(repo_dir, source, target) and _diffable(repo_dir, source, target):
             return
         depth *= 3  # merge-base 不在浅层历史里 → 加深重试（大 PR 兜底）
-    raise RuntimeError(f"fetch/merge-base failed at depth {depth}: {source} {target}")
+    # 深历史兜底：base↔head 分叉太远，浅层永远拿不到 merge-base。浅层 graft 难清，
+    # 直接删仓重做**全量 blobless clone**（完整提交图 → merge-base 必可算；非浅层下 diff
+    # 所需 blob 按需从 promisor 拉可用——最初 12-sample 用的就是这方案）。巨仓靠超时兜底。
+    url = subprocess.run(["git", "remote", "get-url", "origin"], cwd=repo_dir,
+                         capture_output=True, text=True).stdout.strip()
+    subprocess.run(["rm", "-rf", str(repo_dir)])
+    try:
+        subprocess.run(["git", "clone", "--quiet", "--filter=blob:none", "--no-checkout", url, str(repo_dir)],
+                       capture_output=True, timeout=FETCH_TIMEOUT)
+        # PR 的 source/target 可能不在默认分支上，补拉这两个具体 commit。
+        subprocess.run(["git", "fetch", "--quiet", "--filter=blob:none", "origin", source, target],
+                       cwd=repo_dir, capture_output=True, timeout=FETCH_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"full blobless clone timed out (>{FETCH_TIMEOUT}s): {source[:10]}")
+    if _commits_present(repo_dir, source, target) and _diffable(repo_dir, source, target):
+        return
+    raise RuntimeError(f"fetch/merge-base failed (deep-history, even full graph): {source} {target}")
 
 
 def run_rg(repo_dir: Path, source: str, target: str) -> dict:
