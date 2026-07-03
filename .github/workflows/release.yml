@@ -35,7 +35,7 @@ jobs:
         env:
           CARGO_NET_RETRY: "10"      # 重试 crates.io 下载，扛住 CI 网络抖动
           CARGO_NET_GIT_FETCH_WITH_CLI: "true"
-        run: cargo build --release --target ${{ matrix.target }} -p reviewgate-cli
+        run: cargo build --release --target ${{ matrix.target }} -p reviewgate
       - name: Stage
         shell: bash
         run: |

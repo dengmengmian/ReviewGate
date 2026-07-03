@@ -1,17 +1,23 @@
 [package]
-name = "reviewgate-cli"
+# crate 名与二进制同名,让用户可以 cargo install reviewgate
+name = "reviewgate"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description.workspace = true
+homepage.workspace = true
+readme = "../../README.en.md"
+keywords = ["code-review", "ai", "llm", "ci", "quality-gate"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "reviewgate"
 path = "src/main.rs"
 
 [dependencies]
-reviewgate-core = { path = "../core" }
+# version 供 crates.io 发布解析;本地构建仍走 path
+reviewgate-core = { path = "../core", version = "0.5.0" }
 tokio.workspace = true
 clap.workspace = true
 anyhow.workspace = true

@@ -39,7 +39,7 @@ dist:
 		target=$${pair%%:*}; name=$${pair##*:}; \
 		echo "=> $$target -> reviewgate-$$name"; \
 		rustup target add $$target >/dev/null 2>&1 || true; \
-		cargo build --release --target $$target -p reviewgate-cli && \
+		cargo build --release --target $$target -p reviewgate && \
 		cp target/$$target/release/reviewgate dist/reviewgate-$$name; \
 	done
 	cd dist && shasum -a 256 reviewgate-* > sha256sum.txt

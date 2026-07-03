@@ -136,6 +136,11 @@ Read-only tool boundaries, prompt-cache reuse, deterministic duplicate-function 
 curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh
 ```
 
+```bash
+# macOS / Linux (Homebrew)
+brew install dengmengmian/tap/reviewgate
+```
+
 ```powershell
 # Windows (PowerShell)
 irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex
