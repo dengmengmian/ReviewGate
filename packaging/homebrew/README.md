@@ -10,14 +10,10 @@ brew install dengmengmian/tap/reviewgate
 
 ## 每次发版更新
 
-新版本发布后，`version` 和四个 `sha256` 要同步更新，校验和直接取 release 附带的 `sha256sum.txt`：
-
-```bash
-VERSION=0.6.0
-curl -sL "https://github.com/dengmengmian/ReviewGate/releases/download/v${VERSION}/sha256sum.txt"
-```
-
-改完复制到 tap 仓库 `Formula/reviewgate.rb` 并推送。后续可在 release workflow 里自动化（用 PAT 推 tap 仓库）。
+release.yml 的 `homebrew` job 会在发版后自动更新 tap 仓库的 formula（version + 四个平台 sha256，
+取自 release 的 sha256sum.txt），需要仓库 Secret `HOMEBREW_TAP_TOKEN`（对 dengmengmian/homebrew-tap
+有 contents:write 的 fine-grained PAT）。crates.io 发布也由 `crates` job 自动完成（需要 Secret
+`CARGO_REGISTRY_TOKEN`）。本目录的 `reviewgate.rb` 是模板/参考副本，结构改动时需与 tap 仓库同步。
 
 ## 本地验证
 

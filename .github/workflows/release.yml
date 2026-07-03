@@ -71,3 +71,84 @@ jobs:
           echo "Moving ${MAJOR} -> ${GITHUB_SHA} (${GITHUB_REF_NAME})"
           git tag -f "${MAJOR}" "${GITHUB_SHA}"
           git push -f origin "${MAJOR}"
+
+  # 发布成功后自动更新 Homebrew tap 的 formula(version + 4 个平台 sha256)。
+  # 需要 Secret HOMEBREW_TAP_TOKEN:对 dengmengmian/homebrew-tap 有 contents:write 的 PAT。
+  homebrew:
+    needs: publish
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update tap formula
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN secret is required to update dengmengmian/homebrew-tap"
+            exit 1
+          fi
+          VERSION="${GITHUB_REF_NAME#v}"
+          curl -fsSL -o sha256sum.txt "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/sha256sum.txt"
+
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/dengmengmian/homebrew-tap.git" tap
+          F=tap/Formula/reviewgate.rb
+          sed -E -i "s/^  version \"[0-9.]+\"/  version \"${VERSION}\"/" "$F"
+          # 每条 url 行标注平台,其后第一条 sha256 行替换成该平台的校验和
+          awk -v shafile=sha256sum.txt '
+            BEGIN { while ((getline line < shafile) > 0) { split(line, a, /  +| /); sha[a[2]] = a[1] } }
+            /reviewgate-darwin-arm64/  { cur = sha["reviewgate-darwin-arm64"] }
+            /reviewgate-darwin-x64/    { cur = sha["reviewgate-darwin-x64"] }
+            /reviewgate-linux-arm64/   { cur = sha["reviewgate-linux-arm64"] }
+            /reviewgate-linux-x64/     { cur = sha["reviewgate-linux-x64"] }
+            /^ *sha256 "/ && cur != "" { sub(/"[0-9a-f]{64}"/, "\"" cur "\""); cur = "" }
+            { print }
+          ' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
+          # 4 个校验和都必须落进文件,否则宁可失败也不推错误的 formula
+          for a in darwin-arm64 darwin-x64 linux-arm64 linux-x64; do
+            grep -q "$(awk -v f="reviewgate-$a" '$2==f{print $1}' sha256sum.txt)" "$F"
+          done
+          grep -q "version \"${VERSION}\"" "$F"
+
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "reviewgate ${VERSION}"
+          git push
+
+  # 发布成功后自动发 crates.io(先 core 后 cli;已存在的版本跳过,支持失败重跑)。
+  # 需要 Secret CARGO_REGISTRY_TOKEN:crates.io 的 publish token。
+  crates:
+    needs: publish
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::error::CARGO_REGISTRY_TOKEN secret is required to publish to crates.io"
+            exit 1
+          fi
+          VERSION="${GITHUB_REF_NAME#v}"
+          # tag 必须与 workspace 版本一致,否则会把旧版本号发出去
+          grep -q "^version = \"${VERSION}\"" Cargo.toml || {
+            echo "::error::Cargo.toml workspace version does not match tag ${GITHUB_REF_NAME}"
+            exit 1
+          }
+          # 稀疏索引查已发布版本,已存在则跳过(幂等,失败重跑安全)
+          published() {
+            curl -fsSL "https://index.crates.io/${2}/${1}" 2>/dev/null | grep -q "\"vers\":\"${VERSION}\""
+          }
+          if published reviewgate-core re/vi; then
+            echo "reviewgate-core ${VERSION} already published, skipping"
+          else
+            cargo publish -p reviewgate-core
+          fi
+          if published reviewgate re/vi; then
+            echo "reviewgate ${VERSION} already published, skipping"
+          else
+            cargo publish -p reviewgate
+          fi
