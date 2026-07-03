@@ -136,6 +136,7 @@ def main():
     ap.add_argument("--pr", action="append", default=[], help="只跑指定 repo#num（可多次）")
     ap.add_argument("--all", action="store_true", help="跑全部 196 个 positive_samples（可断点续跑）")
     ap.add_argument("--rescore", action="store_true", help="忽略已存在的 .eval.json，重跑 judge")
+    ap.add_argument("--max-new", type=int, default=0, help="本次最多评测多少个新 PR（0=不限；分批用）")
     args = ap.parse_args()
 
     aacr = os.environ.get("AACR_REPO")
@@ -176,7 +177,11 @@ def main():
 
     resdir = EVAL_DIR / "aacr-bench-results"
     resdir.mkdir(parents=True, exist_ok=True)
+    new_done = 0
     for e in picked:
+        if args.max_new and new_done >= args.max_new:
+            print(f"\n[batch] 已评测 {new_done} 个新 PR，达到 --max-new，停止本批。")
+            break
         url = e["githubPrUrl"].rstrip("/")
         parts = url.split("/")
         repo = f"{parts[-4]}/{parts[-3]}"
@@ -214,6 +219,7 @@ def main():
                 raise RuntimeError(res["error"])
             # 存完整 evaluator 结果（含 match_details / llm_comparisons）供诊断 precision/recall。
             (resdir / f"{slug}.eval.json").write_text(json.dumps(res, ensure_ascii=False, indent=2))
+            new_done += 1
             m = res.get("positive_match_nums", 0)
             tg = res.get("total_generated_nums", 0)
             pe = res.get("positive_expected_nums", 0)
