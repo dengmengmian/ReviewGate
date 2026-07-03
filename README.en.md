@@ -141,6 +141,11 @@ curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/instal
 brew install dengmengmian/tap/reviewgate
 ```
 
+```bash
+# Rust users
+cargo install reviewgate
+```
+
 ```powershell
 # Windows (PowerShell)
 irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex
