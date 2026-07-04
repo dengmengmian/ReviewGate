@@ -126,6 +126,28 @@ mod tests {
     }
 
     #[test]
+    fn parse_retry_after_caps_at_sixty_seconds() {
+        let resp = http_response_with_retry_after("120");
+        assert_eq!(parse_retry_after(&resp), Some(Duration::from_secs(60)));
+    }
+
+    #[test]
+    fn parse_retry_after_ignores_non_numeric_and_http_date() {
+        let resp = http_response_with_retry_after("Wed, 21 Oct 2025 07:28:00 GMT");
+        assert_eq!(parse_retry_after(&resp), None);
+        let resp2 = http_response_with_retry_after("not-a-number");
+        assert_eq!(parse_retry_after(&resp2), None);
+    }
+
+    fn http_response_with_retry_after(value: &str) -> reqwest::Response {
+        let http_resp = http::Response::builder()
+            .header(reqwest::header::RETRY_AFTER, value)
+            .body("")
+            .unwrap();
+        reqwest::Response::from(http_resp)
+    }
+
+    #[test]
     fn backoff_within_jitter_bounds() {
         for attempt in 0..2u64 {
             let base = 2000 * (attempt + 1);

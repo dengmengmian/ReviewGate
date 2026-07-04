@@ -282,6 +282,184 @@ mod tests {
         assert_eq!(r, Some((1, 1)));
     }
 
+    #[tokio::test]
+    async fn relocate_all_keeps_original_lines_when_file_missing() {
+        let dir = std::env::temp_dir().join(format!("rg_relocate_missing_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let findings = vec![{
+            crate::model::Finding {
+                dimension: crate::model::Dimension::Logic,
+                confidence: 0.9,
+                severity: crate::model::Severity::High,
+                path: "missing.rs".into(),
+                start_line: 42,
+                end_line: 42,
+                message: "m".into(),
+                existing_code: "code".into(),
+                evidence: String::new(),
+                suggestion: None,
+                suggestion_code: String::new(),
+                reachability: crate::model::Reachability::default(),
+                filtered: false,
+                agreed_dimensions: 1,
+                criterion: None,
+                intent_status: None,
+            }
+        }];
+        let diff = Diff { files: vec![] };
+        let mut findings = findings;
+        relocate_all(&mut findings, &dir, &None, &diff).await;
+        assert_eq!(findings[0].start_line, 42);
+        assert_eq!(findings[0].end_line, 42);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn relocate_all_resets_out_of_range_lines_to_zero() {
+        let dir = std::env::temp_dir().join(format!("rg_relocate_oob_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.rs"), "fn main() {}\n").unwrap();
+
+        let f = crate::model::Finding {
+            dimension: crate::model::Dimension::Logic,
+            confidence: 0.9,
+            severity: crate::model::Severity::High,
+            path: "a.rs".into(),
+            start_line: 999,
+            end_line: 999,
+            message: "m".into(),
+            existing_code: "nonexistent snippet".into(),
+            evidence: String::new(),
+            suggestion: None,
+            suggestion_code: String::new(),
+            reachability: crate::model::Reachability::default(),
+            filtered: false,
+            agreed_dimensions: 1,
+            criterion: None,
+            intent_status: None,
+        };
+        let diff = Diff { files: vec![] };
+        let mut findings = vec![f];
+        relocate_all(&mut findings, &dir, &None, &diff).await;
+        assert_eq!(findings[0].start_line, 0);
+        assert_eq!(findings[0].end_line, 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn relocate_all_fast_path_keeps_model_lines_when_anchor_matches() {
+        let dir = std::env::temp_dir().join(format!("rg_relocate_fast_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.rs"), "fn main() {\n    let x = 1;\n}\n").unwrap();
+
+        let f = crate::model::Finding {
+            dimension: crate::model::Dimension::Logic,
+            confidence: 0.9,
+            severity: crate::model::Severity::High,
+            path: "a.rs".into(),
+            start_line: 2,
+            end_line: 2,
+            message: "m".into(),
+            existing_code: "let x = 1;".into(),
+            evidence: String::new(),
+            suggestion: None,
+            suggestion_code: String::new(),
+            reachability: crate::model::Reachability::default(),
+            filtered: false,
+            agreed_dimensions: 1,
+            criterion: None,
+            intent_status: None,
+        };
+        let diff = Diff { files: vec![] };
+        let mut findings = vec![f];
+        relocate_all(&mut findings, &dir, &None, &diff).await;
+        assert_eq!(findings[0].start_line, 2);
+        assert_eq!(findings[0].end_line, 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn relocate_all_falls_back_when_anchor_mismatch() {
+        let dir = std::env::temp_dir().join(format!("rg_relocate_fallback_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("a.rs"),
+            "fn main() {\n    let x = 1;\n    let y = 2;\n}\n",
+        )
+        .unwrap();
+
+        // 模型行号偏差，但 existing_code 能在文件中别处匹配 → 应纠正。
+        let f = crate::model::Finding {
+            dimension: crate::model::Dimension::Logic,
+            confidence: 0.9,
+            severity: crate::model::Severity::High,
+            path: "a.rs".into(),
+            start_line: 10,
+            end_line: 10,
+            message: "m".into(),
+            existing_code: "let y = 2;".into(),
+            evidence: String::new(),
+            suggestion: None,
+            suggestion_code: String::new(),
+            reachability: crate::model::Reachability::default(),
+            filtered: false,
+            agreed_dimensions: 1,
+            criterion: None,
+            intent_status: None,
+        };
+        let diff = Diff { files: vec![] };
+        let mut findings = vec![f];
+        relocate_all(&mut findings, &dir, &None, &diff).await;
+        assert_eq!(findings[0].start_line, 3);
+        assert_eq!(findings[0].end_line, 3);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn read_new_version_rejects_path_escape() {
+        let dir = std::env::temp_dir().join(format!("rg_relocate_escape_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // 穿越路径应被 confine_path 挡住，返回 None。
+        assert!(read_new_version(&dir, &None, "../etc/passwd")
+            .await
+            .is_none());
+        assert!(read_new_version(&dir, &None, "/etc/passwd").await.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn anchor_matches_near_empty_anchor_returns_true() {
+        let file: Vec<String> = "a\nb\nc".lines().map(super::normalize).collect();
+        assert!(anchor_matches_near("   ", &file, 2, 3));
+    }
+
+    #[test]
+    fn anchor_matches_near_claimed_zero_returns_false() {
+        let file: Vec<String> = "a\nb\nc".lines().map(super::normalize).collect();
+        assert!(!anchor_matches_near("b", &file, 0, 3));
+    }
+
+    #[test]
+    fn locate_single_line_substring_prefers_added_line() {
+        let file = "a();\nx();\na();\n";
+        let r = locate("a();", file, &added(3..=3));
+        assert_eq!(r, Some((3, 3)));
+    }
+
+    #[test]
+    fn locate_falls_back_to_single_line_substring() {
+        // 多行片段整体不匹配，但规范化后其中一行作为子串命中文件行。
+        let file = "fn main() {\n    let x = compute_total(base_price, quantity);\n}\n";
+        // 第一行为空（规范化后去掉），只剩一行有效子串 → 触发单行 fallback。
+        let r = locate(
+            "\n    compute_total(base_price, quantity)",
+            file,
+            &HashSet::new(),
+        );
+        assert_eq!(r, Some((2, 2)));
+    }
+
     #[test]
     fn anchor_validation_trusts_model_when_anchor_empty() {
         let file: Vec<String> = FILE.lines().map(normalize).collect();

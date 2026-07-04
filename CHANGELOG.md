@@ -6,6 +6,16 @@ Changes are listed in Chinese first, then English.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-04
+
+### Fixed
+- skill/规则的 frontmatter 里 `name:` 或 `description:` 留空时，不再被解析成空字符串，而是正确视为「未设置」——避免空标题/空描述被当成有效值注入评审提示。
+  When a skill/rule frontmatter leaves `name:` or `description:` empty, it is no longer parsed as an empty string but correctly treated as unset — preventing blank titles/descriptions from being injected into review prompts as if valid.
+
+### Changed
+- 大幅补齐单元测试覆盖（评审去重、行号重定位、diff 解析、渲染、LLM 客户端、工具分发等 40+ 模块），提升重构与发版的回归安全网。纯内部改动，不影响使用行为。
+  Substantially expanded unit-test coverage (review dedup, line relocation, diff parsing, rendering, LLM clients, tool dispatch, and 40+ modules), strengthening the regression safety net for refactors and releases. Internal only, no behavior change.
+
 ## [0.6.0] - 2026-07-03
 
 ### Changed

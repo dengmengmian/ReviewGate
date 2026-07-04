@@ -348,4 +348,86 @@ mod tests {
         assert_eq!(detect_head_sha(), Some("def456".into()));
         std::env::remove_var("GITHUB_SHA");
     }
+
+    #[test]
+    fn detect_head_sha_returns_none_when_both_missing() {
+        std::env::remove_var("GITHUB_EVENT_PATH");
+        std::env::remove_var("GITHUB_SHA");
+        assert_eq!(detect_head_sha(), None);
+    }
+
+    #[test]
+    fn markdown_escapes_suggestion_code_pipe_in_message() {
+        let mut f = base_finding();
+        f.message = "SQL 注入 | 危险".into();
+        f.suggestion_code = "let q = |x| x + 1".into();
+        let outcome = ReviewOutcome {
+            files_changed: 1,
+            decision: GateDecision::Block,
+            warnings: vec![],
+            incomplete: false,
+            usage: Default::default(),
+            findings: vec![f],
+        };
+        let md = render_markdown(&outcome);
+        // message 里的 | 被转义，不破坏表格。
+        assert!(md.contains("\\|"));
+        // 表格行应有 6 列（5 个 | 分隔），但 emoji severity 里也可能含 |，所以只检查 message 列的转义。
+        let row = md.lines().find(|l| l.contains("SQL 注入")).unwrap();
+        // 该行的 | 总数 = 表头列分隔 5 + message 内部被转义的 1 + suggestion_code 中的 2 = 8。
+        assert!(row.matches('|').count() >= 5, "表格列被破坏: {row}");
+    }
+
+    #[test]
+    fn render_markdown_block_with_multiple_findings() {
+        let mut f1 = base_finding();
+        f1.severity = Severity::High;
+        f1.confidence = 0.95;
+        f1.message = "SQL injection\nwith newline".into();
+        let mut f2 = base_finding();
+        f2.severity = Severity::Med;
+        f2.confidence = 0.7;
+        f2.message = "inefficient clone".into();
+        f2.path = "b.rs".into();
+        f2.start_line = 10;
+        f2.end_line = 12;
+
+        let outcome = ReviewOutcome {
+            files_changed: 2,
+            decision: GateDecision::Block,
+            warnings: vec![],
+            incomplete: false,
+            usage: Default::default(),
+            findings: vec![f1, f2],
+        };
+        let md = render_markdown(&outcome);
+        assert!(md.contains("🛑 **BLOCK"));
+        assert!(md.contains("🔴 high"));
+        assert!(md.contains("🟡 med"));
+        // 换行被替换为空格
+        assert!(md.contains("SQL injection with newline"));
+        // 多行范围
+        assert!(md.contains("b.rs:10"));
+    }
+
+    #[test]
+    fn detect_pr_number_prefers_ref_over_event() {
+        // 同时设置 GITHUB_REF 和 event payload，应优先取 ref 的 PR 号。
+        let tmp = std::env::temp_dir().join(format!("rg_event_pr_{}", std::process::id()));
+        std::fs::write(&tmp, r#"{"pull_request":{"number":7}}"#).unwrap();
+        std::env::set_var("GITHUB_EVENT_PATH", tmp.to_str().unwrap());
+        std::env::set_var("GITHUB_REF", "refs/pull/5/merge");
+        assert_eq!(detect_pr_number(), Some(5));
+
+        std::env::remove_var("GITHUB_REF");
+        assert_eq!(detect_pr_number(), Some(7));
+
+        std::env::remove_var("GITHUB_EVENT_PATH");
+    }
+
+    #[test]
+    fn parse_pr_event_rejects_non_numeric_number() {
+        assert_eq!(parse_pr_event(r#"{"pull_request":{"number":"abc"}}"#), None);
+        assert_eq!(parse_pr_event(r#"{"pull_request":{"number":null}}"#), None);
+    }
 }

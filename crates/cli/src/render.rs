@@ -815,4 +815,137 @@ mod tests {
         assert!(json.contains("\"filtered\": true"));
         assert!(json.contains("\"decision\": \"pass\""));
     }
+
+    #[test]
+    fn render_json_includes_warnings_and_usage() {
+        let outcome = ReviewOutcome {
+            findings: vec![],
+            files_changed: 1,
+            decision: GateDecision::Pass,
+            incomplete: true,
+            warnings: vec![ReviewWarning {
+                dimension: "logic".into(),
+                kind: "timed_out",
+                message: "timeout".into(),
+            }],
+            usage: Usage {
+                input_tokens: 100,
+                output_tokens: 50,
+                cache_read_input_tokens: 0,
+                cache_creation_input_tokens: 0,
+            },
+        };
+        let json = render_json(&outcome).unwrap();
+        assert!(json.contains("\"warnings\""));
+        assert!(json.contains("\"timed_out\""));
+        assert!(json.contains("\"usage\""));
+        assert!(json.contains("\"input_tokens\": 100"));
+    }
+
+    #[test]
+    fn render_text_show_filtered_lists_them() {
+        let outcome = ReviewOutcome {
+            findings: vec![finding(Severity::Low, true)],
+            files_changed: 1,
+            decision: GateDecision::Pass,
+            incomplete: false,
+            warnings: vec![],
+            usage: Usage::default(),
+        };
+        let shown = render_text_lang(&outcome, true, Lang::En);
+        let hidden = render_text_lang(&outcome, false, Lang::En);
+        assert!(shown.contains("NOT SHOWN") || shown.contains("低置信"));
+        assert!(!hidden.contains("The new lookup"));
+    }
+
+    #[test]
+    fn render_text_no_changes_returns_localized() {
+        let outcome = ReviewOutcome {
+            findings: vec![],
+            files_changed: 0,
+            decision: GateDecision::Pass,
+            incomplete: false,
+            warnings: vec![],
+            usage: Usage::default(),
+        };
+        let en = render_text_lang(&outcome, false, Lang::En);
+        assert!(en.contains("No changes") || en.contains("no changes"));
+        let zh = render_text_lang(&outcome, false, Lang::Zh);
+        assert!(zh.contains("无改动") || zh.contains("没有"));
+    }
+
+    #[test]
+    fn render_intent_checklist_all_statuses() {
+        let statuses = vec![
+            (IntentStatus::Met, "met"),
+            (IntentStatus::Missing, "missing"),
+            (IntentStatus::Deviation, "deviation"),
+            (IntentStatus::Breaking, "breaking"),
+            (IntentStatus::Suggestion, "suggestion"),
+            (IntentStatus::Unknown, "unknown"),
+        ];
+        let findings: Vec<Finding> = statuses
+            .into_iter()
+            .enumerate()
+            .map(|(i, (s, _))| {
+                let mut f = intent_finding(&format!("criterion {i}"), s, &format!("msg {i}"));
+                f.path = format!("f{i}.rs");
+                f.start_line = i as u32 + 1;
+                f
+            })
+            .collect();
+        let refs: Vec<&Finding> = findings.iter().collect();
+        let p = Palette::new();
+        let out = render_intent_checklist(&p, &refs, Lang::En);
+        for (_, label) in [
+            (IntentStatus::Met, "met"),
+            (IntentStatus::Missing, "missing"),
+            (IntentStatus::Deviation, "deviation"),
+            (IntentStatus::Breaking, "breaking"),
+            (IntentStatus::Suggestion, "suggestion"),
+            (IntentStatus::Unknown, "not assessed"),
+        ] {
+            assert!(
+                out.contains(label),
+                "checklist should contain status label {label}"
+            );
+        }
+        assert!(out.contains("f1.rs:2"));
+    }
+
+    #[test]
+    fn wrap_breaks_long_ascii_words() {
+        let word = "a".repeat(100);
+        let lines = wrap(&word, 10);
+        assert!(lines.len() > 1);
+        for l in &lines {
+            assert!(display_width(l) <= 10, "line too wide: {l}");
+        }
+    }
+
+    #[test]
+    fn break_units_splits_cjk_per_char() {
+        let units = break_units("中文abc");
+        assert_eq!(units, vec!["中", "文", "abc"]);
+    }
+
+    #[test]
+    fn human_count_boundaries() {
+        assert_eq!(human_count(999), "999");
+        assert_eq!(human_count(1000), "1.0k");
+        assert_eq!(human_count(1500), "1.5k");
+        assert_eq!(human_count(10000), "10k");
+        assert_eq!(human_count(10500), "10k");
+    }
+
+    #[test]
+    fn truncate_to_width_respects_cjk_and_does_not_split_chars() {
+        assert_eq!(truncate_to_width("abc", 3), "abc");
+        assert_eq!(truncate_to_width("abcd", 3), "abc");
+        // 中文字符各宽 2，预算 3 只能容纳 1 个。
+        assert_eq!(truncate_to_width("一二", 3), "一");
+        assert_eq!(truncate_to_width("一二", 4), "一二");
+        // 不会把多字节字符切成非法边界。
+        assert_eq!(truncate_to_width("一", 1), "");
+    }
 }

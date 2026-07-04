@@ -285,4 +285,19 @@ mod tests {
         assert!(out.contains("truncated"));
         // 仍是合法 UTF-8（String 本身保证），且没有 panic。
     }
+
+    #[test]
+    fn truncation_at_multibyte_boundary_keeps_valid_utf8() {
+        // 让截断点恰好落在一个多字节字符中间：用重复 "a中" 调整长度。
+        // "a中" 占 4 字节；凑出总长度刚好超过上限且截断点落在 "中" 内部。
+        let unit = "a中";
+        let repeat = MAX_TOOL_RESULT_BYTES / unit.len() + 1;
+        let s = unit.repeat(repeat);
+        assert!(s.len() > MAX_TOOL_RESULT_BYTES);
+        let out = cap_tool_result(s);
+        // 必须是合法 UTF-8。
+        assert!(out.chars().count() > 0);
+        assert!(out.contains("truncated"));
+        assert!(out.len() <= MAX_TOOL_RESULT_BYTES + 200);
+    }
 }

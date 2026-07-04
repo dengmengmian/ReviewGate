@@ -303,4 +303,122 @@ mod tests {
         assert!(parts.iter().any(|s| s.contains("a.rs")));
         assert!(parts.iter().any(|s| s.contains("b.rs")));
     }
+
+    #[test]
+    fn empty_diff_renders_empty() {
+        let diff = Diff::default();
+        assert_eq!(diff.render_for_prompt(), "");
+        assert!(diff.by_new_path().is_empty());
+    }
+
+    #[test]
+    fn by_new_path_includes_empty_string_key() {
+        let diff = Diff {
+            files: vec![FileDiff {
+                old_path: None,
+                new_path: Some("".into()),
+                status: FileStatus::Added,
+                binary: false,
+                hunks: vec![],
+            }],
+        };
+        let idx = diff.by_new_path();
+        assert_eq!(idx.len(), 1);
+        assert!(idx.contains_key(""));
+    }
+
+    #[test]
+    fn by_new_path_last_wins_on_duplicate_new_path() {
+        let a = FileDiff {
+            old_path: None,
+            new_path: Some("dup.rs".into()),
+            status: FileStatus::Added,
+            binary: false,
+            hunks: vec![],
+        };
+        let b = FileDiff {
+            old_path: None,
+            new_path: Some("dup.rs".into()),
+            status: FileStatus::Modified,
+            binary: false,
+            hunks: vec![],
+        };
+        let diff = Diff { files: vec![a, b] };
+        let idx = diff.by_new_path();
+        assert_eq!(idx.len(), 1);
+        assert_eq!(idx["dup.rs"].status, FileStatus::Modified);
+    }
+
+    #[test]
+    fn added_and_deleted_counts_sum_across_hunks() {
+        let f = file_diff(
+            "x.rs",
+            vec![
+                Hunk {
+                    old_start: 1,
+                    old_count: 1,
+                    new_start: 1,
+                    new_count: 2,
+                    section: String::new(),
+                    lines: vec![
+                        line(LineKind::Deleted, "a", Some(1), None),
+                        line(LineKind::Added, "b", None, Some(1)),
+                    ],
+                },
+                Hunk {
+                    old_start: 10,
+                    old_count: 1,
+                    new_start: 11,
+                    new_count: 1,
+                    section: String::new(),
+                    lines: vec![
+                        line(LineKind::Deleted, "c", Some(10), None),
+                        line(LineKind::Context, "d", Some(11), Some(11)),
+                    ],
+                },
+            ],
+        );
+        assert_eq!(f.added_lines(), 1);
+        assert_eq!(f.deleted_lines(), 2);
+    }
+
+    #[test]
+    fn render_for_prompt_includes_all_hunks() {
+        let f = file_diff(
+            "x.rs",
+            vec![
+                Hunk {
+                    old_start: 1,
+                    old_count: 1,
+                    new_start: 1,
+                    new_count: 1,
+                    section: String::new(),
+                    lines: vec![line(LineKind::Context, "a", Some(1), Some(1))],
+                },
+                Hunk {
+                    old_start: 5,
+                    old_count: 1,
+                    new_start: 5,
+                    new_count: 1,
+                    section: String::new(),
+                    lines: vec![line(LineKind::Context, "b", Some(5), Some(5))],
+                },
+            ],
+        );
+        let out = f.render_for_prompt();
+        assert!(out.contains("@@ -1,1 +1,1 @@"));
+        assert!(out.contains("@@ -5,1 +5,1 @@"));
+    }
+
+    #[test]
+    fn file_diff_path_prefers_old_when_new_missing() {
+        let f = FileDiff {
+            old_path: Some("old.rs".into()),
+            new_path: None,
+            status: FileStatus::Deleted,
+            binary: false,
+            hunks: vec![],
+        };
+        assert_eq!(f.path(), "old.rs");
+    }
 }

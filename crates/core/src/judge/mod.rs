@@ -623,6 +623,26 @@ mod tests {
         assert_eq!(v.confidence, 0.0);
     }
 
+    #[test]
+    fn parse_verdict_missing_real_returns_none() {
+        assert!(parse_verdict(&json!({"confidence": 0.9})).is_none());
+        assert!(parse_verdict(&json!({})).is_none());
+    }
+
+    #[test]
+    fn hard_excluded_non_test_files_and_security_dimension() {
+        assert!(!hard_excluded(&finding(
+            Dimension::Perf,
+            "src/main.rs",
+            0.9
+        )));
+        assert!(!hard_excluded(&finding(
+            Dimension::Security,
+            "src/foo_test.go",
+            0.9
+        )));
+    }
+
     #[tokio::test]
     async fn judge_respects_concurrency_limit() {
         let client = SlowCountingJudge {

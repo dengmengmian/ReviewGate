@@ -60,4 +60,36 @@ mod tests {
     fn monotonic_with_length() {
         assert!(estimate_tokens(&"x".repeat(1000)) > estimate_tokens(&"x".repeat(100)));
     }
+
+    #[test]
+    fn small_ascii_boundaries() {
+        assert_eq!(estimate_tokens(""), 0);
+        assert_eq!(estimate_tokens("a"), 1); // ceil(1/3)=1
+        assert_eq!(estimate_tokens("ab"), 1); // ceil(2/3)=1
+        assert_eq!(estimate_tokens("abc"), 1); // 3/3=1
+        assert_eq!(estimate_tokens("abcd"), 2); // ceil(4/3)=2
+    }
+
+    #[test]
+    fn wide_char_boundaries() {
+        // 1 个非 ASCII 字 → ceil(2/3)=1
+        assert_eq!(estimate_tokens("中"), 1);
+        // 2 个非 ASCII 字 → ceil(4/3)=2
+        assert_eq!(estimate_tokens("中文"), 2);
+    }
+
+    #[test]
+    fn emoji_counts_as_wide() {
+        // emoji 占一个 char，按非 ASCII 分桶。
+        assert_eq!(estimate_tokens("😀"), 1);
+        assert_eq!(estimate_tokens("😀😀"), 2);
+    }
+
+    #[test]
+    fn mixed_ascii_emoji_and_cjk() {
+        // 2 ASCII (1) + 1 emoji (1) = 2
+        assert_eq!(estimate_tokens("ab😀"), 2);
+        // 3 ASCII (1) + 2 CJK (2) = 3
+        assert_eq!(estimate_tokens("abc中文"), 3);
+    }
 }

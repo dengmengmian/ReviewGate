@@ -228,11 +228,44 @@ mod tests {
     }
 
     #[test]
-    fn validates_identifier() {
-        assert!(is_identifier("foo_bar"));
-        assert!(is_identifier("_x"));
-        assert!(!is_identifier("9x"));
+    fn parse_grep_line_content_with_multiple_colons() {
+        let loc = parse_grep_line("src/a.rs:1:a: b: c", "a").unwrap();
+        assert_eq!(loc.path, "src/a.rs");
+        assert_eq!(loc.line, 1);
+        assert_eq!(loc.snippet, "a: b: c");
+        assert_eq!(loc.col, 1);
+    }
+
+    #[test]
+    fn is_identifier_rejects_invalid() {
+        assert!(!is_identifier("foo-bar"));
+        assert!(!is_identifier("9foo"));
         assert!(!is_identifier("a.b"));
         assert!(!is_identifier(""));
+        assert!(is_identifier("foo_bar"));
+        assert!(is_identifier("_x"));
+        // Unicode 字母是合法标识符字符（按当前实现）。
+        assert!(is_identifier("café"));
+    }
+
+    #[test]
+    fn definition_kind_rejects_when_keyword_not_adjacent() {
+        // symbol 前没有定义关键字。
+        assert_eq!(definition_kind("call login();", "login"), None);
+        // 关键字与 symbol 之间有其它 token。
+        assert_eq!(definition_kind("fn   other() {}", "login"), None);
+    }
+
+    #[test]
+    fn call_site_needs_open_paren_after_symbol() {
+        assert!(!is_call_site("login = 1;", "login"));
+        assert!(is_call_site("login();", "login"));
+        assert!(is_call_site("x.login();", "login"));
+    }
+
+    #[test]
+    fn parse_grep_line_missing_symbol_returns_column_one() {
+        let loc = parse_grep_line("src/a.rs:1:other content", "foo").unwrap();
+        assert_eq!(loc.col, 1);
     }
 }

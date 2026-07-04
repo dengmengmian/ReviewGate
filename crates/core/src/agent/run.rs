@@ -644,6 +644,35 @@ mod tests {
     }
 
     #[test]
+    fn estimate_request_tokens_grows_with_content() {
+        let system = "You are a review assistant.";
+        let base = estimate_request_tokens(system, &[]);
+        assert!(base > 0);
+
+        let mut with_text = vec![Message::user("please review")];
+        let t1 = estimate_request_tokens(system, &with_text);
+        assert!(t1 > base);
+
+        with_text.push(Message::assistant(vec![ContentBlock::ToolUse(
+            crate::model::ToolUse {
+                id: "t1".into(),
+                name: "read_file".into(),
+                input: json!({"path": "src/main.rs"}),
+            },
+        )]));
+        let t2 = estimate_request_tokens(system, &with_text);
+        assert!(t2 > t1);
+
+        with_text.push(Message::tool_results(vec![ToolResult {
+            tool_use_id: "t1".into(),
+            content: "file content here".into(),
+            is_error: false,
+        }]));
+        let t3 = estimate_request_tokens(system, &with_text);
+        assert!(t3 > t2);
+    }
+
+    #[test]
     fn landing_threshold_is_75_percent_of_timeout() {
         let t = Some(Duration::from_secs(100));
         assert!(!past_landing_threshold(Duration::from_secs(74), t));
@@ -793,6 +822,98 @@ mod tests {
         let out = truncate_detail(&long);
         assert!(out.len() <= 250);
         assert!(out.ends_with('…'));
+    }
+
+    #[test]
+    fn truncate_detail_collapses_whitespace() {
+        let s = "line1\n  line2   line3\tline4";
+        assert_eq!(truncate_detail(s), "line1 line2 line3 line4");
+    }
+
+    #[test]
+    fn truncate_detail_boundary_240_chars() {
+        let exactly = "x".repeat(240);
+        let out = truncate_detail(&exactly);
+        assert!(!out.contains('…'));
+
+        let over = "x".repeat(241);
+        let out = truncate_detail(&over);
+        assert!(out.ends_with('…'));
+    }
+
+    #[test]
+    fn tool_target_extracts_and_truncates() {
+        assert_eq!(tool_target(&json!({"path": "src/main.rs"})), "src/main.rs");
+        assert_eq!(tool_target(&json!({"symbol": "foo_bar"})), "foo_bar");
+        assert_eq!(
+            tool_target(&json!({"criterion": "must handle URL object"})),
+            "must handle URL object"
+        );
+        let long = "x".repeat(100);
+        assert_eq!(tool_target(&json!({"path": long})).len(), 48);
+        assert_eq!(tool_target(&json!({})), "");
+    }
+
+    #[test]
+    fn tool_target_prefers_key_order() {
+        // path 在 symbol 之前，应优先取 path。
+        assert_eq!(
+            tool_target(&json!({"symbol": "foo", "path": "bar.rs"})),
+            "bar.rs"
+        );
+    }
+
+    #[tokio::test]
+    async fn max_rounds_exit_reason_when_no_task_done() {
+        // 模型永远只调用 read_file，不 task_done → 应走满 max_rounds 并以 MaxRounds 退出。
+        let client = MockClient::new(vec![Ok(resp(vec![(
+            "read_file",
+            json!({"path": "src/main.rs"}),
+        )]))]);
+        let mut c = cfg(1);
+        c.max_rounds = 1; // 只有 1 轮，不会给 read_file（收口轮）
+        let run = run_agent_with_stats(&client, &registry(), &ctx(), &c, "审查".into())
+            .await
+            .unwrap();
+        assert_eq!(run.exit_reason, AgentExitReason::MaxRounds);
+        assert!(!run.incomplete());
+    }
+
+    #[tokio::test]
+    async fn tool_dispatch_error_returns_is_error_flag() {
+        // 让 registry 对某个工具返回 Err：循环内应给模型 "Tool error" 且 is_error=true。
+        use crate::tool::ToolRegistry;
+        struct BadTool;
+        #[async_trait::async_trait]
+        impl crate::tool::Tool for BadTool {
+            fn name(&self) -> &str {
+                "bad_tool"
+            }
+            fn def(&self) -> crate::model::ToolDef {
+                crate::model::ToolDef {
+                    name: "bad_tool".into(),
+                    description: "".into(),
+                    input_schema: serde_json::json!({}),
+                }
+            }
+            async fn call(&self, _input: &serde_json::Value, _ctx: &ToolContext) -> Result<String> {
+                anyhow::bail!("boom")
+            }
+        }
+
+        let mut reg = ToolRegistry::new();
+        reg.register(Box::new(BadTool));
+
+        let client = MockClient::new(vec![
+            Ok(resp(vec![("bad_tool", json!({}))])),
+            Ok(resp(vec![("task_done", json!({}))])),
+        ]);
+        let run = run_agent_with_stats(&client, &reg, &ctx(), &cfg(5), "审查".into())
+            .await
+            .unwrap();
+        assert_eq!(run.exit_reason, AgentExitReason::Completed);
+        // 工具错误不应阻断循环，也不应产生 findings。
+        assert!(run.findings.is_empty());
     }
 
     #[tokio::test]

@@ -122,7 +122,110 @@ impl Tool for FindReferences {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::index::SymbolKind;
+    use crate::diff::Diff;
+    use crate::index::{CodeIndex, SymbolKind};
+    use async_trait::async_trait;
+    use std::sync::Arc;
+
+    struct FakeIndex {
+        defs: Vec<SymbolLoc>,
+        callers: Vec<SymbolLoc>,
+        refs: Vec<SymbolLoc>,
+    }
+
+    #[async_trait]
+    impl CodeIndex for FakeIndex {
+        async fn find_definition(
+            &self,
+            _symbol: &str,
+            _lang: Option<Lang>,
+        ) -> Result<Vec<SymbolLoc>> {
+            Ok(self.defs.clone())
+        }
+        async fn find_callers(&self, _symbol: &str, _lang: Option<Lang>) -> Result<Vec<SymbolLoc>> {
+            Ok(self.callers.clone())
+        }
+        async fn find_references(
+            &self,
+            _symbol: &str,
+            _lang: Option<Lang>,
+        ) -> Result<Vec<SymbolLoc>> {
+            Ok(self.refs.clone())
+        }
+    }
+
+    fn ctx_with_index(index: Arc<dyn CodeIndex>) -> ToolContext {
+        ToolContext::new(Arc::new(Diff::default()), ".", None, index)
+    }
+
+    fn sample_loc() -> SymbolLoc {
+        SymbolLoc {
+            path: "src/a.rs".into(),
+            line: 12,
+            col: 4,
+            kind: SymbolKind::Function,
+            snippet: "fn foo() {}".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn find_definition_call_formats_result() {
+        let ctx = ctx_with_index(Arc::new(FakeIndex {
+            defs: vec![sample_loc()],
+            callers: vec![],
+            refs: vec![],
+        }));
+        let out = FindDefinition
+            .call(&json!({"symbol": "foo", "lang": "rust"}), &ctx)
+            .await
+            .unwrap();
+        assert!(out.contains("src/a.rs:12 [function] fn foo() {}"));
+    }
+
+    #[tokio::test]
+    async fn find_callers_call_formats_result() {
+        let mut loc = sample_loc();
+        loc.kind = SymbolKind::Reference;
+        loc.snippet = "foo();".into();
+        let ctx = ctx_with_index(Arc::new(FakeIndex {
+            defs: vec![],
+            callers: vec![loc],
+            refs: vec![],
+        }));
+        let out = FindCallers
+            .call(&json!({"symbol": "foo"}), &ctx)
+            .await
+            .unwrap();
+        assert!(out.contains("src/a.rs:12 [reference] foo();"));
+    }
+
+    #[tokio::test]
+    async fn find_references_call_no_results() {
+        let ctx = ctx_with_index(Arc::new(FakeIndex {
+            defs: vec![],
+            callers: vec![],
+            refs: vec![],
+        }));
+        let out = FindReferences
+            .call(&json!({"symbol": "foo"}), &ctx)
+            .await
+            .unwrap();
+        assert_eq!(out, "(no results)");
+    }
+
+    #[tokio::test]
+    async fn index_tool_missing_symbol_errors() {
+        let ctx = ctx_with_index(Arc::new(FakeIndex {
+            defs: vec![],
+            callers: vec![],
+            refs: vec![],
+        }));
+        let err = FindDefinition
+            .call(&json!({"lang": "rust"}), &ctx)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("find_definition missing symbol"));
+    }
 
     #[test]
     fn symbol_arg_extracts_or_errors() {
@@ -174,5 +277,23 @@ mod tests {
             out,
             "src/a.rs:12 [function] fn foo() {}\nsrc/b.rs:3 [reference] foo();"
         );
+    }
+
+    #[test]
+    fn symbol_arg_rejects_non_string_symbol() {
+        let err = symbol_arg(&json!({"symbol": 123}), "find_definition").unwrap_err();
+        assert!(err.to_string().contains("find_definition missing symbol"));
+    }
+
+    #[test]
+    fn format_locs_with_empty_snippet() {
+        let locs = vec![SymbolLoc {
+            path: "src/a.rs".into(),
+            line: 1,
+            col: 1,
+            kind: SymbolKind::Other,
+            snippet: "".into(),
+        }];
+        assert_eq!(format_locs(&locs), "src/a.rs:1 [other] ");
     }
 }

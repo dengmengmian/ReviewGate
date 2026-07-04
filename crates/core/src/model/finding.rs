@@ -285,4 +285,103 @@ mod tests {
         let json = serde_json::to_string(&f).unwrap();
         assert!(json.contains("\"suggestion\":\"fix it\""));
     }
+
+    #[test]
+    fn finding_deserializes_defaults_for_optional_fields() {
+        let raw = r#"{
+            "dimension": "security",
+            "confidence": 0.8,
+            "severity": "high",
+            "path": "a.rs",
+            "start_line": 1,
+            "end_line": 1,
+            "message": "m",
+            "existing_code": "x"
+        }"#;
+        let f: Finding = serde_json::from_str(raw).unwrap();
+        assert_eq!(f.evidence, "");
+        assert_eq!(f.suggestion, None);
+        assert_eq!(f.suggestion_code, "");
+        assert_eq!(f.reachability, Reachability::Unknown);
+        assert!(!f.filtered);
+        assert_eq!(f.agreed_dimensions, 0);
+        assert_eq!(f.criterion, None);
+        assert_eq!(f.intent_status, None);
+    }
+
+    #[test]
+    fn finding_serialization_skips_null_suggestion() {
+        let f = Finding {
+            dimension: Dimension::Security,
+            confidence: 0.8,
+            severity: Severity::High,
+            path: "a.rs".into(),
+            start_line: 1,
+            end_line: 1,
+            message: "m".into(),
+            existing_code: "x".into(),
+            evidence: String::new(),
+            suggestion: None,
+            suggestion_code: String::new(),
+            reachability: Reachability::Unknown,
+            filtered: false,
+            agreed_dimensions: 1,
+            criterion: None,
+            intent_status: None,
+        };
+        let json = serde_json::to_string(&f).unwrap();
+        assert!(!json.contains("\"suggestion\":"));
+    }
+
+    #[test]
+    fn dimension_deserialize_invalid_errors() {
+        let err = serde_json::from_str::<Dimension>(r#""not_a_dimension""#).unwrap_err();
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn severity_deserialize_invalid_errors() {
+        let err = serde_json::from_str::<Severity>(r#""critical""#).unwrap_err();
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn reachability_deserialize_invalid_errors() {
+        let err = serde_json::from_str::<Reachability>(r#""maybe""#).unwrap_err();
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn intent_status_deserialize_invalid_errors() {
+        let err = serde_json::from_str::<IntentStatus>(r#""done""#).unwrap_err();
+        assert!(err.to_string().contains("unknown variant"));
+    }
+
+    #[test]
+    fn finding_with_intent_fields_roundtrips() {
+        let f = Finding {
+            dimension: Dimension::Intent,
+            confidence: 0.9,
+            severity: Severity::Med,
+            path: "b.rs".into(),
+            start_line: 10,
+            end_line: 20,
+            message: "missing".into(),
+            existing_code: "old".into(),
+            evidence: "ev".into(),
+            suggestion: Some("add".into()),
+            suggestion_code: "new".into(),
+            reachability: Reachability::Reachable,
+            filtered: false,
+            agreed_dimensions: 1,
+            criterion: Some("c1".into()),
+            intent_status: Some(IntentStatus::Missing),
+        };
+        let json = serde_json::to_string(&f).unwrap();
+        assert!(json.contains("\"criterion\":\"c1\""));
+        assert!(json.contains("\"intent_status\":\"missing\""));
+        let back: Finding = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.criterion, Some("c1".into()));
+        assert_eq!(back.intent_status, Some(IntentStatus::Missing));
+    }
 }

@@ -66,4 +66,27 @@ mod tests {
         assert_eq!(n, 3);
         assert_eq!(last, "intent: task_done");
     }
+
+    #[test]
+    fn concurrent_updates_are_not_lost() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let p = Arc::new(Progress::new());
+        let mut handles = vec![];
+        for t in 0..4 {
+            let pp = Arc::clone(&p);
+            handles.push(thread::spawn(move || {
+                for i in 0..1000usize {
+                    pp.record_tool("dim", "tool", &format!("target{t}_{i}"));
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        let (n, last) = p.snapshot();
+        assert_eq!(n, 4000, "并发更新不应丢计数");
+        assert!(last.starts_with("dim: tool "));
+    }
 }

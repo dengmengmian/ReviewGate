@@ -278,4 +278,77 @@ mod tests {
         apply_fixes(&findings, &dir, None, true).unwrap();
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn fix_all_applies_multiple_findings_bottom_up() {
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let dir = std::env::temp_dir().join(format!("rg_fixmulti_{}_{}", std::process::id(), secs));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("t.txt");
+        std::fs::write(&file, "line1\nBAD1\nline3\nBAD2\nline5\n").unwrap();
+
+        // 先报告低行号再报告高行号；apply_fixes 按自底向上排序，避免行号漂移。
+        let findings = vec![
+            mk_finding("t.txt", 2, "BAD1", "GOOD1"),
+            mk_finding("t.txt", 4, "BAD2", "GOOD2"),
+        ];
+        apply_fixes(&findings, &dir, None, true).unwrap();
+
+        let got = std::fs::read_to_string(&file).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(got, "line1\nGOOD1\nline3\nGOOD2\nline5\n");
+    }
+
+    #[test]
+    fn apply_fixes_non_terminal_skips_without_prompt() {
+        let dir = std::env::temp_dir().join(format!("rg_fixnonterm_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("t.txt");
+        std::fs::write(&file, "BAD\n").unwrap();
+
+        let findings = vec![mk_finding("t.txt", 1, "BAD", "GOOD")];
+        // assume_yes=false 在非终端环境下应跳过修改。
+        apply_fixes(&findings, &dir, None, false).unwrap();
+
+        let got = std::fs::read_to_string(&file).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(got, "BAD\n", "非终端交互模式不应修改文件");
+    }
+
+    #[test]
+    fn create_and_switch_branch_in_temp_repo() {
+        let dir = std::env::temp_dir().join(format!("rg_fixbranch_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::process::Command::new("git")
+            .current_dir(&dir)
+            .args(["init"])
+            .output()
+            .expect("git init");
+        std::fs::write(dir.join("f.txt"), "x\n").unwrap();
+        std::process::Command::new("git")
+            .current_dir(&dir)
+            .args(["add", "."])
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .current_dir(&dir)
+            .args(["commit", "-m", "init", "--no-gpg-sign"])
+            .output()
+            .unwrap();
+
+        create_and_switch_branch(&dir, "test-branch").unwrap();
+        let out = std::process::Command::new("git")
+            .current_dir(&dir)
+            .args(["branch", "--show-current"])
+            .output()
+            .unwrap();
+        let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        assert_eq!(branch, "test-branch");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

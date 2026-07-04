@@ -300,4 +300,140 @@ mod tests {
             ""
         );
     }
+
+    #[tokio::test]
+    async fn render_prefetch_skips_index_errors() {
+        use crate::index::{CodeIndex, Lang, SymbolKind, SymbolLoc};
+        use anyhow::Result;
+        use async_trait::async_trait;
+
+        struct ErroneousIndex;
+        #[async_trait]
+        impl CodeIndex for ErroneousIndex {
+            async fn find_definition(&self, _s: &str, _l: Option<Lang>) -> Result<Vec<SymbolLoc>> {
+                Ok(vec![])
+            }
+            async fn find_callers(&self, s: &str, _l: Option<Lang>) -> Result<Vec<SymbolLoc>> {
+                if s == "bad" {
+                    anyhow::bail!("boom")
+                } else {
+                    Ok(vec![SymbolLoc {
+                        path: "src/ok.rs".into(),
+                        line: 1,
+                        col: 1,
+                        kind: SymbolKind::Reference,
+                        snippet: format!("{s}()"),
+                    }])
+                }
+            }
+            async fn find_references(&self, _s: &str, _l: Option<Lang>) -> Result<Vec<SymbolLoc>> {
+                Ok(vec![])
+            }
+        }
+
+        let d = diff_with(
+            "src/mixed.rs",
+            "",
+            &[
+                (LineKind::Added, "fn bad() {}"),
+                (LineKind::Added, "fn good() {}"),
+            ],
+        );
+        let out = render_prefetch(&ErroneousIndex, &d, &[0]).await;
+        assert!(!out.contains("bad"), "出错符号应被跳过: {out}");
+        assert!(out.contains("good"), "正常符号应被保留: {out}");
+    }
+
+    #[test]
+    fn def_symbols_extracts_common_keywords() {
+        assert!(
+            def_symbols("pub fn validate_token(t: &str)").contains(&"validate_token".to_string())
+        );
+        assert!(def_symbols("struct User {}").contains(&"User".to_string()));
+        assert!(def_symbols("class OrderRepository").contains(&"OrderRepository".to_string()));
+        assert!(def_symbols("def compute_total(base:").contains(&"compute_total".to_string()));
+    }
+
+    #[test]
+    fn def_symbols_filters_noise_and_short_words() {
+        let out = def_symbols("pub let x = Option::Some(1)");
+        assert!(!out.contains(&"pub".to_string()));
+        assert!(!out.contains(&"let".to_string()));
+        assert!(!out.contains(&"Option".to_string()));
+        assert!(!out.contains(&"Some".to_string()));
+    }
+
+    #[test]
+    fn symbols_from_section_falls_back_to_words() {
+        // section 里没有定义关键字时取前两个合法符号词。
+        let out = symbols_from_section("impl UserRepository for Database");
+        assert!(
+            out.contains(&"UserRepository".to_string()) || out.contains(&"Database".to_string())
+        );
+    }
+
+    #[test]
+    fn symbol_words_trims_underscores_and_splits_non_alnum() {
+        assert_eq!(
+            symbol_words("__foo_bar::baz--qux"),
+            vec!["foo_bar", "baz", "qux"]
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        );
+    }
+    #[test]
+    fn extract_changed_symbols_filters_lockfiles_and_caps_count() {
+        // 构造一个 diff：锁文件 + 多个函数定义 → 锁文件被过滤，符号数被上限截断。
+        let mut files = vec![];
+        for i in 0..15usize {
+            files.push(FileDiff {
+                old_path: None,
+                new_path: Some(format!("src/f{i}.rs")),
+                status: FileStatus::Added,
+                binary: false,
+                hunks: vec![Hunk {
+                    old_start: 0,
+                    old_count: 0,
+                    new_start: 1,
+                    new_count: 1,
+                    section: String::new(),
+                    lines: vec![Line {
+                        kind: LineKind::Added,
+                        content: format!("pub fn func{i}() {{}}"),
+                        old_lineno: None,
+                        new_lineno: Some(1),
+                    }],
+                }],
+            });
+        }
+        // 锁文件不应产生符号。
+        files.push(FileDiff {
+            old_path: None,
+            new_path: Some("Cargo.lock".into()),
+            status: FileStatus::Added,
+            binary: false,
+            hunks: vec![Hunk {
+                old_start: 0,
+                old_count: 0,
+                new_start: 1,
+                new_count: 1,
+                section: String::new(),
+                lines: vec![Line {
+                    kind: LineKind::Added,
+                    content: "name = \"serde\"".into(),
+                    old_lineno: None,
+                    new_lineno: Some(1),
+                }],
+            }],
+        });
+        let diff = Diff { files };
+        let syms = extract_changed_symbols(&diff, &(0..16).collect::<Vec<_>>());
+        assert!(syms.iter().all(|(s, _)| !s.is_empty()), "不应包含空符号");
+        assert!(
+            !syms.iter().any(|(s, _)| s == "serde"),
+            "锁文件不应产生符号: {syms:?}"
+        );
+        assert_eq!(syms.len(), MAX_SYMBOLS, "应被上限截断: {syms:?}");
+    }
 }

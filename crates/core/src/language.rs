@@ -100,7 +100,7 @@ fn language_from_locale(locale: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::detect_output_language_from;
+    use super::{detect_output_language_from, language_from_locale};
 
     fn detect(pairs: &[(&str, &str)]) -> String {
         detect_output_language_from(pairs.iter().map(|(k, v)| (*k, *v)))
@@ -148,6 +148,19 @@ mod tests {
     }
 
     #[test]
+    fn language_from_locale_boundaries() {
+        assert_eq!(language_from_locale("en_GB.UTF-8"), "English");
+        assert_eq!(language_from_locale("C.UTF-8"), "English");
+        assert_eq!(language_from_locale("POSIX"), "English");
+        assert_eq!(
+            language_from_locale("zh_Hans_CN.UTF-8"),
+            "Chinese (Simplified)"
+        );
+        assert_eq!(language_from_locale("und_VN.UTF-8"), "und");
+        assert_eq!(language_from_locale("xx_YY"), "xx");
+    }
+
+    #[test]
     fn c_posix_and_empty_fallback_to_english() {
         assert_eq!(detect(&[("LANG", "C")]), "English");
         assert_eq!(detect(&[("LC_ALL", "POSIX")]), "English");
@@ -180,5 +193,27 @@ mod tests {
             ]),
             "Chinese (Simplified)"
         );
+    }
+
+    #[test]
+    fn locale_hyphen_and_lowercase_accepted() {
+        assert_eq!(detect(&[("LANG", "zh-TW.UTF-8")]), "Chinese (Traditional)");
+        assert_eq!(detect(&[("LANG", "zh-cn")]), "Chinese (Simplified)");
+    }
+
+    #[test]
+    fn explicit_language_trims_whitespace() {
+        assert_eq!(
+            detect(&[
+                ("REVIEWGATE_OUTPUT_LANGUAGE", "  Klingon  "),
+                ("LANG", "zh_CN.UTF-8"),
+            ]),
+            "Klingon"
+        );
+    }
+
+    #[test]
+    fn unknown_bare_tag_with_hyphen() {
+        assert_eq!(detect(&[("LANG", "id-ID.UTF-8")]), "id");
     }
 }

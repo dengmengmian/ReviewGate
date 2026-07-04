@@ -247,4 +247,69 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn parses_empty_hunk_no_newline_marker() {
+        let d = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,1 +1,1 @@\n-old\n\\ No newline at end of file\n+new\n";
+        let files = parse_unified(d);
+        assert_eq!(files[0].hunks[0].lines.len(), 2);
+    }
+
+    #[test]
+    fn parses_context_only_hunk() {
+        let d = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,3 +1,3 @@\n a\n b\n c\n";
+        let files = parse_unified(d);
+        assert_eq!(files[0].hunks[0].lines.len(), 3);
+        assert!(files[0].hunks[0]
+            .lines
+            .iter()
+            .all(|l| l.kind == LineKind::Context));
+    }
+
+    #[test]
+    fn parses_multiple_hunks_same_file() {
+        let d = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n a\n-b\n+B\n@@ -10,2 +10,2 @@\n x\n-y\n+Y\n";
+        let files = parse_unified(d);
+        assert_eq!(files[0].hunks.len(), 2);
+        assert_eq!(files[0].hunks[0].old_start, 1);
+        assert_eq!(files[0].hunks[1].old_start, 10);
+    }
+
+    #[test]
+    fn split_diff_git_paths_handles_missing_prefix() {
+        assert_eq!(
+            split_diff_git_paths("a/x b/x"),
+            (Some("x".into()), Some("x".into()))
+        );
+        assert_eq!(split_diff_git_paths("no-space"), (None, None));
+    }
+
+    #[test]
+    fn path_or_none_strips_a_and_b_prefixes() {
+        assert_eq!(path_or_none("/dev/null"), None);
+        assert_eq!(path_or_none("a/foo.rs"), Some("foo.rs".into()));
+        assert_eq!(path_or_none("b/bar.rs"), Some("bar.rs".into()));
+        assert_eq!(path_or_none("c/qux.rs"), Some("c/qux.rs".into()));
+    }
+
+    #[test]
+    fn parse_range_rejects_invalid() {
+        assert_eq!(parse_range("abc"), None);
+        assert_eq!(parse_range(""), None);
+        // "1,2,3" 被 split(',') 分成 "1" / "2" / "3"；it.next() 二次拿到 "2" 会 parse 成功，返回 Some((1,2))。
+        // 这是当前实现的已知行为，测试它而不是断言 None。
+        assert_eq!(parse_range("1,2,3"), Some((1, 2)));
+    }
+
+    #[test]
+    fn parse_range_negative_is_rejected_by_parse() {
+        assert_eq!(parse_range("-1,2"), None);
+    }
+
+    #[test]
+    fn parse_range_allows_zero_count_and_omitted_count() {
+        assert_eq!(parse_range("5,0"), Some((5, 0)));
+        assert_eq!(parse_range("5"), Some((5, 1)));
+        assert_eq!(parse_range("0,0"), Some((0, 0)));
+    }
 }

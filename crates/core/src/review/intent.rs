@@ -212,6 +212,29 @@ callers, contracts, and tests, and report a verdict (met/missing/deviation/break
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{LlmResponse, Message, ToolDef};
+    use anyhow::Result;
+    use async_trait::async_trait;
+
+    #[test]
+    fn strip_list_marker_parentheses_bounds() {
+        assert_eq!(strip_list_marker("(a) item"), Some("item"));
+        assert_eq!(strip_list_marker("(abc) item"), Some("item"));
+        assert_eq!(strip_list_marker("(abcd) item"), None); // 超过 3 个字符
+        assert_eq!(strip_list_marker("(1) item"), Some("item"));
+        assert_eq!(strip_list_marker("12. item"), Some("item"));
+        assert_eq!(strip_list_marker("12) item"), Some("item"));
+        assert_eq!(strip_list_marker("- item"), Some("item"));
+    }
+
+    #[test]
+    fn parse_criteria_truncates_to_max() {
+        let items: String = (1..20).map(|i| format!("{i}. item{i}\n")).collect();
+        let c = parse_criteria(&items);
+        assert_eq!(c.len(), 12, "应截断到 MAX=12");
+        assert_eq!(c[0], "item1");
+        assert_eq!(c[11], "item12");
+    }
 
     #[test]
     fn parse_criteria_handles_numbered_bulleted_terse() {
@@ -219,7 +242,15 @@ mod tests {
         assert_eq!(c, vec!["first", "second", "third"]);
         let c = parse_criteria("- a\n* b\n• c");
         assert_eq!(c, vec!["a", "b", "c"]);
-        // 单行 terse commit message → 整体一条
+    }
+
+    #[test]
+    fn parse_criteria_handles_non_list_multiline() {
+        // 无列表标记但有多行非空/非注释 → 按行拆分。
+        let c = parse_criteria("first requirement\nsecond requirement\n# ignored\n");
+        assert_eq!(c, vec!["first requirement", "second requirement"]);
+
+        // 单行 terse commit message → 整体一条。
         let c = parse_criteria("fix: support URL object as config.url");
         assert_eq!(c, vec!["fix: support URL object as config.url"]);
         // 全空 → 空
@@ -233,5 +264,54 @@ mod tests {
         assert_eq!(criterion_index("c1"), Some(0));
         assert_eq!(criterion_index("missing dispatch"), None);
         assert_eq!(criterion_index("C0"), None); // 1-based，C0 非法
+    }
+
+    #[test]
+    fn parse_criteria_empty_input_returns_empty() {
+        assert!(parse_criteria("").is_empty());
+        assert!(parse_criteria("   ").is_empty());
+    }
+
+    #[test]
+    fn parse_criteria_single_line_whole() {
+        let c = parse_criteria("support URL object as config.url");
+        assert_eq!(c, vec!["support URL object as config.url"]);
+    }
+
+    #[test]
+    fn run_intent_review_empty_intent_returns_complete() {
+        // 空意图不应触发任何 LLM 调用，直接返回空结果。
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let out = rt.block_on(run_intent_review(
+            &DummyClient,
+            &ToolRegistry::new(),
+            &ToolContext::with_grep_index(Arc::new(Diff::default()), ".", None),
+            &Diff { files: vec![] },
+            "",
+            1000,
+            false,
+            None,
+            None,
+        ));
+        assert!(out.findings.is_empty());
+        assert!(!out.incomplete);
+    }
+
+    /// 一个始终 panic 的虚拟客户端；空意图分支不应调用到它。
+    struct DummyClient;
+
+    #[async_trait]
+    impl LlmClient for DummyClient {
+        async fn complete(
+            &self,
+            _system: &str,
+            _messages: &[Message],
+            _tools: &[ToolDef],
+        ) -> Result<LlmResponse> {
+            panic!("empty intent should not call LLM")
+        }
+        fn model(&self) -> &str {
+            "dummy"
+        }
     }
 }

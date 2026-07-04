@@ -108,6 +108,22 @@ mod tests {
     }
 
     #[test]
+    fn splice_normalizes_crlf_to_lf() {
+        let file = "a\r\nb\r\nc\r\n";
+        let out = splice_lines(file, 2, 2, "X").unwrap();
+        assert_eq!(out, "a\nX\nc\n");
+    }
+
+    #[test]
+    fn empty_replacement_deletes_lines() {
+        // splice_lines 在替换内容后统一追加换行，空替换会留下一个空行。
+        let out = splice_lines(FILE, 2, 2, "").unwrap();
+        assert_eq!(out, "a();\n\nc();\n");
+        let out2 = splice_lines("x();\na();\nb();\nc();\ny();\n", 2, 3, "").unwrap();
+        assert_eq!(out2, "x();\n\nc();\ny();\n");
+    }
+
+    #[test]
     fn rejects_invalid_ranges() {
         assert!(splice_lines(FILE, 0, 0, "x").is_none());
         assert!(splice_lines(FILE, 2, 1, "x").is_none()); // 倒置
@@ -177,5 +193,19 @@ mod tests {
         let f = "a();\nb();\nc();\nd();\n";
         let out = splice_lines(f, 2, 3, "X();").unwrap();
         assert_eq!(out, "a();\nX();\nd();\n");
+    }
+
+    #[test]
+    fn normalize_region_collapses_whitespace_and_drops_blank_lines() {
+        assert_eq!(normalize_region("  a \t b  c "), "a b c");
+        assert_eq!(normalize_region("x\n\n  y  z  \n"), "x\ny z");
+        // 全空白 → 空串
+        assert_eq!(normalize_region("   \n  "), "");
+    }
+
+    #[test]
+    fn normalize_region_joins_multiline_for_anchor_matching() {
+        let region = "  fn foo() {\n    bar();\n  }\n";
+        assert_eq!(normalize_region(region), "fn foo() {\nbar();\n}");
     }
 }

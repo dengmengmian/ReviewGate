@@ -245,4 +245,63 @@ mod tests {
         assert_eq!(Lang::En.sec_next_steps(), "NEXT STEPS");
         assert_eq!(Lang::Zh.sec_next_steps(), "后续步骤");
     }
+
+    #[test]
+    fn formatted_count_strings_for_zero_one_and_plural() {
+        for (n, en_files, zh_files) in [
+            (0usize, "0 files", "0 个文件"),
+            (1, "1 files", "1 个文件"),
+            (2, "2 files", "2 个文件"),
+        ] {
+            assert_eq!(Lang::En.files(n), en_files);
+            assert_eq!(Lang::Zh.files(n), zh_files);
+            assert_eq!(Lang::En.must_fix(n), format!("{n} must-fix"));
+            assert_eq!(Lang::Zh.must_fix(n), format!("{n} 必须修复"));
+            assert_eq!(Lang::En.warn(n), format!("{n} warn"));
+            assert_eq!(Lang::Zh.warn(n), format!("{n} 警告"));
+            assert_eq!(Lang::En.hidden(n), format!("{n} hidden"));
+            assert_eq!(Lang::Zh.hidden(n), format!("{n} 隐藏"));
+            assert_eq!(Lang::En.calls(n), format!("{n} calls"));
+            assert_eq!(Lang::Zh.calls(n), format!("{n} 次调用"));
+            assert_eq!(Lang::En.tool_calls(n), format!("{n} tool calls"));
+            assert_eq!(Lang::Zh.tool_calls(n), format!("{n} 次工具调用"));
+            assert_eq!(
+                Lang::En.confirmed_by(n as u8),
+                format!("confirmed by {n} dimensions")
+            );
+            assert_eq!(
+                Lang::Zh.confirmed_by(n as u8),
+                format!("{n} 个维度共同确认")
+            );
+        }
+    }
+
+    #[test]
+    fn gate_label_maps_pass_warn_block() {
+        assert_eq!(Lang::En.gate_label(GateLabel::Pass), "PASS");
+        assert_eq!(Lang::Zh.gate_label(GateLabel::Pass), "通过");
+        assert_eq!(Lang::En.gate_label(GateLabel::Warn), "WARN");
+        assert_eq!(Lang::Zh.gate_label(GateLabel::Block), "拦截");
+    }
+
+    #[test]
+    fn no_changes_text_localized() {
+        assert!(Lang::En.no_changes().contains("No changes detected"));
+        assert!(Lang::Zh.no_changes().contains("未检测到变更"));
+    }
+
+    #[test]
+    fn intent_status_labels_present() {
+        assert!(Lang::En.intent_met().contains("met"));
+        assert!(Lang::Zh.intent_missing().contains("缺失"));
+        assert!(Lang::En.intent_not_assessed().contains("not assessed"));
+    }
+
+    #[test]
+    fn patch_current_fix_labels_localized() {
+        assert_eq!(Lang::En.patch(), "Patch");
+        assert_eq!(Lang::Zh.patch(), "补丁");
+        assert_eq!(Lang::En.current(), "Current");
+        assert_eq!(Lang::Zh.fix(), "修复");
+    }
 }

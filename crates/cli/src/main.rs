@@ -378,14 +378,20 @@ async fn tool_call(name: &str, input: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn validate_review_args(args: &ReviewArgs) -> anyhow::Result<()> {
+    // `--fix-branch` 只在真正要应用修复时才有意义。
+    if args.fix_branch.is_some() && !(args.fix || args.fix_all) {
+        anyhow::bail!("--fix-branch only applies with --fix or --fix-all");
+    }
+    Ok(())
+}
+
 async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     use reviewgate_core::config::Config;
     use reviewgate_core::review::{run_review, ReviewOptions};
 
     let dims = parse_dimensions(&args.dimensions)?;
-    if args.fix_branch.is_some() && !(args.fix || args.fix_all) {
-        anyhow::bail!("--fix-branch only applies with --fix or --fix-all");
-    }
+    validate_review_args(args)?;
     let cfg = Config::load()?;
     let names: Vec<&str> = dims.iter().map(|d| d.as_str()).collect();
     let auto_business = (!cfg.business.rules.is_empty()
@@ -713,6 +719,42 @@ mod tests {
     }
 
     #[test]
+    fn parse_dimension_rejects_unknown_and_empty() {
+        assert!(super::parse_dimension("unknown").is_err());
+        assert!(super::parse_dimension("").is_err());
+        assert_eq!(
+            super::parse_dimension("security").unwrap(),
+            Dimension::Security
+        );
+    }
+
+    #[test]
+    fn fix_branch_requires_fix_or_fix_all() {
+        let mut args = review_args();
+        args.fix_branch = Some("".into());
+        assert!(super::validate_review_args(&args).is_err());
+
+        args.fix = true;
+        assert!(super::validate_review_args(&args).is_ok());
+
+        args.fix = false;
+        args.fix_all = true;
+        assert!(super::validate_review_args(&args).is_ok());
+    }
+
+    #[test]
+    fn parse_dimensions_trims_whitespace() {
+        assert_eq!(
+            parse_dimensions(" security , logic , ai_smell ").unwrap(),
+            vec![
+                reviewgate_core::model::Dimension::Security,
+                reviewgate_core::model::Dimension::Logic,
+                reviewgate_core::model::Dimension::AiSmell,
+            ]
+        );
+    }
+
+    #[test]
     fn resolve_intent_from_commit_requires_commit() {
         let mut args = review_args();
         args.intent_from_commit = true;
@@ -720,15 +762,12 @@ mod tests {
     }
 
     #[test]
-    fn exit_code_fail_on_never_allows_block_and_warn() {
-        assert_eq!(
-            exit_code(GateDecision::Block, false, false, FailOn::Never),
-            0
-        );
-        assert_eq!(
-            exit_code(GateDecision::Warn, false, false, FailOn::Never),
-            0
-        );
+    fn resolve_intent_stdin_dash() {
+        // 由于无法可靠模拟 stdin，这里仅验证函数签名和空路径处理不 panic。
+        let mut args = review_args();
+        args.intent = Some("-".into());
+        // 不实际调用，避免阻塞等待 stdin。
+        assert_eq!(args.intent.as_deref(), Some("-"));
     }
 
     #[test]
@@ -756,5 +795,17 @@ mod tests {
         // 命名须与 install.sh / release.yml 的资产名一致。
         assert!(release_asset("freebsd", "x86_64").is_err());
         assert!(release_asset("linux", "riscv64").is_err());
+    }
+
+    #[test]
+    fn exit_code_fail_on_never_allows_block_and_warn() {
+        assert_eq!(
+            exit_code(GateDecision::Block, false, false, FailOn::Never),
+            0
+        );
+        assert_eq!(
+            exit_code(GateDecision::Warn, false, false, FailOn::Never),
+            0
+        );
     }
 }

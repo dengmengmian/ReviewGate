@@ -116,4 +116,103 @@ mod tests {
         assert!((fs[2].confidence - 0.75).abs() < 1e-6);
         assert!((fs[3].confidence - 0.99).abs() < 1e-6);
     }
+
+    #[test]
+    fn empty_findings_do_not_panic() {
+        let mut empty: Vec<Finding> = vec![];
+        sort_findings(&mut empty);
+        boost_cross_dimension_agreement(&mut empty);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn sort_confidence_desc_when_severity_equal() {
+        let mut fs = vec![
+            {
+                let mut f = finding(0.5, 1);
+                f.severity = Severity::High;
+                f
+            },
+            {
+                let mut f = finding(0.9, 1);
+                f.severity = Severity::High;
+                f
+            },
+        ];
+        sort_findings(&mut fs);
+        assert!((fs[0].confidence - 0.9).abs() < 1e-6);
+        assert!((fs[1].confidence - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sort_nan_confidence_does_not_panic() {
+        let mut fs = vec![
+            {
+                let mut f = finding(0.5, 1);
+                f.confidence = f32::NAN;
+                f
+            },
+            finding(0.9, 1),
+        ];
+        // total_cmp 给 NaN 稳定全序，不应 panic。
+        sort_findings(&mut fs);
+    }
+
+    #[test]
+    fn sort_stable_when_equal() {
+        let mut fs = vec![
+            {
+                let mut f = finding(0.8, 1);
+                f.path = "a.rs".into();
+                f.start_line = 1;
+                f
+            },
+            {
+                let mut f = finding(0.8, 1);
+                f.path = "a.rs".into();
+                f.start_line = 2;
+                f
+            },
+            {
+                let mut f = finding(0.8, 1);
+                f.path = "b.rs".into();
+                f.start_line = 1;
+                f
+            },
+        ];
+        sort_findings(&mut fs);
+        assert_eq!(fs[0].path, "a.rs");
+        assert_eq!(fs[0].start_line, 1);
+        assert_eq!(fs[1].path, "a.rs");
+        assert_eq!(fs[1].start_line, 2);
+        assert_eq!(fs[2].path, "b.rs");
+    }
+
+    #[test]
+    fn agreement_boost_for_three_dimensions() {
+        let mut fs = vec![finding(0.7, 3)];
+        boost_cross_dimension_agreement(&mut fs);
+        assert!((fs[0].confidence - 0.8).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sort_orders_filtered_by_severity_too() {
+        let mut fs = vec![
+            {
+                let mut f = finding(0.9, 1);
+                f.filtered = true;
+                f.severity = Severity::Low;
+                f
+            },
+            {
+                let mut f = finding(0.5, 1);
+                f.filtered = true;
+                f.severity = Severity::High;
+                f
+            },
+        ];
+        sort_findings(&mut fs);
+        assert_eq!(fs[0].severity, Severity::High);
+        assert_eq!(fs[1].severity, Severity::Low);
+    }
 }

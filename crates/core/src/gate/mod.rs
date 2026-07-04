@@ -126,4 +126,60 @@ mod tests {
         b[0].reachability = Reachability::Reachable;
         assert_eq!(apply_gate(&mut b, &g), GateDecision::Block);
     }
+
+    #[test]
+    fn mixed_findings_decision_prioritizes_block() {
+        let g = GateConfig::default();
+        let mut findings = vec![
+            finding_sev(0.95, Severity::High), // block
+            finding_sev(0.6, Severity::Med),   // warn
+            finding_sev(0.3, Severity::Low),   // filtered
+        ];
+        let decision = apply_gate(&mut findings, &g);
+        assert_eq!(decision, GateDecision::Block);
+        assert!(!findings[0].filtered);
+        assert!(!findings[1].filtered);
+        assert!(findings[2].filtered);
+    }
+
+    #[test]
+    fn empty_findings_passes() {
+        let g = GateConfig::default();
+        let mut empty: Vec<Finding> = vec![];
+        assert_eq!(apply_gate(&mut empty, &g), GateDecision::Pass);
+    }
+
+    #[test]
+    fn decision_as_str_matches() {
+        assert_eq!(GateDecision::Pass.as_str(), "PASS");
+        assert_eq!(GateDecision::Warn.as_str(), "WARN");
+        assert_eq!(GateDecision::Block.as_str(), "BLOCK");
+    }
+
+    #[test]
+    fn custom_thresholds_respected() {
+        let g = GateConfig {
+            warn_threshold: 0.7,
+            block_threshold: 0.9,
+            fail_on_incomplete: true,
+        };
+        let mut a = [finding(0.85)];
+        assert_eq!(apply_gate(&mut a, &g), GateDecision::Warn);
+        assert!(!a[0].filtered);
+
+        let mut b = [finding(0.65)];
+        assert_eq!(apply_gate(&mut b, &g), GateDecision::Pass);
+        assert!(b[0].filtered);
+
+        let mut c = [finding_sev(0.95, Severity::High)];
+        assert_eq!(apply_gate(&mut c, &g), GateDecision::Block);
+    }
+
+    #[test]
+    fn all_warn_returns_warn() {
+        let g = GateConfig::default();
+        let mut findings = vec![finding(0.6), finding(0.7)];
+        assert_eq!(apply_gate(&mut findings, &g), GateDecision::Warn);
+        assert!(findings.iter().all(|f| !f.filtered));
+    }
 }

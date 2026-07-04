@@ -62,6 +62,33 @@ mod tests {
     use crate::model::{Dimension, Severity};
 
     #[test]
+    fn judge_prompt_omits_optional_fields_when_empty() {
+        let f = Finding {
+            dimension: Dimension::Logic,
+            confidence: 0.8,
+            severity: Severity::High,
+            path: "src/a.rs".into(),
+            start_line: 0,
+            end_line: 0,
+            message: "message".into(),
+            existing_code: "code".into(),
+            evidence: String::new(),
+            suggestion: None,
+            suggestion_code: String::new(),
+            reachability: crate::model::Reachability::default(),
+            filtered: false,
+            agreed_dimensions: 1,
+            criterion: None,
+            intent_status: None,
+        };
+        let prompt = user_prompt(&f);
+        assert!(prompt.contains("Location: src/a.rs"));
+        assert!(!prompt.contains("Reporter evidence"));
+        assert!(!prompt.contains("Reporter suggestion"));
+        assert!(!prompt.contains(":0"));
+    }
+
+    #[test]
     fn judge_prompt_is_english_and_language_parametric() {
         assert!(SYSTEM.contains("strict review judge"));
         assert!(!SYSTEM.contains("始终用中文"));

@@ -227,6 +227,144 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn build_unit_prompt_appends_rules_body() {
+        let root = std::env::temp_dir().join(format!("rg_ctx_rules_{}", std::process::id()));
+        tokio::fs::create_dir_all(&root).await.unwrap();
+        tokio::fs::write(root.join("a.rs"), "fn main() {}\n")
+            .await
+            .unwrap();
+
+        let diff = Diff {
+            files: vec![FileDiff {
+                old_path: Some("a.rs".into()),
+                new_path: Some("a.rs".into()),
+                status: FileStatus::Modified,
+                binary: false,
+                hunks: vec![Hunk {
+                    old_start: 1,
+                    old_count: 1,
+                    new_start: 1,
+                    new_count: 1,
+                    section: String::new(),
+                    lines: vec![Line {
+                        kind: LineKind::Context,
+                        content: "fn main() {}".into(),
+                        old_lineno: Some(1),
+                        new_lineno: Some(1),
+                    }],
+                }],
+            }],
+        };
+        let rules = "## Project business rules\n\n- no unwrap";
+        let prompt = build_unit_prompt(&diff, &[0], false, &root, &None, rules).await;
+        assert!(prompt.contains("no unwrap"));
+        assert!(prompt.contains("Please review"));
+
+        tokio::fs::remove_dir_all(&root).await.ok();
+    }
+
+    #[tokio::test]
+    async fn render_changed_files_respects_total_line_budget() {
+        let root = std::env::temp_dir().join(format!("rg_ctx_budget_{}", std::process::id()));
+        tokio::fs::create_dir_all(&root).await.unwrap();
+
+        // 两个大文件，每个 1500 行；总预算 2500 行 → 第二个应被截断。
+        let content = (1..=1500)
+            .map(|i| format!("line {i}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        tokio::fs::write(root.join("a.rs"), &content).await.unwrap();
+        tokio::fs::write(root.join("b.rs"), &content).await.unwrap();
+
+        let diff = Diff {
+            files: vec![
+                FileDiff {
+                    old_path: Some("a.rs".into()),
+                    new_path: Some("a.rs".into()),
+                    status: FileStatus::Modified,
+                    binary: false,
+                    hunks: vec![Hunk {
+                        old_start: 1,
+                        old_count: 1,
+                        new_start: 1,
+                        new_count: 1,
+                        section: String::new(),
+                        lines: vec![Line {
+                            kind: LineKind::Added,
+                            content: "x".into(),
+                            old_lineno: None,
+                            new_lineno: Some(1),
+                        }],
+                    }],
+                },
+                FileDiff {
+                    old_path: Some("b.rs".into()),
+                    new_path: Some("b.rs".into()),
+                    status: FileStatus::Modified,
+                    binary: false,
+                    hunks: vec![Hunk {
+                        old_start: 1,
+                        old_count: 1,
+                        new_start: 1,
+                        new_count: 1,
+                        section: String::new(),
+                        lines: vec![Line {
+                            kind: LineKind::Added,
+                            content: "y".into(),
+                            old_lineno: None,
+                            new_lineno: Some(1),
+                        }],
+                    }],
+                },
+            ],
+        };
+        let rendered = render_changed_files(&diff, &[0, 1], &root, &None).await;
+        assert!(rendered.contains("a.rs"));
+        assert!(rendered.contains("b.rs"));
+        assert!(
+            rendered.matches("line ").count() <= MAX_TOTAL_LINES + 200,
+            "总行数应被预算截断"
+        );
+
+        tokio::fs::remove_dir_all(&root).await.ok();
+    }
+
+    #[test]
+    fn hunk_context_line_numbers_missing_new_lineno_fallback() {
+        let file = FileDiff {
+            old_path: Some("a.rs".into()),
+            new_path: Some("a.rs".into()),
+            status: FileStatus::Modified,
+            binary: false,
+            hunks: vec![Hunk {
+                old_start: 5,
+                old_count: 1,
+                new_start: 10,
+                new_count: 2,
+                section: String::new(),
+                lines: vec![
+                    Line {
+                        kind: LineKind::Deleted,
+                        content: "old".into(),
+                        old_lineno: Some(5),
+                        new_lineno: None,
+                    },
+                    Line {
+                        kind: LineKind::Added,
+                        content: "new".into(),
+                        old_lineno: None,
+                        new_lineno: None, // 缺失 new_lineno
+                    },
+                ],
+            }],
+        };
+        let nums = hunk_context_line_numbers(&file, 50);
+        // 无 new_lineno 时回退到 new_start/new_count。
+        assert!(!nums.is_empty());
+        assert!(nums.iter().all(|n| *n >= 1 && *n <= 50));
+    }
+
+    #[tokio::test]
     async fn render_changed_files_skips_deleted_and_binary() {
         let root = std::env::temp_dir().join(format!("rg_ctx_skip_{}", std::process::id()));
         tokio::fs::create_dir_all(&root).await.unwrap();
@@ -275,6 +413,80 @@ mod tests {
         assert!(rendered.contains("keep.rs"));
 
         tokio::fs::remove_dir_all(&root).await.ok();
+    }
+
+    #[test]
+    fn hunk_context_line_numbers_merge_overlapping_ranges() {
+        // 两个 hunk 的 ±80 上下文相邻/重叠 → 应合并为连续区间。
+        let file = FileDiff {
+            old_path: Some("a.rs".into()),
+            new_path: Some("a.rs".into()),
+            status: FileStatus::Modified,
+            binary: false,
+            hunks: vec![
+                Hunk {
+                    old_start: 10,
+                    old_count: 1,
+                    new_start: 10,
+                    new_count: 1,
+                    section: String::new(),
+                    lines: vec![Line {
+                        kind: LineKind::Added,
+                        content: "a".into(),
+                        old_lineno: None,
+                        new_lineno: Some(10),
+                    }],
+                },
+                Hunk {
+                    old_start: 100,
+                    old_count: 1,
+                    new_start: 100,
+                    new_count: 1,
+                    section: String::new(),
+                    lines: vec![Line {
+                        kind: LineKind::Added,
+                        content: "b".into(),
+                        old_lineno: None,
+                        new_lineno: Some(100),
+                    }],
+                },
+            ],
+        };
+        let nums = hunk_context_line_numbers(&file, 200);
+        assert_eq!(nums.first(), Some(&1));
+        assert_eq!(nums.last(), Some(&180));
+        // 两个区间不重叠（10±80=[1,90], 100±80=[20,180]）→ 合并为 [1,180]，无重复。
+        assert!(nums.windows(2).all(|w| w[0] + 1 == w[1]));
+    }
+
+    #[test]
+    fn hunk_context_respects_max_file_lines() {
+        // 构造一个超长文件，hunk 在末尾，验证输出被 MAX_FILE_LINES 截断。
+        let file = FileDiff {
+            old_path: Some("a.rs".into()),
+            new_path: Some("a.rs".into()),
+            status: FileStatus::Modified,
+            binary: false,
+            hunks: vec![Hunk {
+                old_start: 600,
+                old_count: 1,
+                new_start: 600,
+                new_count: 1,
+                section: String::new(),
+                lines: vec![Line {
+                    kind: LineKind::Added,
+                    content: "x".into(),
+                    old_lineno: None,
+                    new_lineno: Some(600),
+                }],
+            }],
+        };
+        let nums = hunk_context_line_numbers(&file, 1000);
+        assert!(
+            nums.len() <= MAX_FILE_LINES,
+            "应被 MAX_FILE_LINES 截断: {}",
+            nums.len()
+        );
     }
 
     #[tokio::test]

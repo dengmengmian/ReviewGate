@@ -207,6 +207,43 @@ mod tests {
     }
 
     #[test]
+    fn zero_budget_still_produces_oversized_units() {
+        // budget=0 时 usable=max(1)，空 diff 应返回空，但 oversized 文件仍独占单元。
+        assert!(plan_units(&Diff { files: vec![] }, 0).is_empty());
+
+        let diff = Diff {
+            files: vec![file("small.rs", 1, 1), file("huge.rs", 5000, 80)],
+        };
+        let units = plan_units(&diff, 0);
+        assert!(
+            units.iter().any(|u| u.oversized && u.files == vec![1]),
+            "超大文件应在 budget=0 时独占 oversized 单元: {units:?}"
+        );
+    }
+
+    #[test]
+    fn mixed_oversized_and_normal_files_are_not_combined() {
+        // 超大文件不应被合并进普通单元。
+        let diff = Diff {
+            files: vec![
+                file("a/normal.rs", 10, 10),
+                file("a/huge.rs", 5000, 80),
+                file("b/normal.rs", 10, 10),
+            ],
+        };
+        let units = plan_units(&diff, 2000);
+        let huge_unit = units
+            .iter()
+            .find(|u| u.files.len() == 1 && u.files[0] == 1)
+            .expect("huge 应独占单元");
+        assert!(huge_unit.oversized);
+        // 普通文件应被覆盖且不重复。
+        let mut all: Vec<usize> = units.iter().flat_map(|u| u.files.clone()).collect();
+        all.sort_unstable();
+        assert_eq!(all, vec![0, 1, 2]);
+    }
+
+    #[test]
     fn single_oversized_file_gets_its_own_unit() {
         let diff = Diff {
             files: vec![file("small.rs", 3, 10), file("huge.rs", 5000, 80)],
@@ -218,5 +255,47 @@ mod tests {
             .find(|u| u.files == vec![1])
             .expect("huge 独占单元");
         assert!(huge_unit.oversized);
+    }
+
+    #[test]
+    fn plan_units_excludes_binary_files_like_empty_render() {
+        let mut f = file("img.png", 1, 1);
+        f.binary = true;
+        let diff = Diff {
+            files: vec![f, file("a.rs", 5, 10)],
+        };
+        let units = plan_units(&diff, 100_000);
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0].files, vec![0, 1]);
+    }
+
+    #[test]
+    fn plan_units_respects_directory_grouping_on_split() {
+        // 每个文件估算约 (width+~10)*lines/3 token；给个很小的预算逼它切。
+        let diff = Diff {
+            files: vec![
+                file("a/1.rs", 60, 40),
+                file("a/2.rs", 60, 40),
+                file("b/3.rs", 60, 40),
+                file("b/4.rs", 60, 40),
+            ],
+        };
+        // usable = budget*0.8。给约能装 ~2 个文件的预算。
+        let one = estimate_tokens(&diff.files[0].render_for_prompt());
+        let budget = (one * 2) * 5 / 4 + 1; // usable ≈ 2 个文件
+        let units = plan_units(&diff, budget);
+        // 同目录文件应落在同一单元（就近分组）：a/ 的两个下标 0,1 不应被拆到不同单元。
+        let unit_of = |i: usize| units.iter().position(|u| u.files.contains(&i)).unwrap();
+        assert_eq!(unit_of(0), unit_of(1), "a/ 目录两文件应同箱");
+        assert_eq!(unit_of(2), unit_of(3), "b/ 目录两文件应同箱");
+    }
+
+    #[test]
+    fn tokens_estimated_positive() {
+        let diff = Diff {
+            files: vec![file("x.rs", 10, 10)],
+        };
+        let units = plan_units(&diff, 100_000);
+        assert!(units[0].est_tokens > 0);
     }
 }

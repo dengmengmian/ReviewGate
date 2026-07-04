@@ -317,4 +317,75 @@ mod tests {
             "task_done"
         );
     }
+
+    #[test]
+    fn cache_hit_clamped_to_prompt_tokens() {
+        let body = r#"{
+            "choices": [{"message": {"content": null}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 10, "prompt_cache_hit_tokens": 500}
+        }"#;
+        let parsed: ChatResponse = serde_json::from_str(body).unwrap();
+        let u = parsed.usage.unwrap();
+        let cache_read = u.prompt_cache_hit_tokens.min(u.prompt_tokens);
+        assert_eq!(cache_read, 100);
+        assert_eq!(u.prompt_tokens - cache_read, 0);
+    }
+
+    #[test]
+    fn non_json_tool_arguments_fall_back_to_string() {
+        // 模型偶尔返回非 JSON 字符串（如裸文本）；不应 panic，应原样保留。
+        let body = r#"{
+            "choices": [{"message": {"tool_calls": [
+                {"id": "c1", "function": {"name": "report_finding", "arguments": "not valid json"}}
+            ]}, "finish_reason": "tool_calls"}]
+        }"#;
+        let parsed: ChatResponse = serde_json::from_str(body).unwrap();
+        let tc = parsed
+            .choices
+            .into_iter()
+            .next()
+            .unwrap()
+            .message
+            .tool_calls
+            .unwrap()
+            .pop()
+            .unwrap();
+        let input: serde_json::Value = serde_json::from_str(&tc.function.arguments)
+            .unwrap_or(serde_json::Value::String(tc.function.arguments.clone()));
+        assert_eq!(input, serde_json::Value::String("not valid json".into()));
+    }
+
+    #[test]
+    fn wire_messages_with_text_and_tool_call_keep_content() {
+        let c = client();
+        let m = Message::assistant(vec![
+            ContentBlock::text("let me check "),
+            ContentBlock::ToolUse(ToolUse {
+                id: "t1".into(),
+                name: "read_file".into(),
+                input: json!({"path": "a.rs"}),
+            }),
+        ]);
+        let w = c.to_wire_messages("", &[m]);
+        assert_eq!(w.len(), 1);
+        assert_eq!(w[0]["role"], "assistant");
+        assert_eq!(w[0]["content"], "let me check ");
+        assert!(w[0]["tool_calls"].is_array());
+    }
+
+    #[test]
+    fn parses_text_only_response_as_end_turn() {
+        let body = r#"{
+            "choices": [{"message": {"content": "hello"}, "finish_reason": "stop"}]
+        }"#;
+        let parsed: ChatResponse = serde_json::from_str(body).unwrap();
+        let choice = parsed.choices.into_iter().next().unwrap();
+        assert_eq!(choice.message.content.as_deref(), Some("hello"));
+        assert_eq!(choice.finish_reason.as_deref(), Some("stop"));
+    }
+
+    #[test]
+    fn model_returns_config_model() {
+        assert_eq!(client().model(), "m");
+    }
 }

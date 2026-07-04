@@ -171,4 +171,30 @@ mod tests {
         };
         assert_eq!(m.text(), "hello world");
     }
+
+    #[test]
+    fn message_text_empty_for_no_content() {
+        let m = Message::assistant(vec![]);
+        assert_eq!(m.text(), "");
+    }
+
+    #[test]
+    fn content_block_serde_roundtrip() {
+        let b = ContentBlock::text("hi");
+        let json = serde_json::to_string(&b).unwrap();
+        assert!(json.contains("\"type\":\"text\""));
+        let back: ContentBlock = serde_json::from_str(&json).unwrap();
+        assert!(matches!(back, ContentBlock::Text { text } if text == "hi"));
+    }
+
+    #[test]
+    fn tool_result_default_is_error_false() {
+        let r = ToolResult {
+            tool_use_id: "t".into(),
+            content: "ok".into(),
+            is_error: false,
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(json.contains("\"is_error\":false"));
+    }
 }

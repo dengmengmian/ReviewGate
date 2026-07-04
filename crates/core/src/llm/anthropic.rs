@@ -284,6 +284,50 @@ mod tests {
     }
 
     #[test]
+    fn system_role_maps_to_user_and_empty_text_filtered() {
+        let messages = vec![
+            Message {
+                role: Role::System,
+                content: vec![ContentBlock::text("system prompt")],
+            },
+            Message {
+                role: Role::User,
+                content: vec![
+                    ContentBlock::text(""),
+                    ContentBlock::text("real user content"),
+                ],
+            },
+        ];
+        let wire = to_wire_messages(&messages);
+        assert_eq!(wire.len(), 2);
+        assert_eq!(wire[0]["role"], "user");
+        assert_eq!(wire[0]["content"][0]["text"], "system prompt");
+        assert_eq!(wire[1]["role"], "user");
+        // 空文本块被过滤，只剩一个有效块。
+        assert_eq!(wire[1]["content"].as_array().unwrap().len(), 1);
+        assert_eq!(wire[1]["content"][0]["text"], "real user content");
+    }
+
+    #[test]
+    fn tool_result_error_flag_preserved() {
+        let messages = vec![Message::tool_results(vec![
+            ToolResult {
+                tool_use_id: "t1".into(),
+                content: "boom".into(),
+                is_error: true,
+            },
+            ToolResult {
+                tool_use_id: "t2".into(),
+                content: "ok".into(),
+                is_error: false,
+            },
+        ])];
+        let wire = to_wire_messages(&messages);
+        assert_eq!(wire[0]["content"][0]["is_error"], true);
+        assert_eq!(wire[0]["content"][1]["is_error"], false);
+    }
+
+    #[test]
     fn caches_first_user_block_only() {
         let mut wire = to_wire_messages(&[
             Message {
@@ -319,5 +363,39 @@ mod tests {
         assert_eq!(u.input_tokens, 100);
         assert_eq!(u.cache_read_input_tokens, 20);
         assert_eq!(u.cache_creation_input_tokens, 10);
+    }
+
+    #[test]
+    fn empty_messages_yield_empty_wire() {
+        assert!(to_wire_messages(&[]).is_empty());
+    }
+
+    #[test]
+    fn unknown_stop_reason_maps_to_other() {
+        let body = r#"{
+            "content": [{"type": "text", "text": "x"}],
+            "stop_reason": "custom_reason"
+        }"#;
+        let parsed: MessagesResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(parsed.stop_reason.as_deref(), Some("custom_reason"));
+    }
+
+    #[test]
+    fn max_tokens_stop_reason_parses() {
+        let body = r#"{
+            "content": [{"type": "text", "text": ""}],
+            "stop_reason": "max_tokens"
+        }"#;
+        let parsed: MessagesResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(parsed.stop_reason.as_deref(), Some("max_tokens"));
+    }
+
+    #[test]
+    fn assistant_text_block_roundtrips() {
+        let messages = vec![Message::assistant(vec![ContentBlock::text("ok")])];
+        let wire = to_wire_messages(&messages);
+        assert_eq!(wire[0]["role"], "assistant");
+        assert_eq!(wire[0]["content"][0]["type"], "text");
+        assert_eq!(wire[0]["content"][0]["text"], "ok");
     }
 }

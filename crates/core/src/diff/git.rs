@@ -62,6 +62,15 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn git_error_includes_stderr() {
+        let err = git(&["rev-parse", "--verify", "__no_such_ref__/HEAD"])
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("__no_such_ref__/HEAD") || err.contains("退出码"));
+    }
+
+    #[tokio::test]
     async fn rev_parse_head_succeeds() {
         let head = git(&["rev-parse", "HEAD"])
             .await
@@ -77,6 +86,25 @@ mod tests {
             .expect("git_lenient should not error on non-zero exit");
         assert_ne!(code, 0);
         assert!(out.is_empty());
+    }
+
+    #[tokio::test]
+    async fn git_lenient_no_match_returns_one_and_empty_stdout() {
+        // `git grep` exits 1 when there are no matches; this is not an error.
+        // 用进程 ID + 时间戳构造几乎不可能命中的模式。
+        let token = format!(
+            "__rg_test_no_match_{}_{}__",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+        let (code, out) = git_lenient(&["grep", "-I", "--no-color", "-e", &token, "--", "."])
+            .await
+            .expect("git_lenient should not error on no-match exit");
+        assert_eq!(code, 1);
+        assert_eq!(out, "");
     }
 
     #[tokio::test]

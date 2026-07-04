@@ -298,6 +298,34 @@ rule = "迁移必须可回滚"
     }
 
     #[test]
+    fn placeholder_key_matches_dash_variants_and_exact_tokens() {
+        assert!(is_placeholder_key("YOUR-API-KEY"));
+        assert!(is_placeholder_key("PLACEHOLDER"));
+        assert!(is_placeholder_key("TODO"));
+        assert!(!is_placeholder_key("sk-abc"));
+        assert!(!is_placeholder_key("my-real-key"));
+    }
+
+    #[test]
+    fn home_dir_falls_back_to_userprofile_when_home_missing() {
+        let _guard = ENV_LOCK.lock().unwrap();
+
+        std::env::remove_var("HOME");
+        std::env::remove_var("USERPROFILE");
+        assert!(home_dir().is_none());
+
+        std::env::set_var("USERPROFILE", "/mock/home");
+        assert_eq!(home_dir(), Some(PathBuf::from("/mock/home")));
+
+        // HOME 非空时优先于 USERPROFILE。
+        std::env::set_var("HOME", "/real/home");
+        assert_eq!(home_dir(), Some(PathBuf::from("/real/home")));
+
+        std::env::remove_var("HOME");
+        std::env::remove_var("USERPROFILE");
+    }
+
+    #[test]
     fn parses_and_defaults() {
         let cfg: Config = toml::from_str(TOML).unwrap();
         assert_eq!(cfg.provider, "qwen");
@@ -409,6 +437,67 @@ api_key = "REPLACE_WITH_YOUR_API_KEY"
         )
         .unwrap();
         assert!(cfg2.active_provider_resolved().is_err());
+    }
+
+    #[test]
+    fn provider_max_input_tokens_defaults() {
+        let p = ProviderConfig {
+            protocol: Protocol::Openai,
+            base_url: "https://x".into(),
+            api_key: "k".into(),
+            model: "m".into(),
+            max_input_tokens: None,
+        };
+        assert_eq!(p.max_input_tokens(), DEFAULT_MAX_INPUT_TOKENS);
+
+        let p2 = ProviderConfig {
+            max_input_tokens: Some(12345),
+            ..p
+        };
+        assert_eq!(p2.max_input_tokens(), 12345);
+    }
+
+    #[test]
+    fn active_provider_resolved_partial_env_override() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let cfg: Config = toml::from_str(TOML).unwrap();
+
+        std::env::remove_var("REVIEWGATE_API_KEY");
+        std::env::set_var("REVIEWGATE_MODEL", "env-model-only");
+        let resolved = cfg.active_provider_resolved().unwrap();
+        // model 被环境覆盖，key/base_url 仍来自配置。
+        assert_eq!(resolved.model, "env-model-only");
+        assert_eq!(resolved.base_url, "https://x/v1");
+        assert_eq!(resolved.api_key, "k");
+
+        std::env::remove_var("REVIEWGATE_MODEL");
+    }
+
+    #[test]
+    fn load_uses_reviewgate_config_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let dir = std::env::temp_dir().join(format!("rg_cfg_load_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("reviewgate.toml");
+        std::fs::write(
+            &path,
+            r#"
+provider = "env"
+[providers.env]
+base_url = "https://env.example/v1"
+api_key = "env-key"
+model = "env-model"
+"#,
+        )
+        .unwrap();
+
+        std::env::set_var("REVIEWGATE_CONFIG", path.to_str().unwrap());
+        let cfg = Config::load().unwrap();
+        assert_eq!(cfg.provider, "env");
+        assert_eq!(cfg.providers["env"].model, "env-model");
+
+        std::env::remove_var("REVIEWGATE_CONFIG");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

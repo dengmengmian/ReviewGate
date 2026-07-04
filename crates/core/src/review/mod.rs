@@ -676,6 +676,47 @@ mod tests {
     }
 
     #[test]
+    fn warning_for_exit_max_rounds_returns_none() {
+        let run = AgentRun {
+            findings: vec![],
+            stats: AgentStats::default(),
+            exit_reason: AgentExitReason::MaxRounds,
+            error_detail: None,
+        };
+        assert!(warning_for_exit(Dimension::Logic, &run).is_none());
+    }
+
+    #[test]
+    fn collect_agent_results_sums_loop_guarded_and_error_detail() {
+        let mut run = run_with(
+            vec![finding(Dimension::Security)],
+            AgentExitReason::RequestFailed,
+        );
+        run.stats.loop_guarded = 3;
+        run.error_detail = Some("timeout".into());
+
+        let mut warnings = Vec::new();
+        let mut incomplete = false;
+        let (_, stats) = collect_agent_results(
+            vec![(Dimension::Security, Ok(run))],
+            &mut warnings,
+            &mut incomplete,
+        );
+        assert!(incomplete);
+        assert_eq!(stats.loop_guarded, 3);
+        assert!(warnings.iter().any(|w| w.message.contains("timeout")));
+    }
+
+    #[test]
+    fn review_options_workspace_and_commit() {
+        let ws = ReviewOptions::workspace(vec![Dimension::Logic]);
+        assert!(matches!(ws.mode, DiffMode::Workspace));
+
+        let commit = ReviewOptions::new(DiffMode::Commit("abc".into()), vec![Dimension::Security]);
+        assert!(matches!(commit.mode, DiffMode::Commit(s) if s == "abc"));
+    }
+
+    #[test]
     fn review_options_defaults() {
         let opts = ReviewOptions::new(DiffMode::Commit("abc".into()), Dimension::ALL.to_vec());
         assert!(opts.judge);

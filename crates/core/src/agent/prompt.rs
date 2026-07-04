@@ -92,6 +92,27 @@ mod tests {
     }
 
     #[test]
+    fn build_user_prompt_contains_diff_and_language() {
+        let prompt = build_user_prompt("@@ -1,1 +1,2 @@\n+foo");
+        assert!(prompt.contains("@@ -1,1 +1,2 @@"));
+        assert!(prompt.contains("+foo"));
+        assert!(prompt.contains("Output language"));
+    }
+
+    #[test]
+    fn intent_system_prompt_non_empty_and_mentions_intent() {
+        let p = intent_system_prompt();
+        assert!(!p.is_empty());
+        let lower = p.to_ascii_lowercase();
+        assert!(
+            lower.contains("intent")
+                || lower.contains("acceptance")
+                || lower.contains("requirement"),
+            "intent prompt should mention intent/acceptance/requirement: {p}"
+        );
+    }
+
+    #[test]
     fn output_language_is_detected_from_override_or_locale() {
         assert_eq!(
             detect_output_language_from([("REVIEWGATE_OUTPUT_LANGUAGE", "German")]),
@@ -106,5 +127,25 @@ mod tests {
             "Japanese"
         );
         assert_eq!(detect_output_language_from([("LANG", "C")]), "English");
+    }
+
+    #[test]
+    fn dimension_focus_block_selects_correct_report_tool() {
+        let intent = dimension_focus_block(Dimension::Intent);
+        assert!(intent.contains("report_intent_finding"));
+        assert!(!intent.contains("report_finding\n"));
+        assert!(intent.contains("Intent"));
+
+        for d in [Dimension::Security, Dimension::Logic, Dimension::Perf] {
+            let block = dimension_focus_block(d);
+            assert!(
+                block.contains("report_finding"),
+                "{d:?} should use report_finding"
+            );
+            assert!(
+                !block.contains("report_intent_finding"),
+                "{d:?} should not use report_intent_finding"
+            );
+        }
     }
 }

@@ -272,6 +272,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn read_file_missing_path_errors_clearly() {
+        let (dir, ctx) = ctx_with_file();
+        let err = ReadFile
+            .call(&json!({}), &ctx)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("read_file missing path"), "got {err}");
+
+        let err2 = ReadFile
+            .call(&json!({ "path": null, "start_line": 5 }), &ctx)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err2.contains("read_file missing path"), "got {err2}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
     async fn read_file_pagination_and_out_of_range() {
         let (dir, ctx) = ctx_with_file();
         // 写入 5 行文件

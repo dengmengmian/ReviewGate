@@ -185,6 +185,43 @@ mod tests {
     use super::*;
 
     #[test]
+    fn exit_reason_incomplete_and_str_matrix() {
+        assert!(!AgentExitReason::Completed.is_incomplete());
+        assert!(!AgentExitReason::MaxRounds.is_incomplete());
+        assert!(AgentExitReason::TimedOut.is_incomplete());
+        assert!(AgentExitReason::RequestFailed.is_incomplete());
+        assert!(AgentExitReason::AuthFailed.is_incomplete());
+        assert!(AgentExitReason::ContextOverflow.is_incomplete());
+
+        assert_eq!(AgentExitReason::Completed.as_str(), "completed");
+        assert_eq!(AgentExitReason::MaxRounds.as_str(), "max_rounds");
+        assert_eq!(AgentExitReason::TimedOut.as_str(), "timed_out");
+        assert_eq!(AgentExitReason::RequestFailed.as_str(), "request_failed");
+        assert_eq!(AgentExitReason::AuthFailed.as_str(), "auth_failed");
+        assert_eq!(
+            AgentExitReason::ContextOverflow.as_str(),
+            "context_overflow"
+        );
+    }
+
+    #[test]
+    fn agent_stats_tool_summary() {
+        let mut stats = AgentStats::default();
+        assert_eq!(stats.tool_summary(), "无工具调用");
+        stats.record_tool("read_file");
+        stats.record_tool("read_file");
+        stats.record_tool("code_search");
+        assert_eq!(stats.tool_summary(), "code_search=1, read_file=2");
+        assert_eq!(stats.findings_reported, 0);
+        assert_eq!(stats.task_done_calls, 0);
+
+        stats.record_tool("report_finding");
+        stats.record_tool("task_done");
+        assert_eq!(stats.findings_reported, 1);
+        assert_eq!(stats.task_done_calls, 1);
+    }
+
+    #[test]
     fn auth_errors_classified_distinctly() {
         let auth = anyhow::anyhow!(
             r#"LLM returned 400 Bad Request: {{"error":{{"code":"invalid_api_key"}}}}"#
@@ -192,6 +229,14 @@ mod tests {
         assert_eq!(classify_request_error(&auth), AgentExitReason::AuthFailed);
         assert_eq!(
             classify_request_error(&anyhow::anyhow!("LLM returned 401 Unauthorized")),
+            AgentExitReason::AuthFailed
+        );
+        assert_eq!(
+            classify_request_error(&anyhow::anyhow!("403 forbidden: quota exceeded")),
+            AgentExitReason::AuthFailed
+        );
+        assert_eq!(
+            classify_request_error(&anyhow::anyhow!("incorrect api key provided")),
             AgentExitReason::AuthFailed
         );
         // 网络/5xx/限流不是鉴权问题。
@@ -203,5 +248,44 @@ mod tests {
             classify_request_error(&anyhow::anyhow!("LLM returned 500 Internal Server Error")),
             AgentExitReason::RequestFailed
         );
+    }
+
+    #[test]
+    fn assistant_text_filters_and_joins() {
+        use crate::model::{ContentBlock, ToolUse};
+        let content = vec![
+            ContentBlock::text("hello "),
+            ContentBlock::ToolUse(ToolUse {
+                id: "t1".into(),
+                name: "read_file".into(),
+                input: serde_json::json!({}),
+            }),
+            ContentBlock::text("world"),
+        ];
+        assert_eq!(assistant_text(&content), "hello world");
+    }
+
+    #[test]
+    fn assistant_text_empty_for_no_text_blocks() {
+        use crate::model::{ContentBlock, ToolUse};
+        let content = vec![ContentBlock::ToolUse(ToolUse {
+            id: "t1".into(),
+            name: "read_file".into(),
+            input: serde_json::json!({}),
+        })];
+        assert_eq!(assistant_text(&content), "");
+    }
+
+    #[test]
+    fn agent_stats_records_tool_counts_and_special_tools() {
+        let mut stats = AgentStats::default();
+        stats.record_tool("report_finding");
+        stats.record_tool("report_finding");
+        stats.record_tool("task_done");
+        stats.record_tool("read_file");
+        assert_eq!(stats.findings_reported, 2);
+        assert_eq!(stats.task_done_calls, 1);
+        assert_eq!(stats.tool_calls, 4);
+        assert_eq!(stats.tool_counts.get("report_finding"), Some(&2));
     }
 }

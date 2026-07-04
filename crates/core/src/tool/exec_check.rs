@@ -235,4 +235,35 @@ mod tests {
             "child stdout must be captured into the tool result, got: {out:?}"
         );
     }
+
+    #[test]
+    fn cap_exact_boundary_not_truncated() {
+        let s = "a".repeat(MAX_OUT);
+        let out = cap(s.clone());
+        assert_eq!(out.len(), MAX_OUT);
+        assert!(!out.contains("truncated"));
+    }
+
+    #[test]
+    fn cap_small_string_unchanged() {
+        assert_eq!(cap("hello".into()), "hello");
+    }
+
+    #[test]
+    fn cap_keeps_valid_utf8_on_multibyte_split() {
+        // 一个中文字符 3 字节；让截断点落在字符中间应回退到字符边界。
+        let s = "中".repeat(MAX_OUT / 3 + 1);
+        let out = cap(s);
+        assert!(out.is_char_boundary(out.len()));
+        assert!(out.contains("truncated"));
+    }
+
+    #[test]
+    fn runtime_javascript_and_typescript_aliases() {
+        assert_eq!(runtime("js").map(|t| t.0), Some("node"));
+        assert_eq!(runtime("ts").map(|t| t.0), Some("node"));
+        assert_eq!(runtime("javascript").map(|t| t.0), Some("node"));
+        assert_eq!(runtime("python").map(|t| t.0), Some("python3"));
+        assert_eq!(runtime("py").map(|t| t.0), Some("python3"));
+    }
 }

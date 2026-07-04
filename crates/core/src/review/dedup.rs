@@ -398,6 +398,40 @@ mod tests {
     }
 
     #[test]
+    fn merge_group_single_finding_keeps_dimension_and_no_suffix() {
+        let f = f(Dimension::Security, 0.9, 5);
+        let out = dedupe(vec![f]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].agreed_dimensions, 1);
+        assert!(!out[0].message.contains("also flagged by"));
+    }
+
+    #[test]
+    fn significant_lines_filters_short_and_blank() {
+        let sig = significant_lines("  \n  short  \nthis_is_long_enough\n");
+        assert!(!sig.contains("short"));
+        assert!(sig.contains("this_is_long_enough"));
+    }
+
+    #[test]
+    fn merge_overlapping_chain_transitively_merges() {
+        // A 与 B 重叠且共享代码，B 与 C 重叠且共享代码，但 A 与 C 不直接重叠。
+        // 合并算法应通过传递闭包把三者合并为 1 组。
+        let shared = "log.error(\"failed\");";
+        let a = frc(Dimension::Security, 0.9, 10, 15, shared);
+        let b = frc(Dimension::Logic, 0.85, 14, 20, shared);
+        let c = frc(Dimension::AiSmell, 0.8, 19, 25, shared);
+        let out = dedupe(vec![a, b, c]);
+        assert_eq!(out.len(), 1, "传递重叠应合并为 1 组: {out:#?}");
+        assert_eq!(out[0].agreed_dimensions, 3);
+    }
+
+    #[test]
+    fn dedupe_preserves_empty_input() {
+        assert!(dedupe(vec![]).is_empty());
+    }
+
+    #[test]
     fn sets_agreed_dimensions_count() {
         // 同一行被 3 个不同维度标记 → agreed_dimensions == 3；单独的那条 == 1。
         let input = vec![

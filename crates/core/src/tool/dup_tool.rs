@@ -190,6 +190,15 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_groups_drop_single_unique_location() {
+        // 同一 (path, line) 被 tree-sitter 重复列出时，去重后只剩一个位置 → 不输出该组。
+        let body = "{ let total = base_price * quantity + shipping_fee; if total < 0 { return Err(\"negative\"); } audit_log.record(user_id, total); Ok(total) }";
+        let src = format!("fn a() {body}");
+        let groups = duplicate_groups(&[("a.rs".into(), src)]);
+        assert!(groups.is_empty(), "单位置组应被丢弃");
+    }
+
+    #[test]
     fn distinct_bodies_not_grouped() {
         // 两个体都足够长（> 阈值），仅运算符不同 → 不应被分到同一组。
         let big = |op: &str| {

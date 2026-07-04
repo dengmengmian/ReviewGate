@@ -116,7 +116,49 @@ impl LlmResponse {
 
 #[cfg(test)]
 mod tests {
-    use super::Usage;
+    use super::{ContentBlock, LlmResponse, StopReason, ToolUse, Usage};
+
+    #[test]
+    fn response_tool_uses_filters_and_text_joins() {
+        let resp = LlmResponse {
+            content: vec![
+                ContentBlock::text("first "),
+                ContentBlock::ToolUse(ToolUse {
+                    id: "t1".into(),
+                    name: "report_finding".into(),
+                    input: serde_json::json!({"path": "a.rs"}),
+                }),
+                ContentBlock::text("second"),
+                ContentBlock::ToolUse(ToolUse {
+                    id: "t2".into(),
+                    name: "task_done".into(),
+                    input: serde_json::json!({}),
+                }),
+            ],
+            stop_reason: StopReason::ToolUse,
+            usage: Usage::default(),
+        };
+        let tus = resp.tool_uses();
+        assert_eq!(tus.len(), 2);
+        assert_eq!(tus[0].name, "report_finding");
+        assert_eq!(tus[1].name, "task_done");
+        assert_eq!(resp.text(), "first second");
+    }
+
+    #[test]
+    fn response_text_empty_when_no_text_blocks() {
+        let resp = LlmResponse {
+            content: vec![ContentBlock::ToolUse(ToolUse {
+                id: "t1".into(),
+                name: "task_done".into(),
+                input: serde_json::json!({}),
+            })],
+            stop_reason: StopReason::ToolUse,
+            usage: Usage::default(),
+        };
+        assert!(resp.tool_uses().len() == 1);
+        assert_eq!(resp.text(), "");
+    }
 
     #[test]
     fn usage_accumulates_and_computes_cache_hit() {
@@ -142,5 +184,110 @@ mod tests {
     #[test]
     fn cache_hit_pct_zero_when_empty() {
         assert_eq!(Usage::default().cache_hit_pct(), 0);
+    }
+
+    #[test]
+    fn usage_summary_readable() {
+        let u = Usage {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_read_input_tokens: 100,
+            cache_creation_input_tokens: 0,
+        };
+        let s = u.summary();
+        assert!(s.contains("200 in tok"));
+        assert!(s.contains("50 out tok"));
+        assert!(s.contains("cache hit 100/200 = 50%"));
+    }
+
+    #[test]
+    fn cache_hit_pct_with_creation_tokens_only() {
+        // cache_creation_input_tokens 不计入 hit（它不是 read）。
+        let u = Usage {
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 100,
+        };
+        assert_eq!(u.total_input(), 100);
+        assert_eq!(u.cache_hit_pct(), 0);
+    }
+
+    #[test]
+    fn cache_hit_pct_full_read() {
+        let u = Usage {
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read_input_tokens: 100,
+            cache_creation_input_tokens: 0,
+        };
+        assert_eq!(u.cache_hit_pct(), 100);
+    }
+
+    #[test]
+    fn stop_reason_other_roundtrips() {
+        let r = StopReason::Other("custom".into());
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(json.contains("custom"));
+        let back: StopReason = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, r);
+    }
+
+    #[test]
+    fn usage_adds_all_fields() {
+        let mut a = Usage {
+            input_tokens: 1,
+            output_tokens: 2,
+            cache_read_input_tokens: 3,
+            cache_creation_input_tokens: 4,
+        };
+        a.add(&Usage {
+            input_tokens: 10,
+            output_tokens: 20,
+            cache_read_input_tokens: 30,
+            cache_creation_input_tokens: 40,
+        });
+        assert_eq!(a.input_tokens, 11);
+        assert_eq!(a.output_tokens, 22);
+        assert_eq!(a.cache_read_input_tokens, 33);
+        assert_eq!(a.cache_creation_input_tokens, 44);
+    }
+
+    #[test]
+    fn tool_uses_empty_when_only_text_blocks() {
+        let resp = LlmResponse {
+            content: vec![ContentBlock::text("hello"), ContentBlock::text(" world")],
+            stop_reason: StopReason::EndTurn,
+            usage: Usage::default(),
+        };
+        assert!(resp.tool_uses().is_empty());
+        assert_eq!(resp.text(), "hello world");
+    }
+
+    #[test]
+    fn stop_reason_core_variants_serialize() {
+        for (r, expected) in [
+            (StopReason::EndTurn, "end_turn"),
+            (StopReason::ToolUse, "tool_use"),
+            (StopReason::MaxTokens, "max_tokens"),
+        ] {
+            let json = serde_json::to_string(&r).unwrap();
+            assert_eq!(json, format!("\"{expected}\""));
+            let back: StopReason = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, r);
+        }
+    }
+
+    #[test]
+    fn usage_summary_includes_creation_tokens() {
+        let u = Usage {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 100,
+        };
+        let s = u.summary();
+        assert!(s.contains("200 in tok"));
+        assert!(s.contains("cache hit 0/200 = 0%"));
     }
 }

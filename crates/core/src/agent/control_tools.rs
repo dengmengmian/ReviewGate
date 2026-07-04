@@ -184,55 +184,214 @@ pub(super) fn parse_intent_finding(input: &Value) -> Result<Finding> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::IntentStatus;
     use serde_json::json;
 
     #[test]
-    fn intent_finding_maps_status_severity_and_optional_anchor() {
-        // missing → High,无 anchor（缺失类发现没有行号）
-        let f = parse_intent_finding(&json!({
-            "criterion": "dispatch 必须处理 URL 对象",
-            "status": "missing",
-            "message": "dispatchRequest 未处理 URL 对象",
-            "confidence": 0.8
-        }))
+    fn parse_finding_defaults_clamping_and_required_fields() {
+        // 完整字段。
+        let full = parse_finding(
+            &json!({
+                "path": "a.rs",
+                "message": "m",
+                "line_start": 10,
+                "line_end": 12,
+                "existing_code": "x",
+                "severity": "high",
+                "confidence": 0.9
+            }),
+            Dimension::Logic,
+        )
         .unwrap();
-        assert_eq!(f.dimension, Dimension::Intent);
-        assert_eq!(f.intent_status, Some(IntentStatus::Missing));
-        assert_eq!(f.severity, Severity::High);
-        assert_eq!(f.criterion.as_deref(), Some("dispatch 必须处理 URL 对象"));
+        assert_eq!(full.start_line, 10);
+        assert_eq!(full.end_line, 12);
+        assert_eq!(full.confidence, 0.9);
+        assert_eq!(full.severity, Severity::High);
+
+        // 缺 line_start → 行号置 0。
+        let no_line = parse_finding(
+            &json!({
+                "path": "a.rs", "message": "m", "existing_code": "x", "severity": "low"
+            }),
+            Dimension::Logic,
+        )
+        .unwrap();
+        assert_eq!(no_line.start_line, 0);
+        assert_eq!(no_line.end_line, 0);
+
+        // 有 line_start 但缺 line_end → end=start。
+        let no_end = parse_finding(
+            &json!({
+                "path": "a.rs", "message": "m", "existing_code": "x",
+                "severity": "med", "line_start": 5
+            }),
+            Dimension::Logic,
+        )
+        .unwrap();
+        assert_eq!(no_end.start_line, 5);
+        assert_eq!(no_end.end_line, 5);
+
+        // line_end < line_start 被兜底到 start。
+        let inverted = parse_finding(
+            &json!({
+                "path": "a.rs", "message": "m", "existing_code": "x",
+                "severity": "med", "line_start": 5, "line_end": 3
+            }),
+            Dimension::Logic,
+        )
+        .unwrap();
+        assert_eq!(inverted.end_line, 5);
+
+        // 置信度越界被 clamp。
+        let high_conf = parse_finding(
+            &json!({
+                "path": "a.rs", "message": "m", "existing_code": "x",
+                "severity": "med", "confidence": 1.5
+            }),
+            Dimension::Logic,
+        )
+        .unwrap();
+        assert_eq!(high_conf.confidence, 1.0);
+        let low_conf = parse_finding(
+            &json!({
+                "path": "a.rs", "message": "m", "existing_code": "x",
+                "severity": "med", "confidence": -0.1
+            }),
+            Dimension::Logic,
+        )
+        .unwrap();
+        assert_eq!(low_conf.confidence, 0.0);
+
+        // 非法 severity 回退 Med。
+        let bad_sev = parse_finding(
+            &json!({
+                "path": "a.rs", "message": "m", "existing_code": "x",
+                "severity": "critical"
+            }),
+            Dimension::Logic,
+        )
+        .unwrap();
+        assert_eq!(bad_sev.severity, Severity::Med);
+
+        // 非法 severity 回退 Med（任何缺失/非法值都走 default 分支）。
+        assert!(parse_finding(
+            &json!({"path": "a.rs", "message": "m", "existing_code": "x"}),
+            Dimension::Logic
+        )
+        .is_ok());
+        let missing_sev = parse_finding(
+            &json!({"path": "a.rs", "message": "m", "existing_code": "x"}),
+            Dimension::Logic,
+        )
+        .unwrap();
+        assert_eq!(missing_sev.severity, Severity::Med);
+
+        // 必填字段缺失（severity 不是必填，缺失时回退 Med）。
+        assert!(parse_finding(
+            &json!({"message": "m", "existing_code": "x", "severity": "med"}),
+            Dimension::Logic
+        )
+        .is_err());
+        assert!(parse_finding(
+            &json!({"path": "a.rs", "existing_code": "x", "severity": "med"}),
+            Dimension::Logic
+        )
+        .is_err());
+        assert!(parse_finding(
+            &json!({"path": "a.rs", "message": "m", "severity": "med"}),
+            Dimension::Logic
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn parse_finding_optional_fields_propagate() {
+        let input = json!({
+            "path": "a.rs",
+            "message": "m",
+            "existing_code": "x",
+            "severity": "med",
+            "suggestion": "use Y",
+            "suggestion_code": "Y",
+            "evidence": "because Z"
+        });
+        let f = parse_finding(&input, Dimension::Logic).unwrap();
+        assert_eq!(f.suggestion, Some("use Y".into()));
+        assert_eq!(f.suggestion_code, "Y");
+        assert_eq!(f.evidence, "because Z");
+    }
+
+    #[test]
+    fn parse_finding_start_zero_forces_end_zero() {
+        let f = parse_finding(
+            &json!({
+                "path": "a.rs",
+                "message": "m",
+                "existing_code": "x",
+                "severity": "med",
+                "line_start": 0,
+                "line_end": 5
+            }),
+            Dimension::Logic,
+        )
+        .unwrap();
         assert_eq!(f.start_line, 0);
-        assert!(f.path.is_empty());
+        assert_eq!(f.end_line, 0);
+    }
 
-        // met → Low,可带可选 anchor
-        let m = parse_intent_finding(&json!({
-            "criterion": "c", "status": "met", "message": "ok",
-            "file": "a.js", "line_start": 5
-        }))
-        .unwrap();
-        assert_eq!(m.intent_status, Some(IntentStatus::Met));
-        assert_eq!(m.severity, Severity::Low);
-        assert_eq!(m.path, "a.js");
-        assert_eq!(m.start_line, 5);
+    #[test]
+    fn report_finding_def_has_required_fields() {
+        let def = report_finding_def();
+        assert_eq!(def.name, "report_finding");
+        let schema = def.input_schema.as_object().unwrap();
+        let required = schema["required"].as_array().unwrap();
+        assert!(required.iter().any(|v| v == "path"));
+        assert!(required.iter().any(|v| v == "message"));
+        assert!(required.iter().any(|v| v == "existing_code"));
+    }
 
-        // suggestion → Low；deviation → Med
-        assert_eq!(
-            parse_intent_finding(&json!({"criterion":"c","status":"suggestion","message":"m"}))
-                .unwrap()
-                .severity,
-            Severity::Low
-        );
-        assert_eq!(
-            parse_intent_finding(&json!({"criterion":"c","status":"deviation","message":"m"}))
-                .unwrap()
-                .severity,
-            Severity::Med
-        );
+    #[test]
+    fn task_done_def_has_name_and_summary() {
+        let def = task_done_def();
+        assert_eq!(def.name, "task_done");
+        let schema = def.input_schema.as_object().unwrap();
+        assert!(schema.contains_key("properties"));
+    }
 
-        // 非法/缺字段 → 报错
-        assert!(
-            parse_intent_finding(&json!({"criterion":"c","status":"bogus","message":"m"})).is_err()
-        );
-        assert!(parse_intent_finding(&json!({"status":"met","message":"m"})).is_err());
+    #[test]
+    fn report_intent_finding_def_requires_status_enum() {
+        let def = report_intent_finding_def();
+        assert_eq!(def.name, "report_intent_finding");
+        let props = def.input_schema["properties"].as_object().unwrap();
+        let status = props["status"].as_object().unwrap();
+        let enums: Vec<&str> = status["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert!(enums.contains(&"met"));
+        assert!(enums.contains(&"missing"));
+        assert!(enums.contains(&"breaking"));
+    }
+
+    #[test]
+    fn parse_intent_finding_status_cases_and_errors() {
+        use crate::model::IntentStatus;
+        let base = json!({"criterion": "c", "message": "m"});
+        for (s, expected) in [
+            ("met", IntentStatus::Met),
+            ("missing", IntentStatus::Missing),
+            ("deviation", IntentStatus::Deviation),
+            ("breaking", IntentStatus::Breaking),
+            ("suggestion", IntentStatus::Suggestion),
+        ] {
+            let mut input = base.clone();
+            input["status"] = json!(s);
+            let f = parse_intent_finding(&input).unwrap();
+            assert_eq!(f.intent_status, Some(expected), "status={s}");
+        }
+        let mut bad = base.clone();
+        bad["status"] = json!("unknown");
+        assert!(parse_intent_finding(&bad).is_err());
     }
 }

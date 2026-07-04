@@ -406,9 +406,15 @@ fn parse_skill(content: &str) -> (Option<String>, Option<String>, &str) {
     for line in front.lines() {
         let line = line.trim();
         if let Some(v) = line.strip_prefix("name:") {
-            name = Some(v.trim().trim_matches('"').to_string());
+            let v = v.trim().trim_matches('"');
+            if !v.is_empty() {
+                name = Some(v.to_string());
+            }
         } else if let Some(v) = line.strip_prefix("description:") {
-            desc = Some(v.trim().trim_matches('"').to_string());
+            let v = v.trim().trim_matches('"');
+            if !v.is_empty() {
+                desc = Some(v.to_string());
+            }
         }
     }
     (name, desc, body)
@@ -653,6 +659,48 @@ mod tests {
         assert_eq!(b2, "没有 frontmatter 的正文");
     }
 
+    #[test]
+    fn parse_skill_strips_bom_and_missing_name_desc() {
+        let content = "\u{feff}---\nname: \ndescription: \n---\nbody";
+        let (name, desc, body) = parse_skill(content);
+        assert_eq!(name, None);
+        assert_eq!(desc, None);
+        assert_eq!(body, "body");
+    }
+
+    #[test]
+    fn parse_skill_crlf_body() {
+        let content = "---\r\nname: x\r\n---\r\nbody line\r\n";
+        let (name, _, body) = parse_skill(content);
+        assert_eq!(name.as_deref(), Some("x"));
+        assert!(body.contains("body line"));
+    }
+
+    #[test]
+    fn builtin_language_rule_covers_all_known_languages() {
+        for lang in KNOWN_LANGUAGES {
+            let body = builtin_language_rule(lang);
+            assert!(
+                body.is_some() && !body.unwrap().trim().is_empty(),
+                "{lang} 缺少内置规则"
+            );
+        }
+    }
+
+    #[test]
+    fn changed_paths_falls_back_to_old_path() {
+        let diff = Diff {
+            files: vec![FileDiff {
+                old_path: Some("old.rs".into()),
+                new_path: None,
+                status: FileStatus::Deleted,
+                binary: false,
+                hunks: vec![],
+            }],
+        };
+        let paths = changed_paths(&diff);
+        assert_eq!(paths, vec!["old.rs"]);
+    }
     #[test]
     fn skills_dir_injects_skill_bodies() {
         let dir = std::env::temp_dir().join(format!("rg_skills_test_{}", std::process::id()));
