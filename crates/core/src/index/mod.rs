@@ -9,17 +9,21 @@
 
 mod cache;
 mod grep;
+mod repo_index;
 mod treesitter;
 
 pub use cache::CachingIndex;
 pub use grep::GrepIndex;
-pub use treesitter::{list_function_bodies, FnBody, TreeSitterIndex};
+pub use repo_index::{PersistentIndex, RepoIndex};
+pub use treesitter::{list_definitions, list_function_bodies, FnBody, TreeSitterIndex};
 
 use anyhow::Result;
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 
 /// 符号类别。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SymbolKind {
     Function,
     Type,
@@ -72,7 +76,7 @@ impl Lang {
 }
 
 /// 一个符号位置。
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SymbolLoc {
     pub path: String,
     /// 1-based 行号。

@@ -28,6 +28,7 @@ use crate::agent::{
 use crate::config::{Config, GateConfig, DEFAULT_MAX_INPUT_TOKENS};
 use crate::diff::{self, Diff, DiffMode};
 use crate::gate::{apply_gate, GateDecision};
+use crate::index::{CachingIndex, PersistentIndex, RepoIndex};
 use crate::judge::{judge_all_with_stats_limited, JudgeStats};
 use crate::llm::{build_client, estimate_tokens, LlmClient};
 use crate::model::{Dimension, Finding, Usage};
@@ -228,7 +229,37 @@ pub async fn run_review_with_client(
         None
     };
 
-    let mut ctx = ToolContext::with_treesitter_index(diff.clone(), root.clone(), new_ref.clone());
+    // 存在持久全仓索引（reviewgate index build 生成）则用之——find_definition 走完整查表；
+    // 否则回退按需 TreeSitter（优雅降级，索引非必需）。
+    let mut ctx = match RepoIndex::load(Path::new(&root)) {
+        Some(repo_idx) => {
+            if opts.verbose {
+                eprintln!(
+                    "  [index] using .reviewgate/cache/symbols.json ({} symbols)",
+                    repo_idx.symbol_count()
+                );
+            }
+            // 陈旧提示：仓库 HEAD 已变 → 索引可能过时。陈旧项已由位置校验安全回退按需，
+            // 这里只是提醒重建以恢复"快+全"。
+            let current_head = diff::git::git(&["rev-parse", "HEAD"])
+                .await
+                .ok()
+                .map(|s| s.trim().to_string());
+            if let (Some(built), Some(now)) = (repo_idx.built_at_head(), current_head.as_deref()) {
+                if built != now {
+                    eprintln!(
+                        "  [index] symbols.json was built at an older HEAD; rerun `reviewgate index build` to refresh (stale entries safely fall back to on-demand lookup)."
+                    );
+                }
+            }
+            let index = Arc::new(CachingIndex::new(Arc::new(PersistentIndex::new(
+                repo_idx,
+                root.clone(),
+            ))));
+            ToolContext::new(diff.clone(), root.clone(), new_ref.clone(), index)
+        }
+        None => ToolContext::with_treesitter_index(diff.clone(), root.clone(), new_ref.clone()),
+    };
     ctx.allow_exec = opts.exec_verify; // opt-in 沙箱执行（run_check）
     let mut reg = ToolRegistry::new();
     for t in readonly_tools() {

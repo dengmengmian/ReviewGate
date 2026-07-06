@@ -156,6 +156,51 @@ pub fn list_function_bodies(path: &str, source: &str) -> Vec<FnBody> {
     out
 }
 
+/// 列出文件里**所有定义**（函数/类型/变量）及其位置——供全仓持久索引 [`crate::index::RepoIndex`] 批量建库。
+/// 不支持的语言返回空（由调用方决定是否走词法兜底）。
+pub fn list_definitions(path: &str, source: &str) -> Vec<(String, SymbolLoc)> {
+    let Some((language, spec)) = lang_spec(path) else {
+        return Vec::new();
+    };
+    let mut parser = Parser::new();
+    if parser.set_language(&language).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+    let lines: Vec<&str> = source.lines().collect();
+    let bytes = source.as_bytes();
+    let mut out: Vec<(String, SymbolLoc)> = Vec::new();
+    let mut stack = vec![tree.root_node()];
+    while let Some(node) = stack.pop() {
+        if spec.def_kinds.contains(&node.kind()) {
+            if let Some(name) = def_name(&node, bytes) {
+                let kind = if spec.type_kinds.contains(&node.kind()) {
+                    SymbolKind::Type
+                } else if spec.var_kinds.contains(&node.kind()) {
+                    SymbolKind::Variable
+                } else {
+                    SymbolKind::Function
+                };
+                let mut one = Vec::new();
+                push(&mut one, path, &node, kind, &lines);
+                if let Some(loc) = one.pop() {
+                    out.push((name, loc));
+                }
+            }
+        }
+        let mut i = node.child_count();
+        while i > 0 {
+            i -= 1;
+            if let Some(c) = node.child(i as u32) {
+                stack.push(c);
+            }
+        }
+    }
+    out
+}
+
 /// 解析单个文件并按 mode 收集匹配。
 fn scan_ast(
     path: &str,
@@ -479,6 +524,26 @@ mod tests {
     }
 
     const RUST: &str = "// login is great\nfn login(id: u32) {\n    let s = \"login string\";\n    audit(id);\n    login(id);\n}\nstruct User {}\n";
+
+    #[test]
+    fn list_definitions_extracts_all_defs() {
+        let defs = list_definitions("a.rs", RUST);
+        let names: Vec<&str> = defs.iter().map(|(n, _)| n.as_str()).collect();
+        assert!(names.contains(&"login"), "应含函数 login，实际 {names:?}");
+        assert!(names.contains(&"User"), "应含类型 User，实际 {names:?}");
+        // login 是函数定义、在第 2 行。
+        let (_, loc) = defs.iter().find(|(n, _)| n == "login").unwrap();
+        assert_eq!(loc.kind, SymbolKind::Function);
+        assert_eq!(loc.line, 2);
+        // User 是类型定义。
+        let (_, uloc) = defs.iter().find(|(n, _)| n == "User").unwrap();
+        assert_eq!(uloc.kind, SymbolKind::Type);
+    }
+
+    #[test]
+    fn list_definitions_unsupported_lang_is_empty() {
+        assert!(list_definitions("notes.txt", "hello world").is_empty());
+    }
 
     #[test]
     fn rust_definition_precise() {

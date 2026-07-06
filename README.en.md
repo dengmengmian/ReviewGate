@@ -263,6 +263,21 @@ a3f2c1b09d4e
 
 On the next review, any finding matching that fingerprint is **folded and excluded from the gate** (no more `BLOCK`/`WARN`), yet kept as filtered and inspectable via `--show-filtered` — **never silently dropped**. The fingerprint is computed from `path + dimension + normalized code` (**excluding line numbers**), so the same false positive stays suppressed even after later edits shift its lines.
 
+### Whole-repo symbol index (`reviewgate index build`, optional)
+
+By default review follows cross-file definitions via **on-demand lookup** (tree-sitter/grep). On large repos, to make the agent follow definitions **faster and more completely**, build a whole-repo symbol index once:
+
+```bash
+reviewgate index build      # pre-scan the repo, extract all symbol definitions to .reviewgate/cache/symbols.json
+reviewgate review           # used automatically when present; find_definition becomes a complete whole-repo lookup
+```
+
+Local-only, dependency-free, and **embedding-free** (not a semantic/vector index — no data leaves the repo). **Used automatically when present, falls back to on-demand lookup when absent** — the index is not required. The index lives in `.reviewgate/cache/` (self-`.gitignore`d).
+
+**Stale-safe**: rerun `index build` to refresh after code changes, but not refreshing won't break anything — each hit is **validated against the current file** (re-reading the line and comparing it to what was indexed); entries whose definition moved or was deleted fail validation and safely fall back to on-demand lookup, and newly added symbols are misses that already fall back. So a stale index **neither causes a miss nor returns an outdated location**. Review also hints you to rebuild when the repo `HEAD` has changed.
+
+> Only **definitions** are indexed; `find_callers`/`find_references` (which must read call-site bodies anyway) still use the on-demand backend.
+
 ### Intent / Technical Review (`--intent`)
 
 Defect review does not need to know "what this change was supposed to do"; **technical review does**. Pass this change's intent (requirement/design/acceptance criteria, as a file or `-` to read stdin) and ReviewGate runs an **additional, independent holistic agent**: starting from the diff, it actively follows callers, contracts, and tests across files to judge whether the implementation completely and correctly satisfies the intent, then emits an **acceptance checklist** (each criterion marked ✓ met / ✗ missing / ✗ breaking / ⚠ deviation / • suggestion). The intent is **split into N acceptance criteria (C1..CN) checked one by one**; any criterion not individually adjudicated falls back to `? not assessed` (so the checklist is never empty), and any unassessed criterion **degrades the result to WARN** rather than a fake PASS. It is orthogonal to the always-on `business.rules`: rules are invariants, while `--intent` is the per-change "what should this one do". Zero overhead when `--intent` is not passed.

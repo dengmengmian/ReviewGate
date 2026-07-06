@@ -43,12 +43,23 @@ enum Command {
     },
     /// Self-update to the latest release (download the platform binary and replace the current executable)
     Upgrade,
+    /// Whole-repo symbol index (opt-in): speed up cross-file definition lookups during review
+    Index {
+        #[command(subcommand)]
+        cmd: IndexCmd,
+    },
 }
 
 #[derive(Subcommand)]
 enum LlmCmd {
     /// Send one minimal request to the default provider to verify connectivity
     Test,
+}
+
+#[derive(Subcommand)]
+enum IndexCmd {
+    /// Build/refresh the whole-repo definition index into .reviewgate/cache/symbols.json
+    Build,
 }
 
 /// diff 范围选择（review 与 diff 共用）。
@@ -239,7 +250,25 @@ async fn run(cli: Cli) -> anyhow::Result<i32> {
         Command::Tool { name, input } => tool_call(&name, &input).await.map(|()| 0),
         Command::Agent { dimension } => agent_run(&dimension).await.map(|()| 0),
         Command::Upgrade => upgrade().await.map(|()| 0),
+        Command::Index { cmd } => match cmd {
+            IndexCmd::Build => index_build().await.map(|()| 0),
+        },
     }
+}
+
+/// 建/刷新全仓定义索引到 `.reviewgate/cache/symbols.json`。
+async fn index_build() -> anyhow::Result<()> {
+    use reviewgate_core::index::RepoIndex;
+    let root = reviewgate_core::diff::git::repo_root().await?;
+    let root = std::path::Path::new(&root);
+    let idx = RepoIndex::build(root).await?;
+    idx.save(root)?;
+    eprintln!(
+        "Indexed {} symbols ({} definitions) into .reviewgate/cache/symbols.json",
+        idx.symbol_count(),
+        idx.definition_count()
+    );
+    Ok(())
 }
 
 /// 当前平台对应的 release 资产名（与 `install.sh` 命名一致）。
