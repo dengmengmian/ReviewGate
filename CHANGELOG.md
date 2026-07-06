@@ -7,6 +7,8 @@ Changes are listed in Chinese first, then English.
 ## [Unreleased]
 
 ### Added
+- 新增 **pre-commit 钩子清单**（根目录 `.pre-commit-hooks.yaml`）：用 [pre-commit](https://pre-commit.com/) 的项目可一行接入 ReviewGate 作为提交前闸口（`repo: .../ReviewGate` + `id: reviewgate`），高置信问题 `BLOCK` 时 `git commit` 失败。走 `language: system` 调用已安装的 `reviewgate`，不在每台机器上从源码编译。
+  Added a **pre-commit hook manifest** (repo-root `.pre-commit-hooks.yaml`): projects using [pre-commit](https://pre-commit.com/) can wire ReviewGate as a pre-commit gate in one block (`repo: .../ReviewGate` + `id: reviewgate`), failing `git commit` when a high-confidence issue `BLOCK`s. It uses `language: system` to call the installed `reviewgate` rather than compiling from source on every machine.
 - 新增**误报抑制**：团队确认某条发现是误报后，把它的**指纹**写进仓库根的 `.reviewgate/ignore`（提交后全队共享），下次审查命中同一指纹的发现会被折叠、不再计入闸口（`BLOCK`/`WARN` 降级），但仍以已过滤状态保留、可 `--show-filtered` 展开审计——**不静默删除**。指纹随每条发现打印在文本与 JSON 输出里（`fp <hash>` / `"fingerprint"`），复制即可。指纹按 `路径 + 维度 + 归一化代码` 计算、**不含行号**，所以后续改动导致行号漂移后同一误报仍被抑制。
   Added **false-positive suppression**: once a team confirms a finding is a false positive, put its **fingerprint** into the repo-root `.reviewgate/ignore` (committed, shared across the team); on the next review any finding matching that fingerprint is folded and excluded from the gate (`BLOCK`/`WARN` downgrade), yet still kept as filtered and inspectable via `--show-filtered` — **never silently dropped**. The fingerprint is printed alongside every finding in both text and JSON output (`fp <hash>` / `"fingerprint"`), ready to copy. It is computed from `path + dimension + normalized code` and **excludes line numbers**, so the same false positive stays suppressed even after later edits shift its lines.
 

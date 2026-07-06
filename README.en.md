@@ -371,6 +371,21 @@ curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integr
 
 It creates `.atomcode/skills/reviewgate/SKILL.md` + `reviewgate.toml` + `.reviewgate/rules/` templates. If you already installed claude-skill, AtomCode auto-discovers `.claude/skills/`, so no separate install is needed.
 
+### 6. pre-commit hook
+
+Projects using [pre-commit](https://pre-commit.com/) can wire ReviewGate as a pre-commit gate in one block — `git commit` fails when a high-confidence issue `BLOCK`s:
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/dengmengmian/ReviewGate
+    rev: v0.6.1
+    hooks:
+      - id: reviewgate
+```
+
+Prerequisite: install the `reviewgate` binary (see "Install" above) and set `REVIEWGATE_API_KEY` — the hook uses `language: system` and calls your installed `reviewgate` instead of compiling from source on every machine. Tweak behavior by adding `args` in your config (e.g. `args: [--dimensions, security,logic]`).
+
 ## Design Details
 
 - Custom agent orchestration and LLM client, with no provider SDK dependency. ReviewGate uses `reqwest` directly and supports OpenAI-compatible and Anthropic protocols.

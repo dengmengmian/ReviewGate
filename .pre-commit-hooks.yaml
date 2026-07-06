@@ -1,0 +1,24 @@
+# pre-commit 集成清单。其它项目可一行接入 ReviewGate 作为提交/推送前质量闸口：
+#
+#   # .pre-commit-config.yaml
+#   repos:
+#     - repo: https://github.com/dengmengmian/ReviewGate
+#       rev: v0.6.1
+#       hooks:
+#         - id: reviewgate
+#
+# 前置：先装好 `reviewgate` 二进制（install.sh / brew / cargo install）并配置
+# REVIEWGATE_API_KEY——本 hook 走 language: system，调用已安装的 reviewgate，
+# 不在每台机器上从源码编译（tree-sitter 需 C 工具链，太重）。
+- id: reviewgate
+  name: ReviewGate
+  description: AI 合并前质量闸口——审查改动，高置信问题阻断提交（exit 1）。
+  entry: reviewgate review --fail-on block
+  language: system
+  # ReviewGate 审整份 diff、自行发现改动范围，不接收 pre-commit 传入的文件名。
+  pass_filenames: false
+  # 每次提交都跑一次闸口（即使无匹配 files 过滤）。
+  always_run: true
+  # 单进程审查整份 diff，无需并行。
+  require_serial: true
+  stages: [pre-commit]

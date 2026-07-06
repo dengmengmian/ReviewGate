@@ -370,6 +370,21 @@ curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integr
 
 它生成 `.atomcode/skills/reviewgate/SKILL.md` + `reviewgate.toml` + `.reviewgate/rules/` 模板。若你已装过 claude-skill，AtomCode 会自动发现 `.claude/skills/`，无需重复安装。
 
+### 6. pre-commit 钩子
+
+用 [pre-commit](https://pre-commit.com/) 的项目可一行把 ReviewGate 接成提交前闸口——高置信问题 `BLOCK` 时 `git commit` 直接失败：
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/dengmengmian/ReviewGate
+    rev: v0.6.1
+    hooks:
+      - id: reviewgate
+```
+
+前置：先装好 `reviewgate` 二进制（见上「安装方式」）并配置 `REVIEWGATE_API_KEY`——该 hook 走 `language: system`，调用你已装的 `reviewgate`，不在每台机器上从源码编译。要改行为就在配置里加 `args`（如 `args: [--dimensions, security,logic]`）。
+
 ## 设计细节
 
 - 自研 Agent 编排与 LLM 客户端，**零 SDK 依赖**（reqwest 直连，OpenAI/Anthropic 双协议）。
