@@ -368,6 +368,16 @@ jobs:
 
   `REVIEWGATE_*` 会覆盖任意平台的自动识别；AtomGit 走 Gitee v5 风格 API（`https://api.atomgit.com/api/v5`），可用 `REVIEWGATE_API_BASE` 覆盖端点。
 
+**评论 token 从哪配**：全部走**环境变量**（不写进配置文件、不进仓库），在各自 CI 的 Secrets/Variables 里注入。优先级：通用 `REVIEWGATE_TOKEN` 覆盖 > 平台专属变量。
+
+| 平台 | 用哪个变量 | 在哪配 | token 类型 |
+|---|---|---|---|
+| GitHub | `GITHUB_TOKEN`（Actions 自动注入） | 一般无需手配，加 `permissions: pull-requests: write` | Actions 自带 token |
+| GitLab | `GITLAB_TOKEN`（回退 `CI_JOB_TOKEN`） | Settings → CI/CD → Variables（建议 masked） | Project/Personal Access Token，需 `api`/评论权限（`CI_JOB_TOKEN` 通常发不了 MR 评论） |
+| AtomGit / 任意 | `REVIEWGATE_TOKEN` | 对应平台 CI 的 Secret | 有评论权限的 access token |
+
+> 注意：评论用的 token（上表）与调 LLM 用的 `REVIEWGATE_API_KEY` 是**两个不同的密钥**，别混——前者是代码平台的 access token，后者是模型服务商的 key。
+
 ### 4. Codex（AGENTS.md，experimental）
 
 OpenAI Codex CLI 读项目根的 `AGENTS.md`。一键把 ReviewGate 用法幂等并入（不覆盖已有内容）：

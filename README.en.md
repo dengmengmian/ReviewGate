@@ -369,6 +369,16 @@ jobs:
 
   `REVIEWGATE_*` overrides auto-detection on any platform; AtomGit uses a Gitee-v5-style API (`https://api.atomgit.com/api/v5`), overridable via `REVIEWGATE_API_BASE`.
 
+**Where the comment token is configured**: all via **environment variables** (never in a config file, never committed), injected as CI Secrets/Variables. Precedence: the generic `REVIEWGATE_TOKEN` overrides the platform-specific variable.
+
+| Platform | Variable | Where to set it | Token type |
+|---|---|---|---|
+| GitHub | `GITHUB_TOKEN` (auto-injected by Actions) | Usually no manual setup; add `permissions: pull-requests: write` | Actions built-in token |
+| GitLab | `GITLAB_TOKEN` (falls back to `CI_JOB_TOKEN`) | Settings → CI/CD → Variables (mask it) | Project/Personal Access Token with `api`/comment scope (`CI_JOB_TOKEN` usually can't post MR comments) |
+| AtomGit / any | `REVIEWGATE_TOKEN` | That platform's CI Secret | Access token with comment permission |
+
+> Note: the comment token (above) and the LLM key `REVIEWGATE_API_KEY` are **two different secrets** — the former is a code-platform access token, the latter is your model provider's key.
+
 ### 4. Codex (AGENTS.md, experimental)
 
 OpenAI Codex CLI reads `AGENTS.md` at the repo root. Merge ReviewGate's usage into it idempotently (existing content is preserved):
