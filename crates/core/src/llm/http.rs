@@ -51,14 +51,23 @@ pub async fn post_json_with_retry(
             Ok(resp) => {
                 let status = resp.status();
                 retry_after = parse_retry_after(&resp);
-                let text = resp.text().await.unwrap_or_default();
-                if status.is_success() {
-                    return Ok(text);
-                }
-                if is_retryable_status(status) {
-                    last_err = Some(anyhow::anyhow!("LLM returned {status}: {text}"));
-                } else {
-                    anyhow::bail!("LLM returned {status}: {text}"); // 其它 4xx：不重试
+                // 读 body 可能失败（响应慢到超时 / 连接被重置）。绝不能 unwrap_or_default 吞成空串——
+                // 那会把瞬时错误伪装成「成功但空响应」，既不重试、又让上层报出误导的「解析失败」。
+                match resp.text().await {
+                    Ok(text) => {
+                        if status.is_success() {
+                            return Ok(text);
+                        }
+                        if is_retryable_status(status) {
+                            last_err = Some(anyhow::anyhow!("LLM returned {status}: {text}"));
+                        } else {
+                            anyhow::bail!("LLM returned {status}: {text}"); // 其它 4xx：不重试
+                        }
+                    }
+                    Err(e) => {
+                        // body 读取失败属瞬时错误 → 记录并重试，而非返回空响应。
+                        last_err = Some(anyhow::anyhow!("failed to read LLM response body: {e}"));
+                    }
                 }
             }
             Err(e) => last_err = Some(anyhow::anyhow!("failed to send LLM request: {e}")),
@@ -207,6 +216,49 @@ mod tests {
         let out = post_json_with_retry(&client, &url, &[], &body)
             .await
             .unwrap();
+        assert_eq!(out, r#"{"ok":true}"#);
+        h.abort();
+    }
+
+    /// Server that on the **first** connection sends a 200 header claiming a body but
+    /// closes immediately (truncated body → `resp.text()` errors), then replies validly.
+    async fn mock_server_broken_body_then_ok(
+        valid_body: &'static str,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = tokio::spawn(async move {
+            let mut conn = 0usize;
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = [0u8; 4096];
+                let _ = socket.read(&mut buf).await;
+                if conn == 0 {
+                    // 声称 100 字节 body 却立刻关闭 → 客户端读 body 得到不完整错误。
+                    let _ = socket
+                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\nContent-Type: application/json\r\n\r\n")
+                        .await;
+                    // socket 在此 drop → 连接关闭，body 缺失。
+                } else {
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/json\r\n\r\n{valid_body}",
+                        valid_body.len()
+                    );
+                    let _ = socket.write_all(resp.as_bytes()).await;
+                }
+                conn += 1;
+            }
+        });
+        (format!("http://127.0.0.1:{port}"), handle)
+    }
+
+    #[tokio::test]
+    async fn post_json_retries_on_body_read_error() {
+        // 读 body 失败（超时/连接重置）不该被吞成空响应，应重试并最终拿到有效响应。
+        let (url, h) = mock_server_broken_body_then_ok(r#"{"ok":true}"#).await;
+        let client = reqwest::Client::new();
+        let out = post_json_with_retry(&client, &url, &[], &json!({"p":1}))
+            .await
+            .expect("body 读取失败应重试成功，而非返回空/报错");
         assert_eq!(out, r#"{"ok":true}"#);
         h.abort();
     }
