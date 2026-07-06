@@ -508,12 +508,12 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
         OutputFormat::Text => print!("{}", render::render_text(&outcome, args.show_filtered)),
     }
 
-    // 可选：在 GitHub PR 上发摘要评论 + 行内 suggestion（作者一键应用，人把关）。
+    // 可选：在 PR/MR 上发摘要评论（GitHub/GitLab/AtomGit）+ 行内 suggestion（GitHub，一键应用，人把关）。
     if args.comment {
-        if let Err(e) = reviewgate_core::github::post_summary(&outcome).await {
+        if let Err(e) = reviewgate_core::forge::post_summary(&outcome).await {
             eprintln!("failed to post summary comment: {e}");
         }
-        if let Err(e) = reviewgate_core::github::post_inline_suggestions(&outcome).await {
+        if let Err(e) = reviewgate_core::forge::post_inline_suggestions(&outcome).await {
             eprintln!("failed to post inline comments: {e}");
         }
     }

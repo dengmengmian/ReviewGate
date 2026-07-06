@@ -352,6 +352,23 @@ jobs:
 
 > **Intent review (optional)**: with `with: { intent: "auto" }` the Action automatically feeds the **PR title + description** to `--intent`, running an "implementation vs intent" review with an acceptance checklist — exactly the class of issue defect-oriented review can't see (every hunk looks consistent, but the change doesn't do what the PR claims). The more your PR description reads like acceptance criteria, the better it works; vague titles produce "not assessed" items and downgrade to WARN, hence off by default. You can also pass a path to a fixed intent document.
 
+#### GitLab CI / AtomGit / other platforms
+
+`--comment` is not GitHub-only — it auto-detects the platform from the environment and posts the review summary to the corresponding PR/MR (inline suggestions remain GitHub-only):
+
+- **GitLab CI**: just run `reviewgate review --comment --fail-on block` in a `merge_request` pipeline. It reads `CI_PROJECT_ID` / `CI_MERGE_REQUEST_IID` / `CI_API_V4_URL`; the token comes from `GITLAB_TOKEN` (or `REVIEWGATE_TOKEN`) and needs comment permission (a project/personal access token).
+- **AtomGit and any other platform**: configure explicitly —
+
+  ```bash
+  export REVIEWGATE_FORGE=atomgit          # github | gitlab | atomgit
+  export REVIEWGATE_REPO="owner/repo"      # GitLab: numeric project id or URL-encoded path
+  export REVIEWGATE_PR=42                  # PR/MR number
+  export REVIEWGATE_TOKEN="$FORGE_TOKEN"   # token with comment permission
+  reviewgate review --comment --fail-on block
+  ```
+
+  `REVIEWGATE_*` overrides auto-detection on any platform; AtomGit uses a Gitee-v5-style API (`https://api.atomgit.com/api/v5`), overridable via `REVIEWGATE_API_BASE`.
+
 ### 4. Codex (AGENTS.md, experimental)
 
 OpenAI Codex CLI reads `AGENTS.md` at the repo root. Merge ReviewGate's usage into it idempotently (existing content is preserved):

@@ -351,6 +351,23 @@ jobs:
 
 > **意图评审（可选）**：加 `with: { intent: "auto" }` 后，Action 会自动把 **PR 标题+描述**作为 `--intent` 做「实现 vs 意图」评审并输出验收清单——正好覆盖「每个 hunk 都自洽、但整体没做到 PR 声称的事」这类缺陷向审查抓不到的问题。PR 描述写得越像验收标准效果越好；标题含糊会产生「未核对」项并降级 WARN，故默认关闭。也可传路径指向固定意图文档。
 
+#### GitLab CI / AtomGit / 其它平台
+
+`--comment` 不只 GitHub——它按环境自动识别平台，把审查摘要发到对应 PR/MR（行内 suggestion 目前仍仅 GitHub）：
+
+- **GitLab CI**：在 `merge_request` 流水线里跑 `reviewgate review --comment --fail-on block` 即可。自动读 `CI_PROJECT_ID` / `CI_MERGE_REQUEST_IID` / `CI_API_V4_URL`；token 用 `GITLAB_TOKEN`（或 `REVIEWGATE_TOKEN`），需有评论权限（project/personal access token）。
+- **AtomGit 及任意平台**：显式指定——
+
+  ```bash
+  export REVIEWGATE_FORGE=atomgit          # github | gitlab | atomgit
+  export REVIEWGATE_REPO="owner/repo"      # GitLab 用数字 project id 或 URL 编码 path
+  export REVIEWGATE_PR=42                  # PR/MR 号
+  export REVIEWGATE_TOKEN="$FORGE_TOKEN"   # 有评论权限的 token
+  reviewgate review --comment --fail-on block
+  ```
+
+  `REVIEWGATE_*` 会覆盖任意平台的自动识别；AtomGit 走 Gitee v5 风格 API（`https://api.atomgit.com/api/v5`），可用 `REVIEWGATE_API_BASE` 覆盖端点。
+
 ### 4. Codex（AGENTS.md，experimental）
 
 OpenAI Codex CLI 读项目根的 `AGENTS.md`。一键把 ReviewGate 用法幂等并入（不覆盖已有内容）：
