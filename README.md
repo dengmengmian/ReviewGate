@@ -228,6 +228,7 @@ reviewgate review --no-judge             # 更快，误报略多
 reviewgate review --show-filtered        # 展开被过滤的低置信项
 reviewgate review --timeout 120          # 单维度墙钟上限（秒）
 reviewgate review --samples 3            # 每维度多采样取并集
+reviewgate review --incremental          # 增量：只重审 diff 变化的文件，未变文件复用缓存（迭代 PR 省钱，opt-in）
 reviewgate review --fix                  # 逐条 y/N 确认后应用建议代码（作用于本次 review 覆盖的改动）
 reviewgate review --fix-all              # 不逐条确认，直接全部应用（可非交互，供 CI/脚本）
 reviewgate review --fix-all --fix-branch # 可叠加 --fix-branch（对 --fix / --fix-all 都适用）：先新建分支再改，保持原分支干净，可选跟分支名

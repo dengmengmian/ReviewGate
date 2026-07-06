@@ -6,6 +6,7 @@
 mod aggregate;
 mod context;
 mod dedup;
+mod incremental;
 mod intent;
 mod prefetch;
 mod rules;
@@ -31,6 +32,7 @@ use crate::judge::{judge_all_with_stats_limited, JudgeStats};
 use crate::llm::{build_client, estimate_tokens, LlmClient};
 use crate::model::{Dimension, Finding, Usage};
 use crate::relocate::relocate_all;
+use crate::review::incremental::{review_signature, IncrementalCache};
 use crate::review::suppress::{apply_suppression, load_ignore};
 use crate::tool::{readonly_tools, ToolContext, ToolRegistry};
 use anyhow::Result;
@@ -65,6 +67,9 @@ pub struct ReviewOptions {
     pub intent: Option<String>,
     /// 实时进度沉淀（CLI 据此单行渲染"在跑+干到哪了"）。None = 不记录。
     pub progress: Option<std::sync::Arc<crate::progress::Progress>>,
+    /// 增量复审（opt-in，默认 false）：按文件缓存发现，只重审 hunk 变化的文件。
+    /// 拿覆盖度换成本——见 LIMITATIONS。off 时零行为变化。
+    pub incremental: bool,
 }
 
 impl ReviewOptions {
@@ -82,6 +87,7 @@ impl ReviewOptions {
             fanout_concurrency: 6,
             intent: None,
             progress: None,
+            incremental: false,
         }
     }
 
@@ -176,7 +182,7 @@ pub async fn run_review_with_client(
             .unwrap_or(0)
         + 256;
     let plan_budget = budget.saturating_sub(overhead).max(512);
-    let units = plan_units(&diff, plan_budget);
+    let mut units = plan_units(&diff, plan_budget);
     // 多单元（大 PR）本就庞大：不再叠采样，避免 单元×维度×样本 的成本放大。
     // 多采样只在单单元（正常 PR）上用于提升 flaky 漏报（如 SSRF）的召回稳定性。
     let samples = if units.len() > 1 {
@@ -190,6 +196,37 @@ pub async fn run_review_with_client(
             units.len()
         );
     }
+
+    // 增量复审（opt-in）：签名一致且文件 diff 逐字节不变的文件复用上轮发现，
+    // 只把变化文件留给 fan-out。签名放在 units/samples 之后算（samples 受单元数影响）。
+    // 命中项存 `incremental_reused`，闸口前并回；缓存在本轮重审文件评完后更新。
+    let incremental = if opts.incremental {
+        let sig = review_signature(
+            &dims,
+            client.model(),
+            &rules_body,
+            opts.judge,
+            samples,
+            opts.exec_verify,
+        );
+        let cache = IncrementalCache::load(Path::new(&root));
+        let (todo, reused) = incremental::partition(&diff, &sig, &cache);
+        let todo_set: std::collections::HashSet<usize> = todo.iter().copied().collect();
+        for u in &mut units {
+            u.files.retain(|i| todo_set.contains(i));
+        }
+        units.retain(|u| !u.files.is_empty());
+        if opts.verbose {
+            eprintln!(
+                "  [incremental] {} file(s) reused from cache, {} to review",
+                diff.files.len() - todo.len(),
+                todo.len()
+            );
+        }
+        Some((todo, reused, cache, sig))
+    } else {
+        None
+    };
 
     let mut ctx = ToolContext::with_treesitter_index(diff.clone(), root.clone(), new_ref.clone());
     ctx.allow_exec = opts.exec_verify; // opt-in 沙箱执行（run_check）
@@ -296,22 +333,9 @@ pub async fn run_review_with_client(
         );
     }
 
-    // 行号校验/兜底（模型多数已直接报标注行号）→ 跨维度去重 → 应用仓库 ignore 抑制。
-    // 抑制项在闸口前被拆出，避免误报再次 BLOCK；闸口后再并回主列表供 --show-filtered 展示。
+    // 行号校验/兜底（模型多数已直接报标注行号）→ 跨维度去重。
     relocate_all(&mut findings, Path::new(&root), &new_ref, &diff).await;
     findings = dedupe(findings);
-
-    let ignored = load_ignore(Path::new(&root));
-    let mut suppressed: Vec<Finding> = Vec::new();
-    if !ignored.is_empty() {
-        (findings, suppressed) = apply_suppression(findings, &ignored);
-        if opts.verbose && !suppressed.is_empty() {
-            eprintln!(
-                "  [suppress] {} finding(s) matched .reviewgate/ignore",
-                suppressed.len()
-            );
-        }
-    }
 
     // 意图 / 技术评审结果（已与 fan-out 并发跑完，见上）并入主结果：
     // 「问题类」verdict（missing/deviation/breaking/suggestion）过 Judge / 闸口；
@@ -371,6 +395,34 @@ pub async fn run_review_with_client(
     // 跨维度交叉印证加分：多个维度独立指向同一处 → 更可能是真问题。
     // 放在 Judge 之后（Judge 会重写置信度），让该信号能影响闸口与排序。
     boost_cross_dimension_agreement(&mut findings);
+
+    // 增量复审收尾：把本轮重审文件的新发现写回缓存（判后-抑制前的终态），
+    // 再并回上轮命中的缓存发现。缓存存取失败不影响审查（best-effort）。
+    if let Some((todo, reused, mut cache, sig)) = incremental {
+        incremental::store(&mut cache, &diff, &todo, &findings, &sig);
+        if let Err(e) = cache.save(Path::new(&root)) {
+            if opts.verbose {
+                eprintln!("  [incremental] cache save failed (ignored): {e}");
+            }
+        }
+        findings.extend(reused);
+    }
+
+    // 应用仓库 ignore 抑制：放在 judge+boost 之后、闸口之前。抑制项被拆出、
+    // 闸口后再并回供 --show-filtered 展示——绝不让确认过的误报再次 BLOCK。
+    // 抑制状态**不进增量缓存**（缓存的是判后-抑制前发现），故每轮按当前 ignore 重新判定，
+    // 从 ignore 删除条目后即使文件未变、发现也会照常恢复。
+    let ignored = load_ignore(Path::new(&root));
+    let mut suppressed: Vec<Finding> = Vec::new();
+    if !ignored.is_empty() {
+        (findings, suppressed) = apply_suppression(findings, &ignored);
+        if opts.verbose && !suppressed.is_empty() {
+            eprintln!(
+                "  [suppress] {} finding(s) matched .reviewgate/ignore",
+                suppressed.len()
+            );
+        }
+    }
 
     // 闸口：标记过滤项 + 判定。复合排序：未过滤优先 → 严重度降 → 置信度降。
     let mut decision = apply_gate(&mut findings, &opts.gate);

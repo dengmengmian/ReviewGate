@@ -207,6 +207,10 @@ struct ReviewArgs {
     /// Use this commit's message as the intent (only in --commit mode; --intent takes precedence if both are given).
     #[arg(long)]
     intent_from_commit: bool,
+    /// Incremental review (opt-in): cache findings per file and only re-review files whose diff changed since the last run.
+    /// Trades coverage for cost/latency on iterative PRs — see docs/LIMITATIONS.md. Cache lives in .reviewgate/cache/ (self-ignored).
+    #[arg(long)]
+    incremental: bool,
 }
 
 #[tokio::main]
@@ -436,6 +440,7 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     opts.judge_concurrency = args.judge_concurrency.max(1);
     opts.fanout_concurrency = args.fanout_concurrency.max(1);
     opts.exec_verify = args.exec_verify;
+    opts.incremental = args.incremental;
     opts.intent = resolve_intent(args)?;
     if opts.intent.is_some() {
         eprintln!("  + Intent review: intent loaded; running the implementation-vs-intent pass.");
@@ -626,6 +631,7 @@ mod tests {
             exec_verify: false,
             intent: None,
             intent_from_commit: false,
+            incremental: false,
         }
     }
 

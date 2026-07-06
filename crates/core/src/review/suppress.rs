@@ -22,7 +22,7 @@ pub fn fingerprint(f: &Finding) -> String {
         .collect::<Vec<_>>()
         .join(" ");
     let input = format!("{}\0{}\0{}", f.path, f.dimension.as_str(), code);
-    format!("{:016x}", fnv1a_64(input.as_bytes()))[..12].to_string()
+    short_hash(input.as_bytes())
 }
 
 /// 加载仓库根的 `.reviewgate/ignore` 抑制指纹集。
@@ -71,14 +71,15 @@ pub fn apply_suppression(
     (kept, suppressed)
 }
 
-/// FNV-1a 64 位哈希。跨 Rust 版本/平台稳定，故可用于提交进仓库的 ignore 指纹。
-fn fnv1a_64(bytes: &[u8]) -> u64 {
+/// 内容寻址短哈希：FNV-1a 64 位取前 12 位 hex。跨 Rust 版本/平台稳定，
+/// 故可用于提交进仓库的 ignore 指纹与增量缓存键（`DefaultHasher` 不保证稳定）。
+pub(crate) fn short_hash(bytes: &[u8]) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for &b in bytes {
         hash ^= b as u64;
         hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
     }
-    hash
+    format!("{hash:016x}")[..12].to_string()
 }
 
 #[cfg(test)]

@@ -226,6 +226,7 @@ reviewgate review --no-judge
 reviewgate review --show-filtered
 reviewgate review --timeout 120
 reviewgate review --samples 3
+reviewgate review --incremental           # incremental: only re-review files whose diff changed, reuse cache for the rest (saves cost on iterative PRs, opt-in)
 reviewgate review --fix                   # apply suggestions after per-finding y/N (acts on whatever this review covers)
 reviewgate review --fix-all               # apply all fixes without per-finding prompts (works non-interactively, for CI/scripts)
 reviewgate review --fix-all --fix-branch  # add --fix-branch (works with --fix or --fix-all): apply on a new branch (optionally named), keeping the current one clean
