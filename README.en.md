@@ -422,7 +422,7 @@ Projects using [pre-commit](https://pre-commit.com/) can wire ReviewGate as a pr
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/dengmengmian/ReviewGate
-    rev: v0.7.0
+    rev: v0.7.1
     hooks:
       - id: reviewgate
 ```

@@ -421,7 +421,7 @@ curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integr
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/dengmengmian/ReviewGate
-    rev: v0.7.0
+    rev: v0.7.1
     hooks:
       - id: reviewgate
 ```

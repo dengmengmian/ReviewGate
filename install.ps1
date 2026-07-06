@@ -13,15 +13,34 @@ $arch = if ([Environment]::Is64BitOperatingSystem) { "x64" } else { throw "仅�
 $asset = "reviewgate-windows-$arch.exe"
 
 if ($version -eq "latest") {
-    $url = "https://github.com/$repo/releases/latest/download/$asset"
+    $baseUrl = "https://github.com/$repo/releases/latest/download"
 } else {
-    $url = "https://github.com/$repo/releases/download/$version/$asset"
+    $baseUrl = "https://github.com/$repo/releases/download/$version"
 }
+$url = "$baseUrl/$asset"
+$sumUrl = "$baseUrl/sha256sum.txt"
 
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 $dest = Join-Path $installDir "reviewgate.exe"
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) "reviewgate-$PID.exe"
+$sumTmp = Join-Path ([System.IO.Path]::GetTempPath()) "reviewgate-sha256sum-$PID.txt"
 Write-Host "下载 $url …"
-Invoke-WebRequest -Uri $url -OutFile $dest
+try {
+    Invoke-WebRequest -Uri $url -OutFile $tmp
+    Invoke-WebRequest -Uri $sumUrl -OutFile $sumTmp
+    $line = Get-Content $sumTmp | Where-Object { $_ -match "^\s*([0-9a-fA-F]{64})\s+$([regex]::Escape($asset))\s*$" } | Select-Object -First 1
+    if (-not $line) {
+        throw "sha256sum.txt 中找不到 $asset"
+    }
+    $expected = ([regex]::Match($line, "^\s*([0-9a-fA-F]{64})").Groups[1].Value).ToLowerInvariant()
+    $actual = (Get-FileHash -Algorithm SHA256 $tmp).Hash.ToLowerInvariant()
+    if ($actual -ne $expected) {
+        throw "checksum mismatch for ${asset}: expected $expected, got $actual"
+    }
+    Move-Item -Force $tmp $dest
+} finally {
+    Remove-Item -ErrorAction SilentlyContinue $tmp, $sumTmp
+}
 
 # 确保 installDir 在用户 PATH 中
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")

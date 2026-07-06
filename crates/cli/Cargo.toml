@@ -17,7 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 # version 供 crates.io 发布解析;本地构建仍走 path
-reviewgate-core = { path = "../core", version = "0.7.0" }
+reviewgate-core = { path = "../core", version = "0.7.1" }
 tokio.workspace = true
 clap.workspace = true
 anyhow.workspace = true
@@ -25,3 +25,4 @@ serde_json.workspace = true
 serde = { workspace = true, features = ["derive"] }
 reqwest.workspace = true
 self-replace = "1"
+sha2 = "0.10"

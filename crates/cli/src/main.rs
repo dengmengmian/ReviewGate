@@ -292,8 +292,9 @@ fn release_asset(os: &str, arch: &str) -> anyhow::Result<String> {
 async fn upgrade() -> anyhow::Result<()> {
     use anyhow::Context;
     let asset = release_asset(std::env::consts::OS, std::env::consts::ARCH)?;
-    let url =
-        format!("https://github.com/dengmengmian/ReviewGate/releases/latest/download/{asset}");
+    let base = "https://github.com/dengmengmian/ReviewGate/releases/latest/download";
+    let url = format!("{base}/{asset}");
+    let sums_url = format!("{base}/sha256sum.txt");
     eprintln!("Downloading latest release: {asset} ...");
     let resp = reqwest::Client::new()
         .get(&url)
@@ -304,6 +305,19 @@ async fn upgrade() -> anyhow::Result<()> {
         anyhow::bail!("download failed: HTTP {} ({url})", resp.status());
     }
     let bytes = resp.bytes().await?;
+    let sums = reqwest::Client::new()
+        .get(&sums_url)
+        .send()
+        .await
+        .with_context(|| format!("checksum download failed: {sums_url}"))?;
+    if !sums.status().is_success() {
+        anyhow::bail!(
+            "checksum download failed: HTTP {} ({sums_url})",
+            sums.status()
+        );
+    }
+    let sums = sums.text().await.context("failed to read checksum file")?;
+    verify_release_checksum(&bytes, &sums, &asset)?;
 
     // 写临时文件 → 自替换当前可执行文件（self_replace 处理 Windows 运行中 exe 的替换）。
     let tmp = std::env::temp_dir().join(format!("reviewgate-upgrade-{}", std::process::id()));
@@ -324,6 +338,30 @@ async fn upgrade() -> anyhow::Result<()> {
         }
     }
     eprintln!("OK Upgraded.");
+    Ok(())
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(bytes);
+    format!("{:x}", h.finalize())
+}
+
+fn verify_release_checksum(bytes: &[u8], checksums: &str, asset: &str) -> anyhow::Result<()> {
+    let expected = checksums.lines().find_map(|line| {
+        let mut parts = line.split_whitespace();
+        let hash = parts.next()?;
+        let name = parts.next()?;
+        (name == asset).then_some(hash)
+    });
+    let Some(expected) = expected else {
+        anyhow::bail!("checksum not found for release asset `{asset}`");
+    };
+    let actual = sha256_hex(bytes);
+    if !expected.eq_ignore_ascii_case(&actual) {
+        anyhow::bail!("checksum mismatch for `{asset}`: expected {expected}, got {actual}");
+    }
     Ok(())
 }
 
@@ -830,6 +868,38 @@ mod tests {
         // 命名须与 install.sh / release.yml 的资产名一致。
         assert!(release_asset("freebsd", "x86_64").is_err());
         assert!(release_asset("linux", "riscv64").is_err());
+    }
+
+    #[test]
+    fn release_checksum_verifies_named_asset() {
+        let bytes = b"reviewgate-test-binary";
+        let good = super::sha256_hex(bytes);
+        let sums = format!(
+            "{}  reviewgate-linux-x64\n{}  reviewgate-darwin-arm64\n",
+            good,
+            "0".repeat(64)
+        );
+
+        super::verify_release_checksum(bytes, &sums, "reviewgate-linux-x64").unwrap();
+    }
+
+    #[test]
+    fn release_checksum_rejects_missing_or_mismatched_asset() {
+        let bytes = b"reviewgate-test-binary";
+        let bad = "0".repeat(64);
+        let err = super::verify_release_checksum(
+            bytes,
+            &format!("{bad}  reviewgate-linux-x64\n"),
+            "reviewgate-linux-x64",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("checksum mismatch"), "{err}");
+
+        let err = super::verify_release_checksum(bytes, "", "reviewgate-linux-x64")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("checksum not found"), "{err}");
     }
 
     #[test]

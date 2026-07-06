@@ -55,24 +55,24 @@ runs:
         PR_BODY: ${{ github.event.pull_request.body }}
         INTENT_MODE: ${{ inputs.intent }}
       run: |
-        ARGS="--dimensions ${{ inputs.dimensions }} --fail-on ${{ inputs.fail-on }} --timeout ${{ inputs.timeout }}"
-        if [ "${{ inputs.comment }}" = "true" ]; then ARGS="$ARGS --comment"; fi
+        ARGS=(--dimensions "${{ inputs.dimensions }}" --fail-on "${{ inputs.fail-on }}" --timeout "${{ inputs.timeout }}")
+        if [ "${{ inputs.comment }}" = "true" ]; then ARGS+=(--comment); fi
         # PR 事件：CI 检出的是已提交的合并状态、工作区无未提交改动；
         # 必须按 base...head 范围审，否则默认的"工作区 diff"为空、审不到任何东西。
         BASE="${{ github.event.pull_request.base.sha }}"
         HEAD="${{ github.event.pull_request.head.sha }}"
         if [ -n "$BASE" ] && [ -n "$HEAD" ]; then
-          ARGS="$ARGS --from $BASE --to $HEAD"
+          ARGS+=(--from "$BASE" --to "$HEAD")
         fi
         # 意图评审：auto = 用 PR 标题+描述；off = 关闭；其它值当作意图文档路径。
         case "$INTENT_MODE" in
           auto)
             if [ -n "$BASE" ] && [ -n "$PR_TITLE" ]; then
               printf '%s\n\n%s\n' "$PR_TITLE" "$PR_BODY" > "$RUNNER_TEMP/reviewgate-intent.md"
-              ARGS="$ARGS --intent $RUNNER_TEMP/reviewgate-intent.md"
+              ARGS+=(--intent "$RUNNER_TEMP/reviewgate-intent.md")
             fi
             ;;
           off|"") ;;
-          *) ARGS="$ARGS --intent $INTENT_MODE" ;;
+          *) ARGS+=(--intent "$INTENT_MODE") ;;
         esac
-        reviewgate review $ARGS
+        reviewgate review "${ARGS[@]}"

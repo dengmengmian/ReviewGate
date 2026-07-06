@@ -6,6 +6,14 @@ Changes are listed in Chinese first, then English.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-06
+
+### Fixed
+- 安装与自更新现在会下载 release 附带的 `sha256sum.txt`，并在替换二进制前校验当前平台资产的 SHA-256；校验文件缺失、资产缺失或 hash 不匹配时直接失败，不再执行未校验的下载产物。
+  Install and self-update now download the release `sha256sum.txt` and verify the current platform asset's SHA-256 before replacing the binary; missing checksum files, missing asset entries, or hash mismatches fail closed instead of executing an unverified download.
+- GitHub Action 的 `reviewgate review` 参数从字符串拼接改为 bash array 传参，避免包含空格的 intent 路径或误配置输入被 shell 重新拆词成额外 CLI 参数。
+  The GitHub Action now invokes `reviewgate review` with a bash array instead of string-concatenated arguments, preventing paths with spaces or misconfigured inputs from being re-split by the shell into extra CLI arguments.
+
 ## [0.7.0] - 2026-07-06
 
 ### Fixed
