@@ -9,10 +9,12 @@ mod dedup;
 mod intent;
 mod prefetch;
 mod rules;
+mod suppress;
 mod units;
 
 pub use dedup::dedupe;
 pub use rules::{build_rules_section, build_rules_section_with_warnings};
+pub use suppress::fingerprint;
 pub use units::{plan_units, ReviewUnit};
 
 use aggregate::{boost_cross_dimension_agreement, sort_findings};
@@ -29,6 +31,7 @@ use crate::judge::{judge_all_with_stats_limited, JudgeStats};
 use crate::llm::{build_client, estimate_tokens, LlmClient};
 use crate::model::{Dimension, Finding, Usage};
 use crate::relocate::relocate_all;
+use crate::review::suppress::{apply_suppression, load_ignore};
 use crate::tool::{readonly_tools, ToolContext, ToolRegistry};
 use anyhow::Result;
 use serde::Serialize;
@@ -293,9 +296,22 @@ pub async fn run_review_with_client(
         );
     }
 
-    // 行号校验/兜底（模型多数已直接报标注行号）→ 跨维度去重。
+    // 行号校验/兜底（模型多数已直接报标注行号）→ 跨维度去重 → 应用仓库 ignore 抑制。
+    // 抑制项在闸口前被拆出，避免误报再次 BLOCK；闸口后再并回主列表供 --show-filtered 展示。
     relocate_all(&mut findings, Path::new(&root), &new_ref, &diff).await;
     findings = dedupe(findings);
+
+    let ignored = load_ignore(Path::new(&root));
+    let mut suppressed: Vec<Finding> = Vec::new();
+    if !ignored.is_empty() {
+        (findings, suppressed) = apply_suppression(findings, &ignored);
+        if opts.verbose && !suppressed.is_empty() {
+            eprintln!(
+                "  [suppress] {} finding(s) matched .reviewgate/ignore",
+                suppressed.len()
+            );
+        }
+    }
 
     // 意图 / 技术评审结果（已与 fan-out 并发跑完，见上）并入主结果：
     // 「问题类」verdict（missing/deviation/breaking/suggestion）过 Judge / 闸口；
@@ -362,8 +378,10 @@ pub async fn run_review_with_client(
     if incomplete && opts.gate.fail_on_incomplete && decision == GateDecision::Pass {
         decision = GateDecision::Warn;
     }
-    // 已满足(met)的验收项在闸口之后并入：它们是信息项，只供验收清单展示，不影响判定。
+    // 已满足(met)的验收项和已抑制项在闸口之后并入：
+    // 它们是信息项，只供验收清单 / --show-filtered 展示，不影响判定。
     findings.append(&mut intent_met);
+    findings.append(&mut suppressed);
     sort_findings(&mut findings);
 
     let mut usage = agent_stats.usage.clone();

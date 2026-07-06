@@ -241,6 +241,27 @@ reviewgate review --commit <sha> --intent-from-commit
 
 </details>
 
+### Suppressing false positives (`.reviewgate/ignore`)
+
+False positives are the number-one reason teams abandon a review tool. ReviewGate handles them with **fingerprint suppression**: nothing is hidden silently — instead the team records confirmed false positives **explicitly**, commits them, and shares them across the repo.
+
+Every finding carries a stable **fingerprint** in both text and JSON output:
+
+```text
+  1  handler.rs:3                       security · high · 100%
+     SQL injection: ...
+     fp a3f2c1b09d4e          ← copy this
+```
+
+Once you've confirmed a false positive, add its fingerprint to the repo-root `.reviewgate/ignore` (committed, effective for the whole team):
+
+```text
+# handler.rs uses a constant string, confirmed not injectable — alice 2026-07-06
+a3f2c1b09d4e
+```
+
+On the next review, any finding matching that fingerprint is **folded and excluded from the gate** (no more `BLOCK`/`WARN`), yet kept as filtered and inspectable via `--show-filtered` — **never silently dropped**. The fingerprint is computed from `path + dimension + normalized code` (**excluding line numbers**), so the same false positive stays suppressed even after later edits shift its lines.
+
 ### Intent / Technical Review (`--intent`)
 
 Defect review does not need to know "what this change was supposed to do"; **technical review does**. Pass this change's intent (requirement/design/acceptance criteria, as a file or `-` to read stdin) and ReviewGate runs an **additional, independent holistic agent**: starting from the diff, it actively follows callers, contracts, and tests across files to judge whether the implementation completely and correctly satisfies the intent, then emits an **acceptance checklist** (each criterion marked ✓ met / ✗ missing / ✗ breaking / ⚠ deviation / • suggestion). The intent is **split into N acceptance criteria (C1..CN) checked one by one**; any criterion not individually adjudicated falls back to `? not assessed` (so the checklist is never empty), and any unassessed criterion **degrades the result to WARN** rather than a fake PASS. It is orthogonal to the always-on `business.rules`: rules are invariants, while `--intent` is the per-change "what should this one do". Zero overhead when `--intent` is not passed.

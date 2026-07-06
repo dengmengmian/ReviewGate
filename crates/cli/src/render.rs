@@ -21,6 +21,8 @@ struct Summary {
 /// 单独定义（而非直接序列化 Finding）以固定一个对人友好的字段顺序。
 #[derive(Serialize)]
 struct FindingView<'a> {
+    /// 稳定指纹：复制进 `.reviewgate/ignore` 即可抑制该误报（不含行号，抗漂移）。
+    fingerprint: String,
     path: &'a str,
     start_line: u32,
     end_line: u32,
@@ -49,6 +51,7 @@ struct FindingView<'a> {
 impl<'a> From<&'a Finding> for FindingView<'a> {
     fn from(f: &'a Finding) -> Self {
         FindingView {
+            fingerprint: reviewgate_core::review::fingerprint(f),
             path: &f.path,
             start_line: f.start_line,
             end_line: f.end_line,
@@ -603,6 +606,12 @@ fn render_finding(p: &Palette, f: &Finding, num: usize, t: Lang) -> String {
         }
     }
 
+    // 指纹：复制进 `.reviewgate/ignore` 即可抑制这条误报（不含行号，抗漂移）。
+    s.push_str(&p.dim(&format!(
+        "\n     fp {}\n",
+        reviewgate_core::review::fingerprint(f)
+    )));
+
     s
 }
 
@@ -612,6 +621,25 @@ mod tests {
     use reviewgate_core::gate::GateDecision;
     use reviewgate_core::model::{Dimension, Usage};
     use reviewgate_core::review::ReviewWarning;
+
+    #[test]
+    fn render_text_shows_fingerprint_for_copy() {
+        let f = finding(Severity::High, false);
+        let fp = reviewgate_core::review::fingerprint(&f);
+        let outcome = ReviewOutcome {
+            findings: vec![f],
+            files_changed: 1,
+            decision: GateDecision::Block,
+            incomplete: false,
+            warnings: vec![],
+            usage: Usage::default(),
+        };
+        let text = render_text(&outcome, false);
+        assert!(
+            text.contains(&fp),
+            "文本输出应打印指纹供复制进 .reviewgate/ignore，实际:\n{text}"
+        );
+    }
 
     #[test]
     fn sanitize_strips_escapes_keeps_newline() {
@@ -797,6 +825,10 @@ mod tests {
         assert!(json.contains("\"path\": \"src/auth.rs\""));
         assert!(json.contains("\"start_line\": 42"));
         assert!(json.contains("\"dimension\": \"security\""));
+        // 指纹随每条 finding 输出，供用户复制进 .reviewgate/ignore 抑制误报。
+        let fp = reviewgate_core::review::fingerprint(&finding(Severity::High, false));
+        assert_eq!(fp.len(), 12);
+        assert!(json.contains(&format!("\"fingerprint\": \"{fp}\"")));
     }
 
     #[test]
