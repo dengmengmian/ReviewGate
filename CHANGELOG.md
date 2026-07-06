@@ -9,6 +9,8 @@ Changes are listed in Chinese first, then English.
 ## [0.6.1] - 2026-07-04
 
 ### Fixed
+- 去重：同一处问题被不同维度锚定在**相邻但不同的行**时（如 logic 报 423-429、ai_smell 报 426-429），现在会正确合并为一条，不再重复上报。此前仅按精确起始行分组会漏合，导致同一缺陷显示两次、并虚增发现数。合并要求行区间重叠**且**代码内容重合，避免误合相邻的不同问题。
+  Deduplication: when the same issue is anchored by different dimensions on **adjacent-but-different lines** (e.g. logic at 423-429, ai_smell at 426-429), the findings are now correctly merged into one instead of double-reported. The previous exact-start-line grouping missed these, showing the same defect twice and inflating the finding count. Merging requires both overlapping line ranges **and** shared code content, so distinct adjacent issues are not wrongly merged.
 - skill/规则的 frontmatter 里 `name:` 或 `description:` 留空时，不再被解析成空字符串，而是正确视为「未设置」——避免空标题/空描述被当成有效值注入评审提示。
   When a skill/rule frontmatter leaves `name:` or `description:` empty, it is no longer parsed as an empty string but correctly treated as unset — preventing blank titles/descriptions from being injected into review prompts as if valid.
 
