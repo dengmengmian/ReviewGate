@@ -6,6 +6,8 @@ Changes are listed in Chinese first, then English.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-06
+
 ### Fixed
 - LLM 客户端:响应**读取 body 失败**（慢响应超时、连接被重置）此前被 `unwrap_or_default` 吞成空字符串，导致——① 瞬时错误**不重试**、直接判该维度失败；② 上层报出误导的「failed to parse LLM response（空）」，掩盖真正原因（网络/超时，而非模型输出坏）。现在读 body 失败被当作可重试错误正常重试，并给出清晰错误信息。对**推理型模型**（响应较慢、后期大上下文轮次更慢）尤其明显——此前会零星出现「维度未审完、0 发现」，实为 body 读取瞬时失败被误吞。
   LLM client: a **failure to read the response body** (slow-response timeout, connection reset) was previously swallowed into an empty string by `unwrap_or_default`, which — (1) skipped retry and failed that dimension outright, and (2) surfaced a misleading "failed to parse LLM response (empty)" that hid the real cause (network/timeout, not bad model output). Body-read failures are now treated as retryable and retried, with a clear error message. This especially affected **reasoning models** (slower responses, slower still on large later-round contexts), which previously showed sporadic "dimension incomplete, 0 findings" that were actually swallowed transient body-read failures.

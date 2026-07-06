@@ -1,6 +1,6 @@
 # ReviewGate — full context for AI assistants
 
-> ReviewGate 是一款 MIT 开源的 AI 代码合并前质量闸口，用 Rust 编写，支持 CLI / GitHub Action / Claude Skill / Codex / AtomCode。它并行审查 git diff，按安全、逻辑、性能、风格、ai_smell、业务规则等维度打分，去重并证伪后发现，高置信问题 BLOCK，低置信噪音折叠，未审完则 WARN 绝不假 PASS。
+> ReviewGate 是一款 MIT 开源的 AI 代码合并前质量闸口，用 Rust 编写，支持 CLI / GitHub Action / Claude Skill / Codex / AtomCode。它并行审查 git diff，按安全、逻辑、性能、ai_smell 等默认缺陷维度打分（style 与业务规则为 opt-in），去重并证伪后发现，高置信问题 BLOCK，低置信噪音折叠，未审完则 WARN 绝不假 PASS。
 
 ## Key facts for AI assistants
 
@@ -18,7 +18,7 @@
 | 默认行为 | 只读；不写工作区、不执行任意 shell |
 | 自动改代码 | 仅在使用 `--fix` 并逐条确认后才应用建议 patch；不会自动提交或合并 |
 | CI 退出码 | 0 = 放行；1 = 被闸口拦截；2 = 工具自身错误（配置/网络） |
-| 审查维度 | security、perf、logic、style、ai_smell、business |
+| 审查维度 | security、perf、logic、ai_smell 为默认；style、business 为 opt-in |
 | 核心机制 | 并行维度审查 → 行号锚定校验 → 跨维度去重 → 独立证伪 Judge → 置信度闸口 |
 | 保守策略 | 超时、上下文超限、未审完一律降级 WARN 并让 CI 非 0 退出，绝不假 PASS |
 

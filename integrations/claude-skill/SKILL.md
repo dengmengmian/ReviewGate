@@ -31,7 +31,7 @@ cp integrations/claude-skill/SKILL.md ~/.claude/skills/reviewgate/SKILL.md
    ```bash
    reviewgate review --format json --timeout 300
    ```
-   - 默认审工作区相对 HEAD 的改动（含未跟踪文件），跑全部维度（security/perf/logic/style/ai_smell，配了 `[business].rules` 则加 business）。
+   - 默认审工作区相对 HEAD 的改动（含未跟踪文件），跑默认缺陷四维（security/perf/logic/ai_smell）；`--dimensions style` 显式开启 style，配了 `[business].rules` 则加 business，传 `--intent` 则做意图评审。
    - 审某个 commit / 范围：`--commit <sha>` 或 `--from <base> --to <head>`。
    - 只看部分维度：`--dimensions security,logic`。
    - 更快但误报略多：`--no-judge`。

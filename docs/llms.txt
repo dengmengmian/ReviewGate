@@ -4,7 +4,7 @@
 
 ## What it does
 
-- Runs multiple agents in parallel, each focused on one review dimension: security, perf, logic, style, ai_smell, and business (project rules).
+- Runs multiple agents in parallel, each focused on one review dimension: security, perf, logic, ai_smell by default, with style and business (project rules) available as opt-in.
 - Anchors and validates reported line numbers against code, then deduplicates findings across dimensions and raises confidence when several agree.
 - Counter-evidence "judge": each finding is independently verified with evidence before it is kept, reducing false positives.
 - Confidence gate: high-confidence issues BLOCK the merge, low-confidence noise is folded by default (still inspectable with --show-filtered).

@@ -1,7 +1,9 @@
+# 此文件仅为初始模板,真源在 dengmengmian/homebrew-tap/Formula/reviewgate.rb,
+# 由 release.yml 的 homebrew job 在发版后自动更新;这里的 version/sha256 可能过期。
 class Reviewgate < Formula
   desc "Pre-merge quality gate for AI-generated code"
   homepage "https://dengmengmian.github.io/ReviewGate/"
-  version "0.5.0"
+  version "0.7.0"
   license "MIT"
 
   livecheck do
@@ -12,20 +14,20 @@ class Reviewgate < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/dengmengmian/ReviewGate/releases/download/v#{version}/reviewgate-darwin-arm64"
-      sha256 "2a32ad3eb346570cb45444a5dc2f8c64f98b8fbed67f515514e287b6dcefdbb2"
+      sha256 "b33eae89818584297b8369da3de0f0289cb59d74d2b0b22d21d4e1bd34d58a07"
     else
       url "https://github.com/dengmengmian/ReviewGate/releases/download/v#{version}/reviewgate-darwin-x64"
-      sha256 "246a42e18b8353118fd1579a8460504e32210ad3f33a612ee11f6a267e149ad8"
+      sha256 "9d267f88a0582a4b8c67dd9959082c0c64fba947a03cd1a1e653dc1df552c5b4"
     end
   end
 
   on_linux do
     if Hardware::CPU.arm?
       url "https://github.com/dengmengmian/ReviewGate/releases/download/v#{version}/reviewgate-linux-arm64"
-      sha256 "6e2a89acf267b8ea16e5dda8170fbd0d1c833ff7d005689eaf5743dbcbc394e1"
+      sha256 "e06f6a0d81b33d2db0b50f667e8524f5827a5eb77e770a60e74ffc34f0e73205"
     else
       url "https://github.com/dengmengmian/ReviewGate/releases/download/v#{version}/reviewgate-linux-x64"
-      sha256 "f99e71af3455cb9857ee505c8068204142b9bf66eaf19e83fd3215e095275e13"
+      sha256 "579d36f4f976cec6c8baa61177f51a27ed38d2bd50b8bcfd501adb42a2ec3d1a"
     end
   end
 

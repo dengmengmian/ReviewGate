@@ -45,3 +45,8 @@ model = "deepseek-v4-pro"    # 1M context
 # [[business.path_rules]]
 # pattern = "**/api/**"
 # rule = "公开 API 变更必须保持向后兼容，破坏性变更需要版本号升级"
+
+# 误报抑制：把确认过的误报指纹写进仓库根 .reviewgate/ignore，命中后自动标记为 filtered。
+# 一行一个指纹（首个空白分隔 token），# 开始为注释。可全队共享、随仓库版本控制。
+# 运行一次 reviewgate review --show-filtered 可看到被抑制项；--verbose 会打印抑制数量。
+# 指纹由路径 + 维度 + 归一化 existing_code 生成，不含行号，后续格式漂移仍能命中。
