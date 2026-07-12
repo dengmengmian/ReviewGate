@@ -345,7 +345,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(bytes);
-    format!("{:x}", h.finalize())
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn verify_release_checksum(bytes: &[u8], checksums: &str, asset: &str) -> anyhow::Result<()> {

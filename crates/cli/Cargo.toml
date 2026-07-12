@@ -25,4 +25,4 @@ serde_json.workspace = true
 serde = { workspace = true, features = ["derive"] }
 reqwest.workspace = true
 self-replace = "1"
-sha2 = "0.10"
+sha2 = "0.11"
