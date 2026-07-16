@@ -369,6 +369,7 @@ fn is_word_char(b: u8) -> bool {
 /// 路径 → (tree-sitter Language, 节点配置)。不支持返回 None。
 fn lang_spec(path: &str) -> Option<(tree_sitter::Language, LangSpec)> {
     match Lang::from_path(path) {
+        #[cfg(feature = "rust")]
         Lang::Rust => Some((
             tree_sitter_rust::LANGUAGE.into(),
             LangSpec {
@@ -389,6 +390,7 @@ fn lang_spec(path: &str) -> Option<(tree_sitter::Language, LangSpec)> {
                 call_fn_field: "function",
             },
         )),
+        #[cfg(feature = "cpp")]
         Lang::Cpp => Some((
             tree_sitter_cpp::LANGUAGE.into(),
             LangSpec {
@@ -404,6 +406,7 @@ fn lang_spec(path: &str) -> Option<(tree_sitter::Language, LangSpec)> {
                 call_fn_field: "function",
             },
         )),
+        #[cfg(feature = "python")]
         Lang::Python => Some((
             tree_sitter_python::LANGUAGE.into(),
             LangSpec {
@@ -414,6 +417,7 @@ fn lang_spec(path: &str) -> Option<(tree_sitter::Language, LangSpec)> {
                 call_fn_field: "function",
             },
         )),
+        #[cfg(feature = "go")]
         Lang::Go => Some((
             tree_sitter_go::LANGUAGE.into(),
             LangSpec {
@@ -428,6 +432,7 @@ fn lang_spec(path: &str) -> Option<(tree_sitter::Language, LangSpec)> {
                 call_fn_field: "function",
             },
         )),
+        #[cfg(feature = "java")]
         Lang::Java => Some((
             tree_sitter_java::LANGUAGE.into(),
             LangSpec {
@@ -452,6 +457,7 @@ fn lang_spec(path: &str) -> Option<(tree_sitter::Language, LangSpec)> {
                 call_fn_field: "name",
             },
         )),
+        #[cfg(feature = "javascript")]
         Lang::JavaScript => Some((
             tree_sitter_javascript::LANGUAGE.into(),
             LangSpec {
@@ -467,6 +473,7 @@ fn lang_spec(path: &str) -> Option<(tree_sitter::Language, LangSpec)> {
                 call_fn_field: "function",
             },
         )),
+        #[cfg(feature = "typescript")]
         Lang::TypeScript => Some((
             // .tsx 含 JSX，需专用 grammar；其余用纯 TS grammar。
             if path.to_ascii_lowercase().ends_with(".tsx") {

@@ -419,7 +419,7 @@ async fn agent_run(dimension: &str) -> anyhow::Result<()> {
         dim,
         client.model()
     );
-    let mut findings = run_agent(&*client, &reg, &ctx, &agent_cfg, user_prompt).await?;
+    let mut findings = run_agent(&*client, &reg, &ctx, &agent_cfg, Arc::new(user_prompt)).await?;
 
     // M1.9 行号重定位。
     reviewgate_core::relocate::relocate_all(&mut findings, std::path::Path::new(&root), &None, &d)

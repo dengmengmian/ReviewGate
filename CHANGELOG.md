@@ -6,6 +6,16 @@ Changes are listed in Chinese first, then English.
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-07-11
+
+### Changed
+- tokio 从 `full` 特性改为按需引入（`rt-multi-thread, macros, fs, process, time, sync`），减少编译时间与二进制体积。
+  tokio switched from `full` feature to only the needed features (`rt-multi-thread, macros, fs, process, time, sync`), reducing compile time and binary size.
+- tree-sitter 各语言解析器改为可选的 Cargo feature（默认全部开启），可按需裁剪不需要的语言以进一步减小二进制体积。
+  Tree-sitter language parsers are now optional Cargo features (all enabled by default), allowing users to drop unneeded languages for a smaller binary.
+- 审查 prompt 在 Agent 运行与维度 fan-out 间改用 `Arc<String>` 共享，避免多次 clone 同一份大 prompt 的分配开销。
+  Review prompts now use `Arc<String>` across the agent runtime and dimension fan-out to avoid redundant allocations from cloning the same large prompt.
+
 ## [0.7.1] - 2026-07-06
 
 ### Fixed

@@ -295,7 +295,7 @@ pub async fn run_review_with_client(
                 agent_cfg.timeout = opts.timeout;
                 // 发送前预检预算：确定性避免撞 provider 的 context-length 上限。
                 agent_cfg.max_input_tokens = Some(budget);
-                let prompt = prompt.clone();
+                let prompt = Arc::clone(prompt);
                 let reg = &reg;
                 let ctx = &ctx;
                 let dim = *d;
@@ -497,36 +497,45 @@ async fn build_unit_prompts(
     index: &dyn crate::index::CodeIndex,
     warnings: &mut Vec<ReviewWarning>,
     incomplete: &mut bool,
-) -> Vec<Option<String>> {
-    let mut unit_prompts: Vec<Option<String>> = Vec::with_capacity(units.len());
+) -> Vec<Option<Arc<String>>> {
+    let mut unit_prompts: Vec<Option<Arc<String>>> = Vec::with_capacity(units.len());
     for (ui, unit) in units.iter().enumerate() {
         let prefetched = prefetch::render_prefetch(index, diff, &unit.files).await;
-        let with_prefetch = |mut p: String| {
-            if !prefetched.is_empty() {
-                p.push_str("\n\n");
-                p.push_str(&prefetched);
-            }
-            p
+        let prefetch_tokens = if !prefetched.is_empty() {
+            // "\n\n" ≈ 1 token (2 ASCII / 3 ceiling). 略高估，预算守卫方向安全。
+            estimate_tokens(&prefetched) + 1
+        } else {
+            0
         };
         let full = build_unit_prompt(diff, &unit.files, true, root, new_ref, rules_body).await;
-        let full_pf = with_prefetch(full.clone());
-        if estimate_tokens(&full_pf) + overhead <= budget {
-            unit_prompts.push(Some(full_pf));
+        let full_tokens = estimate_tokens(&full);
+        if full_tokens + prefetch_tokens + overhead <= budget {
+            let mut full_pf = full;
+            if !prefetched.is_empty() {
+                full_pf.push_str("\n\n");
+                full_pf.push_str(&prefetched);
+            }
+            unit_prompts.push(Some(Arc::new(full_pf)));
             continue;
         }
-        if estimate_tokens(&full) + overhead <= budget {
-            unit_prompts.push(Some(full));
+        if full_tokens + overhead <= budget {
+            unit_prompts.push(Some(Arc::new(full)));
             continue;
         }
         let diff_only =
             build_unit_prompt(diff, &unit.files, false, root, new_ref, rules_body).await;
-        let diff_only_pf = with_prefetch(diff_only.clone());
-        if estimate_tokens(&diff_only_pf) + overhead <= budget {
-            unit_prompts.push(Some(diff_only_pf));
+        let diff_only_tokens = estimate_tokens(&diff_only);
+        if diff_only_tokens + prefetch_tokens + overhead <= budget {
+            let mut diff_only_pf = diff_only;
+            if !prefetched.is_empty() {
+                diff_only_pf.push_str("\n\n");
+                diff_only_pf.push_str(&prefetched);
+            }
+            unit_prompts.push(Some(Arc::new(diff_only_pf)));
             continue;
         }
-        if estimate_tokens(&diff_only) + overhead <= budget {
-            unit_prompts.push(Some(diff_only));
+        if diff_only_tokens + overhead <= budget {
+            unit_prompts.push(Some(Arc::new(diff_only)));
             continue;
         }
         // 单文件 diff 自身就超预算，无法再切 → 跳过并标记未审完（绝不静默放行）。

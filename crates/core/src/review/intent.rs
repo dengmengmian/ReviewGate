@@ -139,8 +139,14 @@ callers, contracts, and tests, and report a verdict (met/missing/deviation/break
         intent = intent.trim(),
     );
 
-    let (mut findings, incomplete) = match run_agent_with_stats(client, reg, ctx, &cfg, user_prompt)
-        .await
+    let (mut findings, incomplete) = match run_agent_with_stats(
+        client,
+        reg,
+        ctx,
+        &cfg,
+        Arc::new(user_prompt),
+    )
+    .await
     {
         Ok(run) => {
             if verbose {

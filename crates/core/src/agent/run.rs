@@ -14,6 +14,7 @@ use crate::model::{ContentBlock, Dimension, Finding, Message, Role, StopReason, 
 use crate::tool::{ToolContext, ToolRegistry};
 use anyhow::Result;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// 墙钟软着陆阈值：预算耗到该比例即切入收口轮，把剩余时间留给上报而不是继续探索。
@@ -31,7 +32,7 @@ pub async fn run_agent(
     registry: &ToolRegistry,
     ctx: &ToolContext,
     cfg: &AgentConfig,
-    user_prompt: String,
+    user_prompt: Arc<String>,
 ) -> Result<Vec<Finding>> {
     Ok(
         run_agent_with_stats(client, registry, ctx, cfg, user_prompt)
@@ -46,7 +47,7 @@ pub async fn run_agent_with_stats(
     registry: &ToolRegistry,
     ctx: &ToolContext,
     cfg: &AgentConfig,
-    user_prompt: String,
+    user_prompt: Arc<String>,
 ) -> Result<AgentRun> {
     // 意图维度用需求锚定的 report_intent_finding，其余维度用行锚的 report_finding。
     let intent_dim = cfg.dimension == Dimension::Intent;
@@ -72,6 +73,7 @@ pub async fn run_agent_with_stats(
     //   块 0 = 共享大块（diff + 文件全文，维度无关）→ 由客户端挂缓存断点，跨维度/跨轮复用；
     //   块 1 = 本维度聚焦点（位于缓存断点之后，各维度不同，不破坏缓存）。
     let focus = dimension_focus_block(cfg.dimension);
+    let user_prompt = Arc::try_unwrap(user_prompt).unwrap_or_else(|arc| (*arc).clone());
     let first = Message {
         role: Role::User,
         content: if user_prompt.contains(&focus) {
@@ -481,9 +483,15 @@ mod tests {
             ("report_finding", finding_input()),
             ("task_done", json!({})),
         ]))]);
-        let findings = run_agent(&client, &registry(), &ctx(), &cfg(5), "审查".into())
-            .await
-            .unwrap();
+        let findings = run_agent(
+            &client,
+            &registry(),
+            &ctx(),
+            &cfg(5),
+            Arc::new("审查".into()),
+        )
+        .await
+        .unwrap();
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].dimension, Dimension::Logic);
         assert_eq!(findings[0].severity, Severity::High);
@@ -502,9 +510,15 @@ mod tests {
             Ok(call()),
             Ok(resp(vec![("task_done", json!({}))])),
         ]);
-        let run = run_agent_with_stats(&client, &registry(), &ctx(), &cfg(10), "审查".into())
-            .await
-            .unwrap();
+        let run = run_agent_with_stats(
+            &client,
+            &registry(),
+            &ctx(),
+            &cfg(10),
+            Arc::new("审查".into()),
+        )
+        .await
+        .unwrap();
         assert_eq!(run.stats.loop_guarded, 1, "第 3 次相同调用应被熔断");
     }
 
@@ -518,9 +532,15 @@ mod tests {
             ("report_finding", input),
             ("task_done", json!({})),
         ]))]);
-        let findings = run_agent(&client, &registry(), &ctx(), &cfg(5), "审查".into())
-            .await
-            .unwrap();
+        let findings = run_agent(
+            &client,
+            &registry(),
+            &ctx(),
+            &cfg(5),
+            Arc::new("审查".into()),
+        )
+        .await
+        .unwrap();
         assert_eq!(findings[0].start_line, 0);
         assert_eq!(findings[0].end_line, 0);
     }
@@ -532,9 +552,15 @@ mod tests {
             Ok(resp(vec![("report_finding", finding_input())])),
             Err(anyhow::anyhow!("网络超时")),
         ]);
-        let run = run_agent_with_stats(&client, &registry(), &ctx(), &cfg(5), "审查".into())
-            .await
-            .expect("优雅降级应返回 Ok 而非 Err");
+        let run = run_agent_with_stats(
+            &client,
+            &registry(),
+            &ctx(),
+            &cfg(5),
+            Arc::new("审查".into()),
+        )
+        .await
+        .expect("优雅降级应返回 Ok 而非 Err");
         assert_eq!(run.findings.len(), 1);
         // 请求失败必须可区分（未审完），不能伪装成正常完成。
         assert_eq!(run.exit_reason, AgentExitReason::RequestFailed);
@@ -552,7 +578,7 @@ mod tests {
             &registry(),
             &ctx(),
             &c,
-            "审查一段较长的内容".into(),
+            Arc::new("审查一段较长的内容".into()),
         )
         .await
         .unwrap();
@@ -564,9 +590,15 @@ mod tests {
     #[tokio::test]
     async fn normal_completion_is_not_incomplete() {
         let client = MockClient::new(vec![Ok(resp(vec![("task_done", json!({}))]))]);
-        let run = run_agent_with_stats(&client, &registry(), &ctx(), &cfg(5), "审查".into())
-            .await
-            .unwrap();
+        let run = run_agent_with_stats(
+            &client,
+            &registry(),
+            &ctx(),
+            &cfg(5),
+            Arc::new("审查".into()),
+        )
+        .await
+        .unwrap();
         assert_eq!(run.exit_reason, AgentExitReason::Completed);
         assert!(!run.incomplete());
     }
@@ -581,9 +613,15 @@ mod tests {
             ])),
         ]);
 
-        let run = run_agent_with_stats(&client, &registry(), &ctx(), &cfg(5), "审查".into())
-            .await
-            .unwrap();
+        let run = run_agent_with_stats(
+            &client,
+            &registry(),
+            &ctx(),
+            &cfg(5),
+            Arc::new("审查".into()),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(run.stats.llm_requests, 2);
         assert_eq!(run.stats.tool_calls, 3);
@@ -601,9 +639,15 @@ mod tests {
             Ok(resp(vec![("report_finding", finding_input())])),
             Ok(resp(vec![("task_done", json!({}))])),
         ]);
-        let _ = run_agent(&client, &registry(), &ctx(), &cfg(2), "审查".into())
-            .await
-            .unwrap();
+        let _ = run_agent(
+            &client,
+            &registry(),
+            &ctx(),
+            &cfg(2),
+            Arc::new("审查".into()),
+        )
+        .await
+        .unwrap();
         let counts = client.tool_counts.lock().unwrap().clone();
         assert_eq!(counts.len(), 2);
         // 非收口轮：全部只读工具 + report_finding + task_done。
@@ -618,7 +662,7 @@ mod tests {
         let focus = dimension_focus_block(Dimension::Logic);
         let prompt = format!("共享 diff\n\n{focus}");
 
-        let _ = run_agent(&client, &registry(), &ctx(), &cfg(5), prompt)
+        let _ = run_agent(&client, &registry(), &ctx(), &cfg(5), Arc::new(prompt))
             .await
             .unwrap();
 
@@ -633,9 +677,15 @@ mod tests {
         c.timeout = Some(Duration::from_millis(30));
 
         let start = Instant::now();
-        let run = run_agent_with_stats(&SlowClient, &registry(), &ctx(), &c, "审查".into())
-            .await
-            .unwrap();
+        let run = run_agent_with_stats(
+            &SlowClient,
+            &registry(),
+            &ctx(),
+            &c,
+            Arc::new("审查".into()),
+        )
+        .await
+        .unwrap();
 
         assert!(run.timed_out());
         assert_eq!(run.exit_reason, AgentExitReason::TimedOut);
@@ -724,9 +774,15 @@ mod tests {
             Ok(resp(vec![("code_search", json!({"pattern": "foo"}))])),
             Ok(resp(vec![("task_done", json!({}))])),
         ]);
-        let run = run_agent_with_stats(&client, &registry(), &ctx(), &cfg(5), "审查".into())
-            .await
-            .unwrap();
+        let run = run_agent_with_stats(
+            &client,
+            &registry(),
+            &ctx(),
+            &cfg(5),
+            Arc::new("审查".into()),
+        )
+        .await
+        .unwrap();
         assert_eq!(run.exit_reason, AgentExitReason::Completed);
         let messages = client.seen_messages.lock().unwrap();
         // 第二轮请求应包含 tool 角色的结果消息。
@@ -740,9 +796,15 @@ mod tests {
             ("report_finding", json!({"path": "a.rs"})), // 缺少 message/severity
             ("task_done", json!({})),
         ]))]);
-        let run = run_agent_with_stats(&client, &registry(), &ctx(), &cfg(5), "审查".into())
-            .await
-            .unwrap();
+        let run = run_agent_with_stats(
+            &client,
+            &registry(),
+            &ctx(),
+            &cfg(5),
+            Arc::new("审查".into()),
+        )
+        .await
+        .unwrap();
         assert!(run.findings.is_empty());
         assert_eq!(run.exit_reason, AgentExitReason::Completed);
     }
@@ -765,9 +827,15 @@ mod tests {
             ),
             ("task_done", json!({})),
         ]))]);
-        let findings = run_agent(&client, &registry(), &ctx(), &cfg(5), "审查".into())
-            .await
-            .unwrap();
+        let findings = run_agent(
+            &client,
+            &registry(),
+            &ctx(),
+            &cfg(5),
+            Arc::new("审查".into()),
+        )
+        .await
+        .unwrap();
         assert_eq!(findings.len(), 2);
         assert_eq!(findings[0].path, "a.rs");
         assert_eq!(findings[1].path, "b.rs");
@@ -780,9 +848,15 @@ mod tests {
             stop_reason: StopReason::EndTurn,
             usage: Usage::default(),
         })]);
-        let run = run_agent_with_stats(&client, &registry(), &ctx(), &cfg(5), "审查".into())
-            .await
-            .unwrap();
+        let run = run_agent_with_stats(
+            &client,
+            &registry(),
+            &ctx(),
+            &cfg(5),
+            Arc::new("审查".into()),
+        )
+        .await
+        .unwrap();
         assert_eq!(run.exit_reason, AgentExitReason::Completed);
         assert!(run.findings.is_empty());
     }
@@ -803,9 +877,15 @@ mod tests {
             ),
             ("task_done", json!({})),
         ]))]);
-        let findings = run_agent(&client, &registry(), &ctx(), &c, "意图评审".into())
-            .await
-            .unwrap();
+        let findings = run_agent(
+            &client,
+            &registry(),
+            &ctx(),
+            &c,
+            Arc::new("意图评审".into()),
+        )
+        .await
+        .unwrap();
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].dimension, Dimension::Intent);
         assert_eq!(
@@ -872,7 +952,7 @@ mod tests {
         )]))]);
         let mut c = cfg(1);
         c.max_rounds = 1; // 只有 1 轮，不会给 read_file（收口轮）
-        let run = run_agent_with_stats(&client, &registry(), &ctx(), &c, "审查".into())
+        let run = run_agent_with_stats(&client, &registry(), &ctx(), &c, Arc::new("审查".into()))
             .await
             .unwrap();
         assert_eq!(run.exit_reason, AgentExitReason::MaxRounds);
@@ -908,7 +988,7 @@ mod tests {
             Ok(resp(vec![("bad_tool", json!({}))])),
             Ok(resp(vec![("task_done", json!({}))])),
         ]);
-        let run = run_agent_with_stats(&client, &reg, &ctx(), &cfg(5), "审查".into())
+        let run = run_agent_with_stats(&client, &reg, &ctx(), &cfg(5), Arc::new("审查".into()))
             .await
             .unwrap();
         assert_eq!(run.exit_reason, AgentExitReason::Completed);
@@ -928,7 +1008,7 @@ mod tests {
             landing_seen: Mutex::new(Vec::new()),
         };
 
-        let run = run_agent_with_stats(&client, &registry(), &ctx(), &c, "审查".into())
+        let run = run_agent_with_stats(&client, &registry(), &ctx(), &c, Arc::new("审查".into()))
             .await
             .unwrap();
 
