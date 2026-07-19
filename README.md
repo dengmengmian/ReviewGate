@@ -24,6 +24,17 @@ ReviewGate 是给 AI 生成或 AI 大量参与代码准备的合并前质量闸�
 | 降噪音 | 去重、证伪、按置信度过滤，默认隐藏低价值反馈 |
 | 不假通过 | 超时、上下文过大、未审完都会降级 WARN，不把不完整审查伪装成 PASS |
 
+## 三个专注的工具，一套工作流
+
+**CodeLeveler 负责写代码，ReviewGate 负责代码 Review，AgentGate 负责连接和
+适配模型 API。** 三个工具都可以独立使用，也可以配合工作：
+
+| 工具 | 专注于 |
+|---|---|
+| **ReviewGate** | 审查代码改动并筛出高置信问题 |
+| [CodeLeveler](https://github.com/dengmengmian/CodeLeveler) | 在终端中理解、修改、运行并验证代码 |
+| [AgentGate](https://github.com/dengmengmian/agentgate-ai) | 通过一个本地网关适配不同模型 API |
+
 ## 快速开始
 
 你只需要三样东西：一个 git 仓库、一个 LLM API key、`reviewgate` 命令。

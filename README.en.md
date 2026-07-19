@@ -24,6 +24,18 @@ ReviewGate is a pre-merge quality gate for AI-generated, or AI-heavy, code. The 
 | Reduce noise | Deduplication, counter-evidence judging, and confidence-based filtering |
 | Avoid fake passes | Incomplete reviews, timeouts, and oversized context degrade to WARN instead of pretending to pass |
 
+## Three focused tools, one workflow
+
+**CodeLeveler writes the code. ReviewGate reviews it. AgentGate connects both
+to your model APIs.** Each tool works independently, or they can be used
+together:
+
+| Tool | Focus |
+|---|---|
+| **ReviewGate** | Review code changes and surface high-confidence issues |
+| [CodeLeveler](https://github.com/dengmengmian/CodeLeveler) | Inspect, edit, run, and verify code in the terminal |
+| [AgentGate](https://github.com/dengmengmian/agentgate-ai) | Adapt model APIs behind one local gateway |
+
 ## Quick Start
 
 You need three things: a git repository, an LLM API key, and the `reviewgate` command.
