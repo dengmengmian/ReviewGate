@@ -6,6 +6,12 @@ Changes are listed in Chinese first, then English.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-26
+
+### Added
+- 新增 **`reviewgate security`**：安全深审入口（同一引擎、`Dimension::Security`，非新维度）。默认仅 security、samples≥2、sink 驱动 + 强制追源 checklist、确定性密钥/凭证预检、未审完永不 PASS。日常 `review` 仍为标准四维，不付深审成本。确定性预检发现在证伪 Judge **之后**合并，避免被 judge 误杀。
+  Added **`reviewgate security`**: a security deep-review entry (same engine, `Dimension::Security`, no new dimension). Defaults: security-only, samples≥2, sink-driven + mandatory taint-trace checklist, deterministic secret/credential precheck, incomplete never PASS. Default `review` stays the standard four defect dimensions without deep cost. Deterministic precheck findings are merged **after** the counter-evidence judge so they cannot be false-negatived.
+
 ## [0.7.2] - 2026-07-11
 
 ### Changed

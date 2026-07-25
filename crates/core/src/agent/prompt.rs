@@ -5,7 +5,7 @@ use crate::language::detect_output_language_from;
 use crate::language::output_language;
 use crate::model::Dimension;
 
-/// Dimension-specific focus text and checklist.
+/// Dimension-specific focus text and checklist (standard profile).
 fn dimension_focus(d: Dimension) -> &'static str {
     match d {
         Dimension::Security => include_str!("../../prompts/dimensions/security.md").trim_end(),
@@ -16,6 +16,11 @@ fn dimension_focus(d: Dimension) -> &'static str {
         Dimension::AiSmell => include_str!("../../prompts/dimensions/ai_smell.md").trim_end(),
         Dimension::Intent => include_str!("../../prompts/dimensions/intent.md").trim_end(),
     }
+}
+
+/// Deep security focus: sink inventory + mandatory taint/caller tracing.
+fn security_deep_focus() -> &'static str {
+    include_str!("../../prompts/dimensions/security_deep.md").trim_end()
 }
 
 /// 意图/技术评审专用系统提示——鼓励跨文件探索、评估「实现 vs 意图」的完整性，
@@ -38,18 +43,29 @@ pub fn shared_system_prompt() -> String {
 
 /// Dimension-specific focus block. It is placed after the shared user block.
 pub fn dimension_focus_block(d: Dimension) -> String {
+    dimension_focus_block_with_deep(d, false)
+}
+
+/// Like [`dimension_focus_block`], but when `deep` is true and `d` is Security,
+/// injects the sink-driven deep security checklist (used by `reviewgate security`).
+pub fn dimension_focus_block_with_deep(d: Dimension, deep: bool) -> String {
     // 意图维度用需求锚定的上报工具；其余维度用行锚的 report_finding。
     let report_tool = if matches!(d, Dimension::Intent) {
         "report_intent_finding (one verdict per acceptance criterion)"
     } else {
         "report_finding"
     };
+    let focus = if deep && matches!(d, Dimension::Security) {
+        security_deep_focus()
+    } else {
+        dimension_focus(d)
+    };
     format!(
         "## Review dimension\n\nYou are responsible for **only the `{dim}` dimension** in this run.\n\nFocus:\n{focus}\n\n\
 Review only this dimension. Report findings with {report_tool}. Call task_done when finished.\n\n\
 Output language: {lang}",
         dim = d.as_str(),
-        focus = dimension_focus(d),
+        focus = focus,
         lang = output_language(),
     )
 }
@@ -147,5 +163,39 @@ mod tests {
                 "{d:?} should not use report_intent_finding"
             );
         }
+    }
+
+    #[test]
+    fn deep_security_focus_requires_sink_and_taint_trace() {
+        let deep = dimension_focus_block_with_deep(Dimension::Security, true);
+        let lower = deep.to_ascii_lowercase();
+        assert!(
+            lower.contains("sink") && (lower.contains("taint") || lower.contains("caller")),
+            "deep security must mandate sink inventory + taint/caller trace: {deep}"
+        );
+        assert!(
+            lower.contains("ssrf") || lower.contains("injection"),
+            "deep security should list major vuln classes"
+        );
+        // Standard path remains loadable and does not force the deep method block.
+        let standard = dimension_focus_block(Dimension::Security);
+        assert!(standard.contains("Security vulnerabilities") || standard.contains("Injection"));
+        assert_ne!(
+            deep, standard,
+            "deep and standard security focus must differ for cache/signature identity"
+        );
+    }
+
+    #[test]
+    fn deep_flag_does_not_change_non_security_dimensions() {
+        let logic = dimension_focus_block(Dimension::Logic);
+        let logic_deep = dimension_focus_block_with_deep(Dimension::Logic, true);
+        assert_eq!(logic, logic_deep);
+    }
+
+    #[test]
+    fn security_deep_prompt_file_exists() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("prompts");
+        assert!(root.join("dimensions/security_deep.md").is_file());
     }
 }

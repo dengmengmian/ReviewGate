@@ -72,7 +72,10 @@ pub async fn run_agent_with_stats(
     // 首条 user 消息分两块：
     //   块 0 = 共享大块（diff + 文件全文，维度无关）→ 由客户端挂缓存断点，跨维度/跨轮复用；
     //   块 1 = 本维度聚焦点（位于缓存断点之后，各维度不同，不破坏缓存）。
-    let focus = dimension_focus_block(cfg.dimension);
+    let focus = cfg
+        .focus_override
+        .clone()
+        .unwrap_or_else(|| dimension_focus_block(cfg.dimension));
     let user_prompt = Arc::try_unwrap(user_prompt).unwrap_or_else(|arc| (*arc).clone());
     let first = Message {
         role: Role::User,

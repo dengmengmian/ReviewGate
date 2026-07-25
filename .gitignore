@@ -25,3 +25,4 @@ docs/evals/_logicprec.md
 docs/evals/_real-ssrf*
 docs/evals/_execverify_*.md
 docs/evals/aacr-bench-results/
+.leveler/

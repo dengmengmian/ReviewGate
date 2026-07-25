@@ -20,6 +20,7 @@ use super::suppress::short_hash;
 /// 评审签名：任何影响"同一文件会产出什么发现"的输入都进签名，变了则缓存整体失效。
 ///
 /// `prompt_version` 让 prompt/编排升级后旧缓存自动作废（发版时手动 bump）。
+/// `profile` distinguishes standard vs deep security so caches never mix.
 pub fn review_signature(
     dimensions: &[Dimension],
     model: &str,
@@ -27,19 +28,22 @@ pub fn review_signature(
     judge: bool,
     samples: usize,
     exec_verify: bool,
+    profile: &str,
 ) -> String {
     let mut dims: Vec<&str> = dimensions.iter().map(|d| d.as_str()).collect();
     dims.sort_unstable();
     dims.dedup();
     // prompt_version：编排/prompt 有语义变更时 bump，让旧缓存自动作废。
+    // v2: include review profile (standard|deep) in the signature.
     let input = format!(
-        "v1\0{}\0{}\0{}\0{}\0{}\0{}",
+        "v2\0{}\0{}\0{}\0{}\0{}\0{}\0{}",
         dims.join(","),
         model,
         rules_body,
         judge,
         samples,
-        exec_verify
+        exec_verify,
+        profile
     );
     short_hash(input.as_bytes())
 }
@@ -154,6 +158,7 @@ mod tests {
             true,
             1,
             false,
+            "standard",
         )
     }
 
@@ -166,6 +171,7 @@ mod tests {
             true,
             1,
             false,
+            "standard",
         );
         // 维度顺序不同 → 同签名（集合语义）。
         let b = review_signature(
@@ -175,6 +181,7 @@ mod tests {
             true,
             1,
             false,
+            "standard",
         );
         assert_eq!(a, b);
         assert_eq!(a.len(), 12);
@@ -191,7 +198,8 @@ mod tests {
                 "rules body",
                 true,
                 1,
-                false
+                false,
+                "standard",
             )
         );
         assert_ne!(
@@ -202,7 +210,8 @@ mod tests {
                 "rules body",
                 true,
                 1,
-                false
+                false,
+                "standard",
             )
         );
         assert_ne!(
@@ -213,7 +222,8 @@ mod tests {
                 "CHANGED rules",
                 true,
                 1,
-                false
+                false,
+                "standard",
             )
         );
         // judge / samples / exec_verify 各自都影响签名。
@@ -225,7 +235,8 @@ mod tests {
                 "rules body",
                 false,
                 1,
-                false
+                false,
+                "standard",
             )
         );
         assert_ne!(
@@ -236,7 +247,8 @@ mod tests {
                 "rules body",
                 true,
                 3,
-                false
+                false,
+                "standard",
             )
         );
         assert_ne!(
@@ -247,7 +259,21 @@ mod tests {
                 "rules body",
                 true,
                 1,
-                true
+                true,
+                "standard",
+            )
+        );
+        // profile must change the signature so deep/standard caches never mix.
+        assert_ne!(
+            base,
+            review_signature(
+                &[Dimension::Security, Dimension::Logic],
+                "deepseek-v4-pro",
+                "rules body",
+                true,
+                1,
+                false,
+                "deep",
             )
         );
     }

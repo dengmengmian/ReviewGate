@@ -22,6 +22,8 @@ struct Cli {
 enum Command {
     /// Review the current git diff
     Review(ReviewArgs),
+    /// Security deep review: sink-driven security-only pass with higher samples and secret precheck
+    Security(SecurityArgs),
     /// LLM connectivity self-check
     Llm {
         #[command(subcommand)]
@@ -224,6 +226,62 @@ struct ReviewArgs {
     incremental: bool,
 }
 
+/// Security deep-review args: same range/format/gate flags as `review`, fixed deep profile.
+#[derive(Parser)]
+struct SecurityArgs {
+    /// Output format
+    #[arg(long, value_enum, default_value = "text")]
+    format: OutputFormat,
+    /// Review the changes introduced by a single commit
+    #[arg(long)]
+    commit: Option<String>,
+    /// Range review start (used with --to, from the merge-base)
+    #[arg(long)]
+    from: Option<String>,
+    /// Range review end (used with --from)
+    #[arg(long)]
+    to: Option<String>,
+    /// Skip the counter-evidence judge (faster, but more false positives)
+    #[arg(long)]
+    no_judge: bool,
+    /// Show filtered low-confidence findings
+    #[arg(long)]
+    show_filtered: bool,
+    /// Which verdict triggers a non-zero exit code
+    #[arg(long, value_enum, default_value = "block")]
+    fail_on: FailOn,
+    /// Post a summary comment on the GitHub PR (for GitHub Action)
+    #[arg(long)]
+    comment: bool,
+    /// Print per-dimension, per-round progress to stderr
+    #[arg(long, short)]
+    verbose: bool,
+    /// Per-dimension wall-clock timeout (seconds, 0=unlimited)
+    #[arg(long, default_value = "0")]
+    timeout: u64,
+    /// Samples for the security dimension (default 2 for deep profile). >1 unions results for stable recall.
+    #[arg(long, default_value = "2")]
+    samples: usize,
+    /// Judge concurrency limit
+    #[arg(long, default_value = "4")]
+    judge_concurrency: usize,
+    /// Fan-out concurrency limit
+    #[arg(long, default_value = "6")]
+    fanout_concurrency: usize,
+    /// After per-finding y/N confirmation, apply suggestion_code to working-tree files
+    #[arg(long)]
+    fix: bool,
+    /// Apply all auto-applicable fixes without per-finding confirmation
+    #[arg(long)]
+    fix_all: bool,
+    /// With --fix/--fix-all, apply the fixes on a new git branch
+    #[arg(long, num_args = 0..=1, default_missing_value = "")]
+    fix_branch: Option<String>,
+    /// Incremental review (opt-in)
+    #[arg(long)]
+    incremental: bool,
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -243,6 +301,7 @@ async fn main() {
 async fn run(cli: Cli) -> anyhow::Result<i32> {
     match cli.command {
         Command::Review(args) => review(&args).await,
+        Command::Security(args) => security(&args).await,
         Command::Llm { cmd } => match cmd {
             LlmCmd::Test => llm_test().await.map(|()| 0),
         },
@@ -457,9 +516,117 @@ fn validate_review_args(args: &ReviewArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn validate_security_args(args: &SecurityArgs) -> anyhow::Result<()> {
+    if args.fix_branch.is_some() && !(args.fix || args.fix_all) {
+        anyhow::bail!("--fix-branch only applies with --fix or --fix-all");
+    }
+    Ok(())
+}
+
+/// Shared post-review presentation + exit code (used by `review` and `security`).
+struct ReviewRunArgs {
+    format: OutputFormat,
+    show_filtered: bool,
+    comment: bool,
+    fix: bool,
+    fix_all: bool,
+    fix_branch: Option<String>,
+    fail_on: FailOn,
+    verbose: bool,
+}
+
+async fn present_and_exit(
+    cfg: &reviewgate_core::config::Config,
+    opts: reviewgate_core::review::ReviewOptions,
+    run: ReviewRunArgs,
+) -> anyhow::Result<i32> {
+    use reviewgate_core::review::run_review;
+
+    let live = std::io::stderr().is_terminal() && run.format != OutputFormat::Json && !run.verbose;
+    let progress = live.then(|| std::sync::Arc::new(reviewgate_core::progress::Progress::new()));
+    let mut opts = opts;
+    opts.progress = progress.clone();
+    let render = progress.clone().map(|p| {
+        let t = i18n::Lang::detect();
+        tokio::spawn(async move {
+            const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+            const LINE_WIDTH: usize = 60;
+            let reviewing = t.reviewing();
+            let start = std::time::Instant::now();
+            let mut i = 0usize;
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+                let (n, last) = p.snapshot();
+                let s = start.elapsed().as_secs();
+                let suffix = format!(" · {} · {}:{:02}", t.calls(n), s / 60, s % 60);
+                let fixed = 5 + render::display_width(reviewing) + render::display_width(&suffix);
+                let budget = LINE_WIDTH.saturating_sub(fixed);
+                let last = render::truncate_to_width(&last, budget);
+                eprint!(
+                    "\r\x1b[2K\x1b[36m{}\x1b[0m {reviewing} \x1b[2m·\x1b[0m {last}\x1b[2m{suffix}\x1b[0m",
+                    FRAMES[i % FRAMES.len()],
+                );
+                let _ = std::io::Write::flush(&mut std::io::stderr());
+                i += 1;
+            }
+        })
+    });
+
+    let started = std::time::Instant::now();
+    let outcome = run_review(cfg, &opts).await?;
+
+    if let Some(h) = render {
+        h.abort();
+        let t = i18n::Lang::detect();
+        let (n, _) = progress.as_ref().unwrap().snapshot();
+        let s = started.elapsed().as_secs();
+        eprint!("\r\x1b[2K");
+        eprintln!(
+            "\x1b[32m✓\x1b[0m {} \x1b[2m· {} · {}:{:02}\x1b[0m",
+            t.review_complete(),
+            t.tool_calls(n),
+            s / 60,
+            s % 60
+        );
+    }
+
+    match run.format {
+        OutputFormat::Json => println!("{}", render::render_json(&outcome)?),
+        OutputFormat::Text => print!("{}", render::render_text(&outcome, run.show_filtered)),
+    }
+
+    if run.comment {
+        if let Err(e) = reviewgate_core::forge::post_summary(&outcome).await {
+            eprintln!("failed to post summary comment: {e}");
+        }
+        if let Err(e) = reviewgate_core::forge::post_inline_suggestions(&outcome).await {
+            eprintln!("failed to post inline comments: {e}");
+        }
+    }
+
+    if run.fix || run.fix_all {
+        let root = reviewgate_core::diff::git::repo_root().await?;
+        fix::apply_fixes(
+            &outcome.findings,
+            std::path::Path::new(&root),
+            run.fix_branch.as_deref(),
+            run.fix_all,
+        )?;
+    }
+
+    // Deep profile always treats incomplete as non-PASS for exit semantics.
+    let fail_incomplete = cfg.gate.fail_on_incomplete || opts.profile.is_deep();
+    Ok(exit_code(
+        outcome.decision,
+        outcome.incomplete,
+        fail_incomplete,
+        run.fail_on,
+    ))
+}
+
 async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     use reviewgate_core::config::Config;
-    use reviewgate_core::review::{run_review, ReviewOptions};
+    use reviewgate_core::review::ReviewOptions;
 
     let dims = parse_dimensions(&args.dimensions)?;
     validate_review_args(args)?;
@@ -513,95 +680,81 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
         eprintln!("  + Intent review: intent loaded; running the implementation-vs-intent pass.");
     }
 
-    // 实时进度：仅在终端、非 JSON、非 --verbose 时开。单行就地刷新，结束清行并给紧凑摘要；
-    // JSON/管道/CI/verbose 下不渲染（避免污染输出/与详细日志打架）。
-    let live =
-        std::io::stderr().is_terminal() && args.format != OutputFormat::Json && !args.verbose;
-    let progress = live.then(|| std::sync::Arc::new(reviewgate_core::progress::Progress::new()));
-    opts.progress = progress.clone();
-    let render = progress.clone().map(|p| {
-        let t = i18n::Lang::detect();
-        tokio::spawn(async move {
-            const FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-            // 整行可见宽度上限，与文本渲染保持一致：超出会被终端折行，导致 \r\x1b[2K
-            // 只清当前物理行、残留前面的折行 → 刷屏。把「整行」（含前后缀）压进预算即可。
-            // 宽度按显示列算（CJK 记 2 列），否则中文文案会撑破预算。
-            const LINE_WIDTH: usize = 60;
-            let reviewing = t.reviewing();
-            let start = std::time::Instant::now();
-            let mut i = 0usize;
-            loop {
-                tokio::time::sleep(std::time::Duration::from_millis(120)).await;
-                let (n, last) = p.snapshot();
-                let s = start.elapsed().as_secs();
-                // 可见骨架：`⠋ {reviewing} · ` + last + ` · {n} calls · M:SS`。
-                // 先给前后缀留位，剩下的预算分给 last，保证整行不超过 LINE_WIDTH。
-                let suffix = format!(" · {} · {}:{:02}", t.calls(n), s / 60, s % 60);
-                // 1(spinner)+1(空格)+reviewing+1(空格)+2("· ") 为前缀可见宽。
-                let fixed = 5 + render::display_width(reviewing) + render::display_width(&suffix);
-                let budget = LINE_WIDTH.saturating_sub(fixed);
-                let last = render::truncate_to_width(&last, budget);
-                eprint!(
-                    "\r\x1b[2K\x1b[36m{}\x1b[0m {reviewing} \x1b[2m·\x1b[0m {last}\x1b[2m{suffix}\x1b[0m",
-                    FRAMES[i % FRAMES.len()],
-                );
-                let _ = std::io::Write::flush(&mut std::io::stderr());
-                i += 1;
-            }
-        })
-    });
+    present_and_exit(
+        &cfg,
+        opts,
+        ReviewRunArgs {
+            format: args.format,
+            show_filtered: args.show_filtered,
+            comment: args.comment,
+            fix: args.fix,
+            fix_all: args.fix_all,
+            fix_branch: args.fix_branch.clone(),
+            fail_on: args.fail_on,
+            verbose: args.verbose,
+        },
+    )
+    .await
+}
 
-    let started = std::time::Instant::now();
-    let outcome = run_review(&cfg, &opts).await?;
+/// Security deep review: same engine as `review`, deep profile defaults.
+async fn security(args: &SecurityArgs) -> anyhow::Result<i32> {
+    use reviewgate_core::config::Config;
+    use reviewgate_core::review::ReviewOptions;
 
-    if let Some(h) = render {
-        h.abort();
-        let t = i18n::Lang::detect();
-        let (n, _) = progress.as_ref().unwrap().snapshot();
-        let s = started.elapsed().as_secs();
-        // 清掉进度行，留一行紧凑完成摘要（细节收起）。
-        eprint!("\r\x1b[2K");
-        eprintln!(
-            "\x1b[32m✓\x1b[0m {} \x1b[2m· {} · {}:{:02}\x1b[0m",
-            t.review_complete(),
-            t.tool_calls(n),
-            s / 60,
-            s % 60
-        );
-    }
+    validate_security_args(args)?;
+    let cfg = Config::load()?;
+    let mode = resolve_mode(&args.commit, &args.from, &args.to)?;
+    let samples = args.samples.max(1);
 
-    match args.format {
-        OutputFormat::Json => println!("{}", render::render_json(&outcome)?),
-        OutputFormat::Text => print!("{}", render::render_text(&outcome, args.show_filtered)),
-    }
-
-    // 可选：在 PR/MR 上发摘要评论（GitHub/GitLab/AtomGit）+ 行内 suggestion（GitHub，一键应用，人把关）。
-    if args.comment {
-        if let Err(e) = reviewgate_core::forge::post_summary(&outcome).await {
-            eprintln!("failed to post summary comment: {e}");
+    let etty = std::io::stderr().is_terminal();
+    let dim = |s: &str| {
+        if etty {
+            format!("\x1b[2m{s}\x1b[0m")
+        } else {
+            s.to_string()
         }
-        if let Err(e) = reviewgate_core::forge::post_inline_suggestions(&outcome).await {
-            eprintln!("failed to post inline comments: {e}");
-        }
-    }
+    };
+    let samples_note = if samples > 1 {
+        format!(" · samples={samples}")
+    } else {
+        String::new()
+    };
+    eprintln!(
+        "ReviewGate {} security {} {}",
+        dim("deep review"),
+        dim("· sink inventory + secret precheck"),
+        dim(&format!("· {samples} agents{samples_note}")),
+    );
 
-    // 可选：把 suggestion_code 应用到工作区文件（--fix 逐条确认；--fix-all 全部应用）。
-    if args.fix || args.fix_all {
-        let root = reviewgate_core::diff::git::repo_root().await?;
-        fix::apply_fixes(
-            &outcome.findings,
-            std::path::Path::new(&root),
-            args.fix_branch.as_deref(),
-            args.fix_all,
-        )?;
+    let mut opts = ReviewOptions::security_deep(mode);
+    opts.judge = !args.no_judge;
+    opts.gate = cfg.gate.clone();
+    opts.gate.fail_on_incomplete = true; // deep never treats incomplete as PASS
+    opts.verbose = args.verbose;
+    if args.timeout > 0 {
+        opts.timeout = Some(std::time::Duration::from_secs(args.timeout));
     }
+    opts.samples = samples;
+    opts.judge_concurrency = args.judge_concurrency.max(1);
+    opts.fanout_concurrency = args.fanout_concurrency.max(1);
+    opts.incremental = args.incremental;
 
-    Ok(exit_code(
-        outcome.decision,
-        outcome.incomplete,
-        cfg.gate.fail_on_incomplete,
-        args.fail_on,
-    ))
+    present_and_exit(
+        &cfg,
+        opts,
+        ReviewRunArgs {
+            format: args.format,
+            show_filtered: args.show_filtered,
+            comment: args.comment,
+            fix: args.fix,
+            fix_all: args.fix_all,
+            fix_branch: args.fix_branch.clone(),
+            fail_on: args.fail_on,
+            verbose: args.verbose,
+        },
+    )
+    .await
 }
 
 /// CI 闸口退出码语义（纯函数，便于单测覆盖各组合）。

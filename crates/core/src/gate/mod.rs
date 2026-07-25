@@ -57,6 +57,22 @@ pub fn apply_gate(findings: &mut [Finding], gate: &GateConfig) -> GateDecision {
     decision
 }
 
+/// Incomplete-review policy: when a dimension/unit did not finish and
+/// `fail_on_incomplete` is on, never surface PASS (at least WARN). BLOCK stays BLOCK.
+///
+/// Deep security always enables this policy (see [`crate::review::ReviewProfile::Deep`]).
+pub fn apply_incomplete_policy(
+    decision: GateDecision,
+    incomplete: bool,
+    fail_on_incomplete: bool,
+) -> GateDecision {
+    if incomplete && fail_on_incomplete && decision == GateDecision::Pass {
+        GateDecision::Warn
+    } else {
+        decision
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,6 +163,32 @@ mod tests {
         let g = GateConfig::default();
         let mut empty: Vec<Finding> = vec![];
         assert_eq!(apply_gate(&mut empty, &g), GateDecision::Pass);
+    }
+
+    #[test]
+    fn incomplete_policy_never_passes_when_enabled() {
+        assert_eq!(
+            apply_incomplete_policy(GateDecision::Pass, true, true),
+            GateDecision::Warn
+        );
+        assert_eq!(
+            apply_incomplete_policy(GateDecision::Block, true, true),
+            GateDecision::Block
+        );
+        assert_eq!(
+            apply_incomplete_policy(GateDecision::Warn, true, true),
+            GateDecision::Warn
+        );
+        // Complete empty review → still PASS.
+        assert_eq!(
+            apply_incomplete_policy(GateDecision::Pass, false, true),
+            GateDecision::Pass
+        );
+        // Policy off → incomplete does not downgrade.
+        assert_eq!(
+            apply_incomplete_policy(GateDecision::Pass, true, false),
+            GateDecision::Pass
+        );
     }
 
     #[test]

@@ -131,6 +131,8 @@ irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 |
 
 > 默认审查缺陷四维（security / perf / logic / ai_smell）。style/business/intent 为 opt-in——闸口聚焦高危，不用风格噪声淹没真问题。
 
+**安全深审**（`reviewgate security`）：只跑 security，但更深——sink 清单 + 强制追源、默认 samples≥2、确定性密钥预检、未审完绝不 PASS。日常合并用 `review`；发版 / 鉴权支付相关改动 / 不放心时用 `security`。
+
 然后：
 
 1. **行号直报 + 校验** —— LLM 直接抄标注行号，引擎用代码片段锚点校验/兜底，降低行号漂移。
@@ -228,6 +230,8 @@ reviewgate review --from main --to HEAD # 审查当前分支相对 main 的改�
 reviewgate review --intent spec.md      # 检查实现是否符合需求/设计
 reviewgate review --format json         # 输出机器可读 JSON
 reviewgate review --fail-on block       # BLOCK 时退出码 1，适合 CI
+reviewgate security                     # 安全深审（仅 security · 更高采样 · 密钥预检）
+reviewgate security --from main --to HEAD
 ```
 
 <details>
@@ -432,7 +436,7 @@ curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/integr
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/dengmengmian/ReviewGate
-    rev: v0.7.1
+    rev: v0.8.0
     hooks:
       - id: reviewgate
 ```

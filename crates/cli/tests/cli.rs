@@ -52,6 +52,38 @@ fn cli_help_shows_usage_and_subcommands() {
         stdout.contains("review") || stdout.contains("<COMMAND>"),
         "help should list commands"
     );
+    assert!(
+        stdout.contains("security"),
+        "help should list the security deep-review command: {stdout}"
+    );
+}
+
+#[test]
+fn cli_security_help_describes_deep_review() {
+    let out = bin()
+        .args(["security", "--help"])
+        .output()
+        .expect("run reviewgate security --help");
+    assert!(out.status.success(), "security --help should exit 0");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let lower = stdout.to_ascii_lowercase();
+    assert!(
+        lower.contains("security")
+            && (lower.contains("deep")
+                || lower.contains("sink")
+                || lower.contains("secret")
+                || lower.contains("review")),
+        "security help should describe security-focused review: {stdout}"
+    );
+    // Core range flags must be available (same as review).
+    assert!(
+        stdout.contains("--commit") && stdout.contains("--from") && stdout.contains("--to"),
+        "security help should accept range flags: {stdout}"
+    );
+    assert!(
+        stdout.contains("--samples"),
+        "security help should expose samples: {stdout}"
+    );
 }
 
 #[test]

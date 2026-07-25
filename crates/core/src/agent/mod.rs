@@ -8,7 +8,8 @@ mod prompt;
 mod run;
 
 pub use prompt::{
-    build_user_prompt, dimension_focus_block, intent_system_prompt, shared_system_prompt,
+    build_user_prompt, dimension_focus_block, dimension_focus_block_with_deep,
+    intent_system_prompt, shared_system_prompt,
 };
 pub use run::{run_agent, run_agent_with_stats};
 
@@ -33,6 +34,8 @@ pub struct AgentConfig {
     pub max_input_tokens: Option<usize>,
     /// 实时进度沉淀（跨并行 Agent 共享）。每次工具调用更新；CLI 据此单行实时渲染。None = 不记录。
     pub progress: Option<std::sync::Arc<crate::progress::Progress>>,
+    /// When set, replaces the default dimension focus block (deep security profile).
+    pub focus_override: Option<String>,
 }
 
 /// Agent 退出原因。区分**正常收尾**与**未审完**，供上层闸口"未审完不放行"。
@@ -164,6 +167,7 @@ impl AgentConfig {
             timeout: None,
             max_input_tokens: None,
             progress: None,
+            focus_override: None,
         }
     }
 }

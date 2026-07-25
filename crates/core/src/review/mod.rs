@@ -10,11 +10,13 @@ mod incremental;
 mod intent;
 mod prefetch;
 mod rules;
+mod secrets;
 mod suppress;
 mod units;
 
 pub use dedup::dedupe;
 pub use rules::{build_rules_section, build_rules_section_with_warnings};
+pub use secrets::{match_added_line as match_secret_line, scan_diff as scan_secrets};
 pub use suppress::fingerprint;
 pub use units::{plan_units, ReviewUnit};
 
@@ -22,12 +24,12 @@ use aggregate::{boost_cross_dimension_agreement, sort_findings};
 use context::{build_unit_prompt, new_ref_for};
 
 use crate::agent::{
-    dimension_focus_block, run_agent_with_stats, shared_system_prompt, AgentConfig,
+    dimension_focus_block_with_deep, run_agent_with_stats, shared_system_prompt, AgentConfig,
     AgentExitReason, AgentRun, AgentStats,
 };
 use crate::config::{Config, GateConfig, DEFAULT_MAX_INPUT_TOKENS};
 use crate::diff::{self, Diff, DiffMode};
-use crate::gate::{apply_gate, GateDecision};
+use crate::gate::{apply_gate, apply_incomplete_policy, GateDecision};
 use crate::index::{CachingIndex, PersistentIndex, RepoIndex};
 use crate::judge::{judge_all_with_stats_limited, JudgeStats};
 use crate::llm::{build_client, estimate_tokens, LlmClient};
@@ -40,6 +42,34 @@ use anyhow::Result;
 use serde::Serialize;
 use std::path::Path;
 use std::sync::Arc;
+
+/// Review depth profile. Standard is the multi-dimension quality gate; Deep is
+/// security-only thorough review (`reviewgate security`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ReviewProfile {
+    /// Default multi-dimension gate: standard security checklist, samples=1.
+    #[default]
+    Standard,
+    /// Security deep review: security-only, higher samples, sink-driven focus,
+    /// deterministic secret precheck, incomplete never PASS.
+    Deep,
+}
+
+impl ReviewProfile {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ReviewProfile::Standard => "standard",
+            ReviewProfile::Deep => "deep",
+        }
+    }
+
+    pub fn is_deep(self) -> bool {
+        matches!(self, ReviewProfile::Deep)
+    }
+}
+
+/// Default sample count for the deep security profile.
+pub const DEEP_DEFAULT_SAMPLES: usize = 2;
 
 /// 审查选项。
 pub struct ReviewOptions {
@@ -71,6 +101,8 @@ pub struct ReviewOptions {
     /// 增量复审（opt-in，默认 false）：按文件缓存发现，只重审 hunk 变化的文件。
     /// 拿覆盖度换成本——见 LIMITATIONS。off 时零行为变化。
     pub incremental: bool,
+    /// Standard vs deep security profile (does not add a new Dimension).
+    pub profile: ReviewProfile,
 }
 
 impl ReviewOptions {
@@ -89,11 +121,25 @@ impl ReviewOptions {
             intent: None,
             progress: None,
             incremental: false,
+            profile: ReviewProfile::Standard,
         }
     }
 
     pub fn workspace(dimensions: Vec<Dimension>) -> Self {
         Self::new(DiffMode::Workspace, dimensions)
+    }
+
+    /// Security-only deep review defaults used by `reviewgate security`.
+    ///
+    /// - dimensions = `[Security]` only
+    /// - samples = [`DEEP_DEFAULT_SAMPLES`] (≥ standard's 1)
+    /// - profile = Deep (deep focus, secret precheck, fail-incomplete hard)
+    pub fn security_deep(mode: DiffMode) -> Self {
+        let mut opts = Self::new(mode, vec![Dimension::Security]);
+        opts.profile = ReviewProfile::Deep;
+        opts.samples = DEEP_DEFAULT_SAMPLES;
+        opts.gate.fail_on_incomplete = true;
+        opts
     }
 }
 
@@ -161,13 +207,15 @@ pub async fn run_review_with_client(
     }
 
     // 配置了任一规则来源（inline / rules_dir / skills_dir）就自动并入 Business 维度。
+    // Deep security stays security-only — do not pull in business rules dimension.
     let has_business_rules = !cfg.business.rules.is_empty()
         || cfg.business.rules_dir.is_some()
         || cfg.business.skills_dir.is_some();
     let mut dims = opts.dimensions.clone();
-    if has_business_rules && !dims.contains(&Dimension::Business) {
+    if !opts.profile.is_deep() && has_business_rules && !dims.contains(&Dimension::Business) {
         dims.push(Dimension::Business);
     }
+    let deep = opts.profile.is_deep();
     // 输入预算 → 把 diff 切成审查单元（正常 PR = 1 个单元，零退化）。
     let budget = cfg
         .active_provider()
@@ -178,7 +226,7 @@ pub async fn run_review_with_client(
     let overhead = estimate_tokens(&shared_system_prompt())
         + dims
             .iter()
-            .map(|d| estimate_tokens(&dimension_focus_block(*d)))
+            .map(|d| estimate_tokens(&dimension_focus_block_with_deep(*d, deep)))
             .max()
             .unwrap_or(0)
         + 256;
@@ -209,6 +257,7 @@ pub async fn run_review_with_client(
             opts.judge,
             samples,
             opts.exec_verify,
+            opts.profile.as_str(),
         );
         let cache = IncrementalCache::load(Path::new(&root));
         let (todo, reused) = incremental::partition(&diff, &sig, &cache);
@@ -295,6 +344,10 @@ pub async fn run_review_with_client(
                 agent_cfg.timeout = opts.timeout;
                 // 发送前预检预算：确定性避免撞 provider 的 context-length 上限。
                 agent_cfg.max_input_tokens = Some(budget);
+                if deep && *d == Dimension::Security {
+                    agent_cfg.focus_override =
+                        Some(dimension_focus_block_with_deep(Dimension::Security, true));
+                }
                 let prompt = Arc::clone(prompt);
                 let reg = &reg;
                 let ctx = &ctx;
@@ -339,6 +392,22 @@ pub async fn run_review_with_client(
     // 每(单元×维度)容错：单个失败只记告警，不影响其它返回部分结果；未审完则标记 incomplete。
     let (mut findings, agent_stats) =
         collect_agent_results(results, &mut warnings, &mut incomplete);
+
+    // Deep profile: deterministic secret precheck (no LLM). Held aside and merged
+    // **after** judge so insecure-by-construction hits cannot be false-negatived
+    // by the counter-evidence stage (live: judge previously wiped sk_live_ findings).
+    let secret_hits = if deep {
+        let hits = secrets::scan_diff(&diff);
+        if opts.verbose && !hits.is_empty() {
+            eprintln!(
+                "  [secrets] {} deterministic secret finding(s) (post-judge merge)",
+                hits.len()
+            );
+        }
+        hits
+    } else {
+        Vec::new()
+    };
     // 质量闸口不能把"未审完"误读成"通过"：未审完的维度/单元已保留其部分发现，但仍要醒目提示。
     if incomplete {
         if warnings.iter().any(|w| w.kind == "auth_failed") {
@@ -410,6 +479,14 @@ pub async fn run_review_with_client(
         eprintln!("  [judge] skipped (--no-judge)");
     }
 
+    // Merge deterministic secret hits after judge; relocate then dedupe with agent findings.
+    if !secret_hits.is_empty() {
+        let mut secrets = secret_hits;
+        relocate_all(&mut secrets, Path::new(&root), &new_ref, &diff).await;
+        findings.extend(secrets);
+        findings = dedupe(findings);
+    }
+
     if opts.verbose {
         let mut total_usage = agent_stats.usage.clone();
         total_usage.add(&judge_stats.usage);
@@ -458,9 +535,9 @@ pub async fn run_review_with_client(
     // 闸口：标记过滤项 + 判定。复合排序：未过滤优先 → 严重度降 → 置信度降。
     let mut decision = apply_gate(&mut findings, &opts.gate);
     // 未审完不变量：有单元未审完且 fail_on_incomplete 时，永不 PASS（至少 WARN；有 BLOCK 仍 BLOCK）。
-    if incomplete && opts.gate.fail_on_incomplete && decision == GateDecision::Pass {
-        decision = GateDecision::Warn;
-    }
+    // Deep security always forces fail_on_incomplete (even if config turned it off).
+    let fail_incomplete = opts.gate.fail_on_incomplete || deep;
+    decision = apply_incomplete_policy(decision, incomplete, fail_incomplete);
     // 已满足(met)的验收项和已抑制项在闸口之后并入：
     // 它们是信息项，只供验收清单 / --show-filtered 展示，不影响判定。
     findings.append(&mut intent_met);
@@ -836,9 +913,46 @@ mod tests {
         assert_eq!(opts.fanout_concurrency, 6);
         assert!(opts.intent.is_none());
         assert!(!opts.verbose);
+        assert_eq!(opts.profile, ReviewProfile::Standard);
 
         let ws = ReviewOptions::workspace(Dimension::ALL.to_vec());
         assert!(matches!(ws.mode, DiffMode::Workspace));
+        assert_eq!(ws.profile, ReviewProfile::Standard);
+    }
+
+    #[test]
+    fn security_deep_defaults_are_security_only_with_higher_samples() {
+        let deep = ReviewOptions::security_deep(DiffMode::Workspace);
+        let standard = ReviewOptions::workspace(Dimension::ALL.to_vec());
+
+        assert_eq!(deep.profile, ReviewProfile::Deep);
+        assert!(deep.profile.is_deep());
+        assert_eq!(deep.dimensions, vec![Dimension::Security]);
+        assert_eq!(deep.samples, DEEP_DEFAULT_SAMPLES);
+        assert!(deep.samples > standard.samples);
+        assert!(deep.gate.fail_on_incomplete);
+
+        // Standard multi-dim path is unchanged: four defect dims, samples=1, standard profile.
+        assert_eq!(standard.dimensions, Dimension::ALL.to_vec());
+        assert_eq!(standard.samples, 1);
+        assert!(!standard.profile.is_deep());
+        assert_eq!(ReviewProfile::Deep.as_str(), "deep");
+        assert_eq!(ReviewProfile::Standard.as_str(), "standard");
+    }
+
+    #[test]
+    fn deep_incomplete_policy_never_passes_empty_incomplete_outcome() {
+        // Simulate deep incomplete with zero findings after gate → must not PASS.
+        let decision = apply_gate(&mut [], &GateConfig::default());
+        assert_eq!(decision, GateDecision::Pass);
+        let deep_forced = apply_incomplete_policy(decision, true, true);
+        assert_eq!(deep_forced, GateDecision::Warn);
+
+        // Complete empty findings remain PASS.
+        assert_eq!(
+            apply_incomplete_policy(GateDecision::Pass, false, true),
+            GateDecision::Pass
+        );
     }
 
     #[test]
