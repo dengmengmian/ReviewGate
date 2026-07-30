@@ -91,7 +91,11 @@ mod tests {
     #[test]
     fn poisoned_fixture_contains_sql_injection_shape() {
         assert!(POISONED_HANDLER.contains("DELETE FROM users"));
-        assert!(POISONED_HANDLER.contains("f\"DELETE") || POISONED_HANDLER.contains("f'SELECT") || POISONED_HANDLER.contains("f\"SELECT"));
+        assert!(
+            POISONED_HANDLER.contains("f\"DELETE")
+                || POISONED_HANDLER.contains("f'SELECT")
+                || POISONED_HANDLER.contains("f\"SELECT")
+        );
         assert!(POISONED_HANDLER.contains("user_id"));
     }
 

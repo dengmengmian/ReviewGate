@@ -66,8 +66,7 @@ fn warning_marks_path_unfinished(w: &ReviewWarning, path: &str) -> bool {
     if w.dimension == format!("unit:{path}") || w.dimension.starts_with(&format!("unit:{path}")) {
         return true;
     }
-    if w.kind == "oversized" && (w.paths.iter().any(|x| x == path) || w.dimension.contains(path))
-    {
+    if w.kind == "oversized" && (w.paths.iter().any(|x| x == path) || w.dimension.contains(path)) {
         return true;
     }
     false
@@ -132,7 +131,9 @@ pub fn incomplete_advice(warnings: &[ReviewWarning]) -> Vec<String> {
         advice.push("Raise --timeout (e.g. --timeout 300) and re-run".into());
     }
     if kinds.iter().any(|k| *k == "oversized") {
-        advice.push("Split oversized files into smaller PRs or raise provider max_input_tokens".into());
+        advice.push(
+            "Split oversized files into smaller PRs or raise provider max_input_tokens".into(),
+        );
     }
     if kinds.iter().any(|k| *k == "auth_failed") {
         advice.push("Fix API key (REVIEWGATE_API_KEY or config) and re-run".into());
@@ -204,8 +205,10 @@ mod tests {
     #[test]
     fn oversized_critical_path_forces() {
         let g = resolve_critical_globs(&None);
-        let w = vec![ReviewWarning::new("unit:src/payment/pay.rs", "oversized", "big")
-            .with_paths(vec!["src/payment/pay.rs".into()])];
+        let w = vec![
+            ReviewWarning::new("unit:src/payment/pay.rs", "oversized", "big")
+                .with_paths(vec!["src/payment/pay.rs".into()]),
+        ];
         assert!(critical_incomplete_forces_fail(
             true,
             &w,

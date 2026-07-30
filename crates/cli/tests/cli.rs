@@ -78,14 +78,8 @@ fn cli_help_shows_usage_and_subcommands() {
         stdout.contains("security"),
         "help should list the security deep-review command: {stdout}"
     );
-    assert!(
-        stdout.contains("init"),
-        "help should list init: {stdout}"
-    );
-    assert!(
-        stdout.contains("demo"),
-        "help should list demo: {stdout}"
-    );
+    assert!(stdout.contains("init"), "help should list init: {stdout}");
+    assert!(stdout.contains("demo"), "help should list demo: {stdout}");
 }
 
 #[test]
@@ -134,13 +128,7 @@ fn cli_demo_help_lists_prepare_only() {
 fn cli_init_writes_config_noninteractive() {
     let dir = temp_dir("rg-init-cli");
     let out = bin()
-        .args([
-            "init",
-            "--yes",
-            "--provider",
-            "deepseek",
-            "--config-dir",
-        ])
+        .args(["init", "--yes", "--provider", "deepseek", "--config-dir"])
         .arg(&dir)
         .output()
         .expect("run reviewgate init");
@@ -151,7 +139,11 @@ fn cli_init_writes_config_noninteractive() {
         "init should succeed. stdout={stdout} stderr={stderr}"
     );
     let cfg_path = dir.join("config.toml");
-    assert!(cfg_path.is_file(), "config.toml must exist at {}", cfg_path.display());
+    assert!(
+        cfg_path.is_file(),
+        "config.toml must exist at {}",
+        cfg_path.display()
+    );
     let cfg = std::fs::read_to_string(&cfg_path).expect("config written");
     assert!(cfg.contains("provider = \"deepseek\""));
     assert!(cfg.contains("protocol = \"openai\""));

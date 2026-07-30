@@ -96,7 +96,8 @@ pub fn estimate_from_units(
         let candidates = ((fanout as f64) * JUDGE_CANDIDATE_FRACTION).ceil() as u64;
         let candidates = candidates.max(1).min(50);
         est_input = est_input.saturating_add(candidates.saturating_mul(JUDGE_INPUT_PER_CANDIDATE));
-        est_output = est_output.saturating_add(candidates.saturating_mul(JUDGE_OUTPUT_PER_CANDIDATE));
+        est_output =
+            est_output.saturating_add(candidates.saturating_mul(JUDGE_OUTPUT_PER_CANDIDATE));
     }
 
     // 文件数为 0 时全 0。

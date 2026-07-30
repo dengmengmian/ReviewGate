@@ -82,7 +82,11 @@ pub fn build_coverage(
         .collect();
 
     let mut advice = incomplete_advice(warnings);
-    if unit_plan.unit_count > 1 && !advice.iter().any(|a| a.contains("Split") || a.contains("拆")) {
+    if unit_plan.unit_count > 1
+        && !advice
+            .iter()
+            .any(|a| a.contains("Split") || a.contains("拆"))
+    {
         advice.push(
             "Large PR was split into directory-packed units; re-run unfinished units with higher --timeout or smaller diffs"
                 .into(),
@@ -237,13 +241,11 @@ mod tests {
         };
         let units = plan_units(&diff, 100_000);
         let plan = summarize_units(&diff, &units);
-        let warnings = vec![ReviewWarning::new(
-            "unit:src/auth/a.rs",
-            "oversized",
-            "too big",
-        )
-        .with_paths(vec!["src/auth/a.rs".into()])
-        .with_advice("split")];
+        let warnings = vec![
+            ReviewWarning::new("unit:src/auth/a.rs", "oversized", "too big")
+                .with_paths(vec!["src/auth/a.rs".into()])
+                .with_advice("split"),
+        ];
         let cov = build_coverage(&diff, &plan, &warnings, true);
         assert!(cov.should_surface());
         assert!(cov.unfinished_paths.iter().any(|p| p.contains("auth")));

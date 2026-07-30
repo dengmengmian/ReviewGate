@@ -811,11 +811,9 @@ async fn present_and_exit(
         if let Err(e) = reviewgate_core::forge::post_summary(&outcome).await {
             eprintln!("failed to post summary comment: {e}");
         }
-        if let Err(e) = reviewgate_core::forge::post_inline_suggestions(
-            &outcome,
-            cfg.gate.block_threshold,
-        )
-        .await
+        if let Err(e) =
+            reviewgate_core::forge::post_inline_suggestions(&outcome, cfg.gate.block_threshold)
+                .await
         {
             eprintln!("failed to post inline comments: {e}");
         }
@@ -832,9 +830,8 @@ async fn present_and_exit(
     }
 
     // Deep profile / critical-path incomplete always treat incomplete as non-PASS for exit semantics.
-    let fail_incomplete = cfg.gate.fail_on_incomplete
-        || opts.profile.is_deep()
-        || outcome.critical_incomplete;
+    let fail_incomplete =
+        cfg.gate.fail_on_incomplete || opts.profile.is_deep() || outcome.critical_incomplete;
     let incomplete_for_exit = outcome.incomplete || outcome.critical_incomplete;
     Ok(exit_code(
         outcome.decision,

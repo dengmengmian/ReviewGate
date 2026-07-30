@@ -19,7 +19,9 @@ mod secrets;
 mod suppress;
 mod units;
 
-pub use cost::{estimate_from_units, estimate_review_cost, exceeds_budget, CostEstimate, TokenPrices};
+pub use cost::{
+    estimate_from_units, estimate_review_cost, exceeds_budget, CostEstimate, TokenPrices,
+};
 pub use coverage::{build_coverage, refresh_unit_statuses, CoverageSnapshot};
 pub use critical::{
     critical_incomplete_forces_fail, incomplete_advice, resolve_critical_globs, unfinished_paths,
@@ -347,20 +349,11 @@ pub async fn run_review_with_client(
     }
 
     // 跑前成本估算 + 预算守卫（estimate-only 在此返回）。
-    let cost_estimate = estimate_from_units(
-        &diff,
-        &units,
-        &dims,
-        samples,
-        opts.judge,
-        opts.token_prices,
-    );
+    let cost_estimate =
+        estimate_from_units(&diff, &units, &dims, samples, opts.judge, opts.token_prices);
     eprintln!("  [cost] {}", cost_estimate.summary);
-    if let Some(why) = exceeds_budget(
-        &cost_estimate,
-        opts.max_cost_usd,
-        opts.max_est_input_tokens,
-    ) {
+    if let Some(why) = exceeds_budget(&cost_estimate, opts.max_cost_usd, opts.max_est_input_tokens)
+    {
         anyhow::bail!(
             "budget exceeded before review: {why}\n  estimate: {}\n  raise --max-cost / --max-input-tokens, narrow --dimensions, or split the PR",
             cost_estimate.summary

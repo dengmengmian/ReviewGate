@@ -268,10 +268,7 @@ pub async fn post_summary(outcome: &ReviewOutcome) -> Result<()> {
 
 /// 行内评论候选：已定位、未过滤，且 **high 或达到 block 置信度**（闸口级问题落到 PR 行上）。
 /// 意图维度走验收清单，不发行内 suggestion。
-pub fn inline_candidates<'a>(
-    outcome: &'a ReviewOutcome,
-    block_threshold: f32,
-) -> Vec<&'a Finding> {
+pub fn inline_candidates<'a>(outcome: &'a ReviewOutcome, block_threshold: f32) -> Vec<&'a Finding> {
     use crate::model::Dimension;
     outcome
         .findings
@@ -290,10 +287,7 @@ pub fn inline_candidates<'a>(
 /// best-effort：逐条独立提交，单条失败不影响其它。
 ///
 /// `block_threshold` 应来自闸口配置（`gate.block_threshold`），与 PASS/BLOCK 判定一致。
-pub async fn post_inline_suggestions(
-    outcome: &ReviewOutcome,
-    block_threshold: f32,
-) -> Result<()> {
+pub async fn post_inline_suggestions(outcome: &ReviewOutcome, block_threshold: f32) -> Result<()> {
     let Some(ctx) = resolve_context(|k| std::env::var(k).ok(), detect_pr_number()) else {
         return Ok(());
     };
@@ -624,7 +618,11 @@ mod tests {
         f.filtered = true;
         let mut o = outcome_with(vec![f], GateDecision::Warn, true);
         o.files_changed = 2;
-        o.warnings = vec![crate::review::ReviewWarning::new("logic", "timed_out", "timeout")];
+        o.warnings = vec![crate::review::ReviewWarning::new(
+            "logic",
+            "timed_out",
+            "timeout",
+        )];
         let md = render_markdown(&o);
         assert!(md.contains("WARN"));
         assert!(md.contains("审查未完整"));
@@ -644,7 +642,11 @@ mod tests {
         low_located.confidence = 0.5;
         let mut unlocated = base_finding();
         unlocated.start_line = 0;
-        let o = outcome_with(vec![high, med, low_located, unlocated], GateDecision::Block, false);
+        let o = outcome_with(
+            vec![high, med, low_located, unlocated],
+            GateDecision::Block,
+            false,
+        );
         let c = inline_candidates(&o, 0.8);
         assert_eq!(c.len(), 1);
         assert_eq!(c[0].severity, Severity::High);

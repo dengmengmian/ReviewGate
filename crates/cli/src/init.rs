@@ -170,13 +170,7 @@ pub fn resolve_interactive() -> Result<InitChoice> {
     eprintln!("ReviewGate init — write a global config (API key stays in the environment).\n");
     eprintln!("Provider presets:");
     for (i, p) in PRESETS.iter().enumerate() {
-        eprintln!(
-            "  {}) {:<10}  {}  ({})",
-            i + 1,
-            p.name,
-            p.model,
-            p.note
-        );
+        eprintln!("  {}) {:<10}  {}  ({})", i + 1, p.name, p.model, p.note);
     }
     eprintln!("  4) custom      your own base_url + model");
     eprintln!();
@@ -324,10 +318,7 @@ mod tests {
         let content = render_config("deepseek", "openai", "https://x", "m");
         write_config(&dir, &content, false).unwrap();
         let err = write_config(&dir, &content, false).unwrap_err();
-        assert!(
-            err.to_string().contains("already exists"),
-            "err={err}"
-        );
+        assert!(err.to_string().contains("already exists"), "err={err}");
         write_config(&dir, &content, true).unwrap();
         std::fs::remove_dir_all(&dir).ok();
     }

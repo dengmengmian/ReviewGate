@@ -127,7 +127,11 @@ pub fn render_json(o: &ReviewOutcome) -> anyhow::Result<String> {
         } else {
             Some(unfinished)
         },
-        advice: if advice.is_empty() { None } else { Some(advice) },
+        advice: if advice.is_empty() {
+            None
+        } else {
+            Some(advice)
+        },
         unit_plan: o.unit_plan.as_ref(),
         coverage: o.coverage.as_ref(),
         findings: o.findings.iter().map(FindingView::from).collect(),
@@ -490,10 +494,9 @@ fn render_text_lang(outcome: &ReviewOutcome, show_filtered: bool, t: Lang) -> St
                     out.push_str(&format!("    • {}\n", sanitize(pth)));
                 }
                 if cov.unfinished_paths.len() > 40 {
-                    out.push_str(&p.dim(&format!(
-                        "    … {} more\n",
-                        cov.unfinished_paths.len() - 40
-                    )));
+                    out.push_str(
+                        &p.dim(&format!("    … {} more\n", cov.unfinished_paths.len() - 40)),
+                    );
                 }
             }
             if !cov.skipped_oversized_paths.is_empty() {
@@ -533,13 +536,15 @@ fn render_text_lang(outcome: &ReviewOutcome, show_filtered: bool, t: Lang) -> St
         }
         // Prefer coverage-driven unfinished list when present (already shown above);
         // still list path-less dimension timeouts under warnings.
-        if outcome.coverage.as_ref().map(|c| !c.should_surface()).unwrap_or(true) {
+        if outcome
+            .coverage
+            .as_ref()
+            .map(|c| !c.should_surface())
+            .unwrap_or(true)
+        {
             let unfinished = reviewgate_core::review::unfinished_paths(&outcome.warnings);
             if !unfinished.is_empty() {
-                out.push_str(&format!(
-                    "\n  Unfinished paths ({}):\n",
-                    unfinished.len()
-                ));
+                out.push_str(&format!("\n  Unfinished paths ({}):\n", unfinished.len()));
                 for pth in unfinished.iter().take(30) {
                     out.push_str(&format!("    • {}\n", sanitize(pth)));
                 }
@@ -759,8 +764,8 @@ fn render_finding(p: &Palette, f: &Finding, num: usize, t: Lang) -> String {
 mod tests {
     use super::*;
     use reviewgate_core::gate::GateDecision;
-    use reviewgate_core::model::{Dimension, Usage};
     use reviewgate_core::gate::GateDecision as GD;
+    use reviewgate_core::model::{Dimension, Usage};
     use reviewgate_core::review::{
         CoverageSnapshot, ReviewWarning, UnitJobSummary, UnitPlanSummary,
     };
