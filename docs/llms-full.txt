@@ -46,11 +46,20 @@ base_url = "https://api.deepseek.com/v1"
 model    = "deepseek-v4-pro"
 ```
 
-Run:
+Run (v0.9 cold start):
 ```bash
+reviewgate init
 export REVIEWGATE_API_KEY="your key"
-reviewgate llm test
+reviewgate demo                 # built-in fixture; should BLOCK
+cd /path/to/your/repo
 reviewgate review
+```
+
+Also useful:
+```bash
+reviewgate review --profile audit
+reviewgate review --estimate-only
+reviewgate security --from main --to HEAD
 ```
 
 ## CI usage

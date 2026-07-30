@@ -51,7 +51,7 @@
       "description": "A pre-merge quality gate for AI-generated code. Reviews a git diff in parallel across security, logic, performance, style, AI-smell, and business-rule dimensions, deduplicates and counter-evidence-judges findings, surfaces must-fix issues first, folds low-confidence noise, and degrades to WARN on timeout or oversized context instead of faking a PASS.",
       "url": "https://dengmengmian.github.io/ReviewGate/en/",
       "downloadUrl": "https://github.com/dengmengmian/ReviewGate/releases/latest",
-      "softwareVersion": "0.2.0",
+      "softwareVersion": "0.9.0",
       "license": "https://opensource.org/licenses/MIT",
       "programmingLanguage": "Rust",
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -425,9 +425,9 @@
 <section id="install" class="alt" aria-labelledby="install-heading">
   <div class="wrap">
     <div class="sec-head">
-      <span class="eyebrow">Quick start</span>
+      <span class="eyebrow">Quick start · v0.9</span>
       <h2 id="install-heading">Three things to get going</h2>
-      <p>A git repo, an LLM API key, and the reviewgate command. Model-agnostic — any OpenAI-compatible or Anthropic endpoint.</p>
+      <p>Installer, an LLM API key, any git repo. Model-agnostic; path: init → demo → review.</p>
     </div>
     <div class="install-grid">
       <div>
@@ -435,7 +435,9 @@
           <div class="cb-head"><span>① Install — Linux / macOS</span>
             <button class="copy" data-copy="curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh">Copy</button></div>
 <pre><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/\
-    dengmengmian/ReviewGate/main/install.sh | sh</pre>
+    dengmengmian/ReviewGate/main/install.sh | sh
+<span class="cm"># or: brew install dengmengmian/tap/reviewgate</span>
+<span class="cm"># or: cargo install reviewgate</span></pre>
         </div>
         <div class="codeblock" style="margin-top:16px">
           <div class="cb-head"><span>Windows (PowerShell)</span>
@@ -443,38 +445,42 @@
 <pre><span class="prompt">PS&gt;</span> irm https://raw.githubusercontent.com/\
      dengmengmian/ReviewGate/main/install.ps1 | iex</pre>
         </div>
-        <p class="note">Prefer not to pipe a remote script? Download install.sh to inspect, or grab the binary from GitHub Releases. Upgrade anytime with reviewgate upgrade.</p>
+        <p class="note">Prefer not to pipe a remote script? Download install.sh to inspect, or grab the binary from GitHub Releases. Upgrade: reviewgate upgrade.</p>
       </div>
       <div>
         <div class="codeblock">
-          <div class="cb-head"><span>② Configure + review</span>
-            <button class="copy" data-copy='mkdir -p ~/.reviewgate
-cat > ~/.reviewgate/config.toml <<EOF
-provider = "deepseek"
-[providers.deepseek]
-protocol = "openai"
-base_url = "https://api.deepseek.com/v1"
-model = "deepseek-v4-pro"
-EOF
+          <div class="cb-head"><span>② init → demo → review</span>
+            <button class="copy" data-copy='reviewgate init
 export REVIEWGATE_API_KEY="your key"
-reviewgate llm test
+reviewgate demo
+cd /path/to/your/repo
 reviewgate review'>Copy</button></div>
-<pre><span class="cm"># Global config shared across repos</span>
-<span class="prompt">$</span> cat > ~/.reviewgate/config.toml <<EOF
-provider = <span class="k">"deepseek"</span>
-[providers.deepseek]
-protocol = <span class="k">"openai"</span>
-base_url = <span class="k">"https://api.deepseek.com/v1"</span>
-model    = <span class="k">"deepseek-v4-pro"</span>
-EOF
-
-<span class="cm"># Inject key via env, not config file</span>
+<pre><span class="cm"># Write global config (key stays in the environment)</span>
+<span class="prompt">$</span> reviewgate init
 <span class="prompt">$</span> export REVIEWGATE_API_KEY=<span class="k">"your key"</span>
 
-<span class="prompt">$</span> reviewgate llm test     <span class="cm"># verify connectivity</span>
-<span class="prompt">$</span> reviewgate review       <span class="cm"># review current changes</span></pre>
+<span class="cm"># Built-in poisoned fixture; should BLOCK</span>
+<span class="prompt">$</span> reviewgate demo
+
+<span class="cm"># Review your changes</span>
+<span class="prompt">$</span> cd /path/to/your/repo
+<span class="prompt">$</span> reviewgate review</pre>
         </div>
-        <p class="note">In CI: reviewgate review --fail-on block. Exit 0 pass · 1 blocked by the gate · 2 tool error (config/network) — distinct codes so CI can retry or alert.</p>
+        <p class="note">CI: reviewgate review --fail-on block (0 pass · 1 gate block · 2 tool error). Large PRs: directory-packed units + coverage report; optional --profile audit, --estimate-only, reviewgate security.</p>
+      </div>
+    </div>
+    <div class="pillars" style="margin-top:48px">
+      <div class="card">
+        <h3>init / demo</h3>
+        <p>One command writes config; built-in poisoned fixtures prove the gate BLOCKs.</p>
+      </div>
+      <div class="card">
+        <h3>profile · cost</h3>
+        <p>--profile gate|audit; pre-run [cost] estimate and --max-cost / --estimate-only budgets.</p>
+      </div>
+      <div class="card">
+        <h3>Large-PR coverage</h3>
+        <p>Over-budget diffs pack by directory; report unit_plan + coverage. Incomplete never fakes PASS.</p>
       </div>
     </div>
   </div>
@@ -492,8 +498,9 @@ EOF
       <div class="int">
         <span class="tag">Primary</span>
         <h3>CLI</h3>
-        <p>Run locally or in CI. Workspace / commit / branch range, JSON output, and --intent technical review.</p>
-        <pre><span class="prompt">$</span> reviewgate review --from main --to HEAD</pre>
+        <p>Run locally or in CI. Supports init/demo, profiles, cost budgets, large-PR unit coverage, security deep review, --intent.</p>
+        <pre><span class="prompt">$</span> reviewgate review --from main --to HEAD
+<span class="prompt">$</span> reviewgate security --from main --to HEAD</pre>
       </div>
       <div class="int">
         <span class="tag">CI</span>

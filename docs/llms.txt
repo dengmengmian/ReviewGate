@@ -19,11 +19,12 @@
 - CI exit codes: 0 = pass, 1 = blocked by the gate, 2 = the tool itself errored (config/network). Invalid `--fail-on`/`--format` values are rejected at parse time.
 - Three integration forms over one engine: CLI (primary), Claude Code skill, and GitHub Action.
 
-## Install
+## Install (v0.9)
 
-- Linux / macOS: `curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh`
+- Linux / macOS: `curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh` (or `brew install dengmengmian/tap/reviewgate`, `cargo install reviewgate`)
 - Windows (PowerShell): `irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex`
-- Run: `reviewgate review` (review the current git diff), `reviewgate review --fail-on block` (for CI).
+- Cold start: `reviewgate init` → `export REVIEWGATE_API_KEY=...` → `reviewgate demo` → `reviewgate review`
+- CI: `reviewgate review --fail-on block`. Also: `--profile gate|audit`, `--estimate-only`, `--max-cost`, `reviewgate security`, large-PR `unit_plan`/`coverage` in report.
 
 ## Links
 
