@@ -268,7 +268,7 @@ pub async fn post_summary(outcome: &ReviewOutcome) -> Result<()> {
 
 /// 行内评论候选：已定位、未过滤，且 **high 或达到 block 置信度**（闸口级问题落到 PR 行上）。
 /// 意图维度走验收清单，不发行内 suggestion。
-pub fn inline_candidates<'a>(outcome: &'a ReviewOutcome, block_threshold: f32) -> Vec<&'a Finding> {
+pub fn inline_candidates(outcome: &ReviewOutcome, block_threshold: f32) -> Vec<&Finding> {
     use crate::model::Dimension;
     outcome
         .findings

@@ -31,6 +31,7 @@ pub struct RunMetrics {
 }
 
 impl RunMetrics {
+    #[allow(clippy::too_many_arguments)]
     pub fn build(
         decision: GateDecision,
         incomplete: bool,

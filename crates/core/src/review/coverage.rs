@@ -119,34 +119,19 @@ pub fn refresh_unit_statuses(plan: &mut UnitPlanSummary, warnings: &[ReviewWarni
             job.status = "skipped_oversized".into();
             continue;
         }
-        let hit = job.paths.iter().any(|p| unfinished.contains(p))
-            || warnings.iter().any(|w| {
-                // Dimension-level incomplete (security/logic timed out) marks all planned paths unfinished for narrative.
-                matches!(
-                    w.kind,
-                    "timed_out" | "failed" | "incomplete" | "auth_failed"
-                ) && !w.dimension.starts_with("unit:")
-                    && !w.dimension.starts_with("business")
-            });
-        // Dimension-level incomplete: mark reviewable units as incomplete (honest).
+        let path_unfinished = job.paths.iter().any(|p| unfinished.contains(p));
+        // Dimension-level incomplete (security/logic timed out): mark reviewable units incomplete.
         let dim_incomplete = warnings.iter().any(|w| {
             matches!(
                 w.kind,
                 "timed_out" | "failed" | "incomplete" | "auth_failed"
             ) && !w.dimension.starts_with("unit:")
         });
-        if hit || dim_incomplete {
-            // Prefer path-specific unfinished when present
-            if job.paths.iter().any(|p| unfinished.contains(p)) {
-                job.status = "incomplete".into();
-            } else if dim_incomplete {
-                job.status = "incomplete".into();
-            } else {
-                job.status = "reviewed".into();
-            }
+        job.status = if path_unfinished || dim_incomplete {
+            "incomplete".into()
         } else {
-            job.status = "reviewed".into();
-        }
+            "reviewed".into()
+        };
     }
 }
 

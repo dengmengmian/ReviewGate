@@ -207,6 +207,7 @@ pub fn resolve_interactive() -> Result<InitChoice> {
 }
 
 /// CLI 入口：写出配置并打印下一步。
+#[allow(clippy::too_many_arguments)]
 pub fn run_init(
     provider: &str,
     protocol: Option<&str>,

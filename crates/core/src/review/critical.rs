@@ -127,18 +127,18 @@ pub fn critical_incomplete_forces_fail(
 pub fn incomplete_advice(warnings: &[ReviewWarning]) -> Vec<String> {
     let mut advice = Vec::new();
     let kinds: Vec<&str> = warnings.iter().map(|w| w.kind).collect();
-    if kinds.iter().any(|k| *k == "timed_out") {
+    if kinds.contains(&"timed_out") {
         advice.push("Raise --timeout (e.g. --timeout 300) and re-run".into());
     }
-    if kinds.iter().any(|k| *k == "oversized") {
+    if kinds.contains(&"oversized") {
         advice.push(
             "Split oversized files into smaller PRs or raise provider max_input_tokens".into(),
         );
     }
-    if kinds.iter().any(|k| *k == "auth_failed") {
+    if kinds.contains(&"auth_failed") {
         advice.push("Fix API key (REVIEWGATE_API_KEY or config) and re-run".into());
     }
-    if kinds.iter().any(|k| *k == "incomplete" || *k == "failed") {
+    if kinds.contains(&"incomplete") || kinds.contains(&"failed") {
         advice.push("Re-run with -v; consider --samples 2 for flaky dimensions".into());
     }
     if advice.is_empty() && !warnings.is_empty() {
