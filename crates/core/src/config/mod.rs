@@ -35,6 +35,12 @@ pub struct ProviderConfig {
     /// 小窗口 provider（如部分 64k/128k 端点）应显式调小。
     #[serde(default)]
     pub max_input_tokens: Option<u32>,
+    /// 输入 token 单价（USD / 百万 token），用于跑前成本估算。可选。
+    #[serde(default)]
+    pub price_per_mtok_input: Option<f64>,
+    /// 输出 token 单价（USD / 百万 token）。可选。
+    #[serde(default)]
+    pub price_per_mtok_output: Option<f64>,
 }
 
 /// 默认输入预算：对主流 200k/1M 上下文模型不会误切；小窗 provider 需在配置里显式调小。
@@ -62,6 +68,10 @@ pub struct GateConfig {
     /// 未审完则**永不 PASS**（至少 WARN，且 CI 非 0 退出），杜绝"漏审却放行"。
     #[serde(default = "default_true")]
     pub fail_on_incomplete: bool,
+    /// incomplete 且触及这些路径 glob 时强制非 PASS（`null`/缺省 = 内置 auth/payment 等；
+    /// `[]` = 关闭；显式列表 = 自定义）。
+    #[serde(default)]
+    pub force_fail_incomplete_paths: Option<Vec<String>>,
 }
 
 fn default_block() -> f32 {
@@ -77,6 +87,7 @@ impl Default for GateConfig {
             block_threshold: default_block(),
             warn_threshold: default_warn(),
             fail_on_incomplete: true,
+            force_fail_incomplete_paths: None,
         }
     }
 }
@@ -238,7 +249,8 @@ impl Config {
 
 /// 跨平台用户主目录：Unix 用 `HOME`，Windows 默认不设 HOME，回退 `USERPROFILE`。
 /// 零依赖，覆盖 `~/.reviewgate/config.toml` 在 Windows 上找不到的问题。
-fn home_dir() -> Option<PathBuf> {
+/// CLI（如 `init`）与配置发现共用，避免各处复制一份。
+pub fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .filter(|s| !s.is_empty())
         .or_else(|| std::env::var_os("USERPROFILE").filter(|s| !s.is_empty()))
@@ -447,6 +459,8 @@ api_key = "REPLACE_WITH_YOUR_API_KEY"
             api_key: "k".into(),
             model: "m".into(),
             max_input_tokens: None,
+            price_per_mtok_input: None,
+            price_per_mtok_output: None,
         };
         assert_eq!(p.max_input_tokens(), DEFAULT_MAX_INPUT_TOKENS);
 

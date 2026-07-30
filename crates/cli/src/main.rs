@@ -1,11 +1,14 @@
 //! ReviewGate CLI —— 主形态。
 
+mod demo;
 mod fix;
 mod i18n;
+mod init;
 mod render;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use std::io::IsTerminal;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
@@ -20,6 +23,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Write a global config (provider + model endpoint). Keeps the API key in the environment.
+    Init(InitArgs),
+    /// Run the built-in poisoned fixtures; expect BLOCK (does not need your app repo)
+    Demo(DemoArgs),
     /// Review the current git diff
     Review(ReviewArgs),
     /// Security deep review: sink-driven security-only pass with higher samples and secret precheck
@@ -50,6 +57,49 @@ enum Command {
         #[command(subcommand)]
         cmd: IndexCmd,
     },
+}
+
+/// `reviewgate init` flags.
+#[derive(Parser)]
+struct InitArgs {
+    /// Provider preset: deepseek | openai | anthropic | custom
+    #[arg(long, default_value = "deepseek")]
+    provider: String,
+    /// Protocol override: openai | anthropic
+    #[arg(long)]
+    protocol: Option<String>,
+    /// Base URL override (required for --provider custom)
+    #[arg(long)]
+    base_url: Option<String>,
+    /// Model override (required for --provider custom)
+    #[arg(long)]
+    model: Option<String>,
+    /// Non-interactive: use flags/defaults, no prompts
+    #[arg(long, short = 'y')]
+    yes: bool,
+    /// Overwrite an existing config.toml
+    #[arg(long)]
+    force: bool,
+    /// Directory for config (default ~/.reviewgate). Writes config.toml inside.
+    #[arg(long)]
+    config_dir: Option<PathBuf>,
+    /// Run `llm test` after writing the config
+    #[arg(long)]
+    test: bool,
+}
+
+/// `reviewgate demo` flags.
+#[derive(Parser)]
+struct DemoArgs {
+    /// Keep the temporary demo repo and print its path
+    #[arg(long)]
+    keep: bool,
+    /// Only seed the demo workspace (no LLM). Prints the path and exits 0.
+    #[arg(long)]
+    prepare_only: bool,
+    /// Per-dimension wall-clock timeout in seconds (0 = unlimited)
+    #[arg(long, default_value = "180")]
+    timeout: u64,
 }
 
 #[derive(Subcommand)]
@@ -224,6 +274,21 @@ struct ReviewArgs {
     /// Trades coverage for cost/latency on iterative PRs — see docs/LIMITATIONS.md. Cache lives in .reviewgate/cache/ (self-ignored).
     #[arg(long)]
     incremental: bool,
+    /// Run profile: `gate` (default, precision) or `audit` (wider: samples≥2, includes style).
+    #[arg(long, default_value = "gate")]
+    profile: String,
+    /// Abort before LLM if estimated USD cost exceeds this (requires price_per_mtok_* in provider config).
+    #[arg(long)]
+    max_cost: Option<f64>,
+    /// Abort before LLM if estimated input tokens exceed this upper bound.
+    #[arg(long)]
+    max_input_tokens: Option<u64>,
+    /// Only print the pre-run cost estimate and unit plan; do not call the model.
+    #[arg(long)]
+    estimate_only: bool,
+    /// Do not append run metrics to `.reviewgate/cache/metrics.jsonl`.
+    #[arg(long)]
+    no_metrics: bool,
 }
 
 /// Security deep-review args: same range/format/gate flags as `review`, fixed deep profile.
@@ -296,10 +361,12 @@ async fn main() {
     }
 }
 
-/// 分发子命令，返回进程退出码。只有 `review` 走闸口语义（0=放行 / 1=拦截）；
+/// 分发子命令，返回进程退出码。只有 `review` / `security` / `demo` 走闸口语义（0=放行 / 1=拦截）；
 /// 其余成功即 0，错误统一冒泡到 `main` 记为 2。
 async fn run(cli: Cli) -> anyhow::Result<i32> {
     match cli.command {
+        Command::Init(args) => cmd_init(&args).await,
+        Command::Demo(args) => cmd_demo(&args).await,
         Command::Review(args) => review(&args).await,
         Command::Security(args) => security(&args).await,
         Command::Llm { cmd } => match cmd {
@@ -313,6 +380,151 @@ async fn run(cli: Cli) -> anyhow::Result<i32> {
             IndexCmd::Build => index_build().await.map(|()| 0),
         },
     }
+}
+
+async fn cmd_init(args: &InitArgs) -> anyhow::Result<i32> {
+    let code = init::run_init(
+        &args.provider,
+        args.protocol.as_deref(),
+        args.base_url.as_deref(),
+        args.model.as_deref(),
+        args.yes,
+        args.force,
+        args.config_dir.as_deref(),
+        args.test,
+    )?;
+    if args.test {
+        // Point config discovery at the file we just wrote when using --config-dir.
+        if let Some(dir) = &args.config_dir {
+            let path = dir.join("config.toml");
+            // SAFETY: single-threaded CLI; no concurrent env readers at this point.
+            std::env::set_var("REVIEWGATE_CONFIG", &path);
+        }
+        match llm_test().await {
+            Ok(()) => Ok(code),
+            Err(e) => {
+                eprintln!("error: {e:#}");
+                eprintln!(
+                    "hint: set REVIEWGATE_API_KEY and re-run `reviewgate llm test` (config was still written)"
+                );
+                Ok(2)
+            }
+        }
+    } else {
+        Ok(code)
+    }
+}
+
+async fn cmd_demo(args: &DemoArgs) -> anyhow::Result<i32> {
+    use anyhow::Context;
+    use reviewgate_core::config::Config;
+    use reviewgate_core::diff::DiffMode;
+    use reviewgate_core::model::Dimension;
+    use reviewgate_core::review::ReviewOptions;
+
+    let root = demo::temp_demo_dir();
+    demo::seed_demo_repo(&root)?;
+    eprintln!(
+        "Demo workspace: {} (poisoned SQL injection in handler.py)",
+        root.display()
+    );
+
+    if args.prepare_only {
+        // Caller owns the path when prepare-only (printed for inspection).
+        println!("{}", root.display());
+        eprintln!("Prepared only (--prepare-only). Review with:");
+        eprintln!(
+            "  cd {} && reviewgate review --dimensions security --fail-on block",
+            root.display()
+        );
+        return Ok(0);
+    }
+
+    // Cleanup helper: always remove temp workspace unless --keep (or prepare-only above).
+    let keep = args.keep;
+    let cleanup = |root: &std::path::Path, keep: bool| {
+        if keep {
+            eprintln!("Kept demo workspace: {}", root.display());
+        } else {
+            let _ = std::fs::remove_dir_all(root);
+        }
+    };
+
+    // Ensure config exists before spending tokens.
+    let cfg = match Config::load() {
+        Ok(c) => c,
+        Err(e) => {
+            cleanup(&root, keep);
+            return Err(anyhow::anyhow!(
+                "{e}\n  tip: run `reviewgate init` then `export REVIEWGATE_API_KEY=...` before demo"
+            ));
+        }
+    };
+    // Validate key early with a clear message.
+    if let Err(e) = cfg.active_provider_resolved() {
+        cleanup(&root, keep);
+        return Err(anyhow::anyhow!(
+            "{e}\n  tip: export REVIEWGATE_API_KEY=\"your-key\" then re-run `reviewgate demo`"
+        ));
+    }
+
+    let prev = std::env::current_dir().ok();
+    if let Err(e) = std::env::set_current_dir(&root) {
+        cleanup(&root, keep);
+        return Err(e).with_context(|| format!("chdir {}", root.display()));
+    }
+
+    eprintln!("ReviewGate demo · dimension=security · expect BLOCK on SQL injection");
+    let mut opts = ReviewOptions::new(DiffMode::Workspace, vec![Dimension::Security]);
+    opts.judge = true;
+    opts.gate = cfg.gate.clone();
+    opts.samples = 1;
+    if args.timeout > 0 {
+        opts.timeout = Some(std::time::Duration::from_secs(args.timeout));
+    }
+
+    // Real review/gate path (same present_and_exit as `review`); FailOn::Block → exit 1 on BLOCK.
+    let code = present_and_exit(
+        &cfg,
+        opts,
+        ReviewRunArgs {
+            format: OutputFormat::Text,
+            show_filtered: false,
+            comment: false,
+            fix: false,
+            fix_all: false,
+            fix_branch: None,
+            fail_on: FailOn::Block,
+            verbose: false,
+        },
+    )
+    .await;
+
+    if let Some(p) = prev {
+        let _ = std::env::set_current_dir(p);
+    }
+
+    match &code {
+        Ok(1) => {
+            eprintln!();
+            eprintln!("OK demo: gate returned BLOCK as expected.");
+            eprintln!("Next: cd your-repo && reviewgate review");
+        }
+        Ok(0) => {
+            eprintln!();
+            eprintln!(
+                "warn: demo expected BLOCK but got PASS — model/provider may have missed the fixture; retry or try a stronger model"
+            );
+        }
+        Ok(c) => {
+            eprintln!();
+            eprintln!("demo finished with exit code {c} (WARN/incomplete still means the gate did not fake PASS)");
+        }
+        Err(_) => {}
+    }
+
+    cleanup(&root, keep);
+    code
 }
 
 /// 建/刷新全仓定义索引到 `.reviewgate/cache/symbols.json`。
@@ -599,7 +811,12 @@ async fn present_and_exit(
         if let Err(e) = reviewgate_core::forge::post_summary(&outcome).await {
             eprintln!("failed to post summary comment: {e}");
         }
-        if let Err(e) = reviewgate_core::forge::post_inline_suggestions(&outcome).await {
+        if let Err(e) = reviewgate_core::forge::post_inline_suggestions(
+            &outcome,
+            cfg.gate.block_threshold,
+        )
+        .await
+        {
             eprintln!("failed to post inline comments: {e}");
         }
     }
@@ -614,11 +831,14 @@ async fn present_and_exit(
         )?;
     }
 
-    // Deep profile always treats incomplete as non-PASS for exit semantics.
-    let fail_incomplete = cfg.gate.fail_on_incomplete || opts.profile.is_deep();
+    // Deep profile / critical-path incomplete always treat incomplete as non-PASS for exit semantics.
+    let fail_incomplete = cfg.gate.fail_on_incomplete
+        || opts.profile.is_deep()
+        || outcome.critical_incomplete;
+    let incomplete_for_exit = outcome.incomplete || outcome.critical_incomplete;
     Ok(exit_code(
         outcome.decision,
-        outcome.incomplete,
+        incomplete_for_exit,
         fail_incomplete,
         run.fail_on,
     ))
@@ -626,10 +846,21 @@ async fn present_and_exit(
 
 async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     use reviewgate_core::config::Config;
-    use reviewgate_core::review::ReviewOptions;
+    use reviewgate_core::review::{ReviewOptions, RunProfile, TokenPrices};
 
-    let dims = parse_dimensions(&args.dimensions)?;
     validate_review_args(args)?;
+    let run_profile = RunProfile::parse(&args.profile).ok_or_else(|| {
+        anyhow::anyhow!("unknown --profile `{}` (use gate or audit)", args.profile)
+    })?;
+
+    // dimensions: "all" defers to profile; explicit list wins.
+    let user_all = args.dimensions.trim() == "all";
+    let dims = if user_all {
+        run_profile.dimensions(true, None)
+    } else {
+        parse_dimensions(&args.dimensions)?
+    };
+
     let cfg = Config::load()?;
     let names: Vec<&str> = dims.iter().map(|d| d.as_str()).collect();
     let auto_business = (!cfg.business.rules.is_empty()
@@ -637,7 +868,12 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
         || cfg.business.skills_dir.is_some())
         && !dims.contains(&reviewgate_core::model::Dimension::Business);
     let effective_dims = dims.len() + usize::from(auto_business);
-    let samples = args.samples.max(1);
+    // samples: CLI flag if user raised it; else profile default (audit≥2).
+    let samples = if args.samples > 1 {
+        args.samples
+    } else {
+        run_profile.default_samples().max(args.samples.max(1))
+    };
     let agents = effective_dims * samples;
 
     let mode = resolve_mode(&args.commit, &args.from, &args.to)?;
@@ -656,12 +892,21 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
         String::new()
     };
     eprintln!(
-        "ReviewGate {} {}{} {}",
+        "ReviewGate {} [{}] {}{} {}",
         dim("reviewing"),
+        run_profile.as_str(),
         names.join(", "),
         business,
         dim(&format!("· {agents} agents{samples_note}")),
     );
+
+    let prices = cfg
+        .active_provider()
+        .map(|p| TokenPrices {
+            per_mtok_input: p.price_per_mtok_input,
+            per_mtok_output: p.price_per_mtok_output,
+        })
+        .unwrap_or_default();
 
     let mut opts = ReviewOptions::new(mode, dims);
     opts.judge = !args.no_judge;
@@ -675,9 +920,36 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     opts.fanout_concurrency = args.fanout_concurrency.max(1);
     opts.exec_verify = args.exec_verify;
     opts.incremental = args.incremental;
+    opts.run_profile = run_profile;
+    opts.max_cost_usd = args.max_cost;
+    opts.max_est_input_tokens = args.max_input_tokens;
+    opts.estimate_only = args.estimate_only;
+    opts.write_metrics = !args.no_metrics;
+    opts.token_prices = prices;
+    opts.started = Some(std::time::Instant::now());
     opts.intent = resolve_intent(args)?;
     if opts.intent.is_some() {
         eprintln!("  + Intent review: intent loaded; running the implementation-vs-intent pass.");
+    }
+
+    if args.estimate_only {
+        // Still go through present_and_exit so JSON/text can show the estimate.
+        let code = present_and_exit(
+            &cfg,
+            opts,
+            ReviewRunArgs {
+                format: args.format,
+                show_filtered: args.show_filtered,
+                comment: false,
+                fix: false,
+                fix_all: false,
+                fix_branch: None,
+                fail_on: FailOn::Never,
+                verbose: args.verbose,
+            },
+        )
+        .await?;
+        return Ok(code);
     }
 
     present_and_exit(
@@ -685,7 +957,7 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
         opts,
         ReviewRunArgs {
             format: args.format,
-            show_filtered: args.show_filtered,
+            show_filtered: args.show_filtered || run_profile == RunProfile::Audit,
             comment: args.comment,
             fix: args.fix,
             fix_all: args.fix_all,
@@ -852,6 +1124,11 @@ mod tests {
             intent: None,
             intent_from_commit: false,
             incremental: false,
+            profile: "gate".into(),
+            max_cost: None,
+            max_input_tokens: None,
+            estimate_only: false,
+            no_metrics: false,
         }
     }
 

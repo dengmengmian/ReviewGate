@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Pre-merge quality gate for AI-written code: <b>catch high-risk issues first and reduce low-value review noise</b>
+  <b>Pre-merge quality gate</b>: catch high-risk issues, fold noise, never fake a PASS · self-hosted · bring your own model
 </p>
 
 <p align="center">
@@ -16,35 +16,50 @@
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT">
 </p>
 
-ReviewGate is a pre-merge quality gate for AI-generated, or AI-heavy, code. The core path is ready for real PRs and CI. It does not replace tests or human review; it filters PRs before merge by promoting high-risk findings and folding low-confidence noise by default.
+ReviewGate is a **pre-merge quality gate** for AI-generated (or AI-heavy) code — not a chatty review bot.  
+The core path is ready for real PRs and CI: **high-risk findings first, low-confidence noise folded by default; incomplete reviews degrade to WARN and never pretend to PASS.**
 
 | Core value | What it means for teams |
 |---|---|
-| Catch high-risk issues | Parallel review by security, logic, performance, business rules, and other focused dimensions |
-| Reduce noise | Deduplication, counter-evidence judging, and confidence-based filtering |
-| Avoid fake passes | Incomplete reviews, timeouts, and oversized context degrade to WARN instead of pretending to pass |
+| Catch high-risk issues | Parallel security / logic / performance / AI-smell review; must-fix first |
+| Reduce noise | Dedup, counter-evidence judge, confidence filtering |
+| Never fake a PASS | Incomplete review never passes — so you can trust `--fail-on block` in CI |
 
-## Three focused tools, one workflow
-
-**CodeLeveler writes the code. ReviewGate reviews it. AgentGate connects both
-to your model APIs.** Each tool works independently, or they can be used
-together:
-
-| Tool | Focus |
-|---|---|
-| **ReviewGate** | Review code changes and surface high-confidence issues |
-| [CodeLeveler](https://github.com/dengmengmian/CodeLeveler) | Inspect, edit, run, and verify code in the terminal |
-| [AgentGate](https://github.com/dengmengmian/agentgate-ai) | Adapt model APIs behind one local gateway |
+> **A gate by default, not a scanner.** We optimize for precision (fewer, higher-confidence findings). It does not replace tests or human review.
 
 ## Quick Start
 
-You need three things: a git repository, an LLM API key, and the `reviewgate` command.
+Three things: the binary, an LLM API key, and any git repo.
 
 ```bash
-# 1) Install
+# 1) Install (or: brew install dengmengmian/tap/reviewgate)
 curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh
 
-# 2) Create a global config. It works across all repositories.
+# 2) Write a global config (provider + endpoint; keep the key in the environment)
+reviewgate init
+export REVIEWGATE_API_KEY="your key"
+
+# 3) Built-in poisoned fixtures — should BLOCK (no need for your app repo)
+reviewgate demo
+
+# 4) Review your own changes
+cd /path/to/your/repo
+reviewgate review
+```
+
+| Verdict | Meaning |
+|---|---|
+| `BLOCK` | High-confidence must-fix before merge (CI can fail on this) |
+| `WARN` | Risk present, or review incomplete — **not a green light** |
+| `PASS` | Nothing crossed the gate threshold (not “bug-free”) |
+
+Windows: `irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex`  
+Upgrade: re-run the installer, or `reviewgate upgrade`.
+
+<details>
+<summary><b>Skip init? Hand-write config</b></summary>
+
+```bash
 mkdir -p ~/.reviewgate
 cat > ~/.reviewgate/config.toml <<'EOF'
 provider = "deepseek"
@@ -54,26 +69,21 @@ protocol = "openai"
 base_url = "https://api.deepseek.com/v1"
 model = "deepseek-v4-pro"
 EOF
-
-# 3) Keep the API key in the environment, not in the config file.
 export REVIEWGATE_API_KEY="your key"
-
-# 4) Check that the model is reachable.
 reviewgate llm test
-
-# 5) Enter any git repository with local changes and review them.
-cd /path/to/your/repo
-reviewgate review
 ```
 
-`BLOCK` means a high-confidence issue should be handled before merge. `WARN` means there is risk or the review was incomplete. `PASS` means no finding reached the configured gate threshold.
+</details>
 
-Windows users can install with PowerShell:
+## Three focused tools, one workflow
 
-```powershell
-irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex
-```
+**CodeLeveler writes code. ReviewGate is the gate. AgentGate adapts model APIs.** Each works alone or together:
 
+| Tool | Focus |
+|---|---|
+| **ReviewGate** | Review changes, surface high-confidence issues, CI gate |
+| [CodeLeveler](https://github.com/dengmengmian/CodeLeveler) | Inspect, edit, run, and verify code in the terminal |
+| [AgentGate](https://github.com/dengmengmian/agentgate-ai) | Adapt model APIs behind one local gateway |
 ## Example Output
 
 ```text
@@ -224,6 +234,8 @@ ReviewGate has one core engine and several wrappers, all of which just call the 
 ### CLI
 
 ```bash
+reviewgate init                         # write global config (key via REVIEWGATE_API_KEY)
+reviewgate demo                         # built-in poisoned fixture; should BLOCK
 reviewgate review                       # review current worktree changes
 reviewgate review --from main --to HEAD # review this branch against main
 reviewgate review --intent spec.md      # check implementation against requirements/design
@@ -237,22 +249,30 @@ reviewgate security --from main --to HEAD
 <summary><b>More CLI options</b></summary>
 
 ```bash
+reviewgate review --profile gate         # default: strict gate (precision first)
+reviewgate review --profile audit        # wider: samples≥2, style on by default
+reviewgate review --estimate-only        # cost/unit plan only; no LLM calls
+reviewgate review --max-cost 0.5         # abort before run if estimate exceeds (needs price_per_mtok_*)
+reviewgate review --max-input-tokens 2e5 # estimated input-token ceiling
 reviewgate review --dimensions security,logic
 reviewgate review --no-judge
 reviewgate review --show-filtered
-reviewgate review --timeout 120
+reviewgate review --timeout 300          # per-dimension wall clock; use ≥300 for large PRs / reasoning models
 reviewgate review --samples 3
-reviewgate review --incremental           # incremental: only re-review files whose diff changed, reuse cache for the rest (saves cost on iterative PRs, opt-in)
-reviewgate review --fix                   # apply suggestions after per-finding y/N (acts on whatever this review covers)
-reviewgate review --fix-all               # apply all fixes without per-finding prompts (works non-interactively, for CI/scripts)
-reviewgate review --fix-all --fix-branch  # add --fix-branch (works with --fix or --fix-all): apply on a new branch (optionally named), keeping the current one clean
-reviewgate review --commit HEAD --fix     # review the committed change and apply fixes (see note below)
+reviewgate review --incremental           # only re-review files whose diff changed (opt-in)
+reviewgate review --fix                   # apply suggestions after per-finding y/N
+reviewgate review --fix-all               # apply all fixes without prompts (CI/scripts)
+reviewgate review --fix-all --fix-branch  # apply on a new branch (optional name)
+reviewgate review --commit HEAD --fix
 reviewgate review --judge-concurrency 4
 reviewgate review --fanout-concurrency 6
 reviewgate review --verbose
 reviewgate review --commit <sha>
 reviewgate review --commit <sha> --intent-from-commit
+reviewgate review --no-metrics           # do not append .reviewgate/cache/metrics.jsonl
 ```
+
+**Large PRs**: over-budget diffs are packed into directory-local **units**. The report includes `unit_plan` (paths/status per unit) and `coverage` (covered / unfinished / oversized). Incomplete never fakes PASS. See [`docs/BIG_PR_HANDLING.md`](docs/BIG_PR_HANDLING.md).
 
 > **Note: `--fix` / `--fix-all` only act on the diff this review covers.** With no range, review defaults to your **uncommitted working-tree changes** (`git diff HEAD`) — if the change is already committed and the working tree is clean, `--fix` will report "no changes / no applicable fixes". To fix **committed** changes, pass a range, e.g. `reviewgate review --commit HEAD --fix` or `reviewgate review --from main --to HEAD --fix`.
 

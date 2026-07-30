@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  AI 代码的合并前质量闸口：<b>优先拦截高风险问题，减少低价值 review 噪音</b>
+  <b>合并前质量闸口</b>：拦高危、降噪音、不假通过 · 代码自托管 · 模型你自选
 </p>
 
 <p align="center">
@@ -16,34 +16,50 @@
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT">
 </p>
 
-ReviewGate 是给 AI 生成或 AI 大量参与代码准备的合并前质量闸口。核心链路已可用于真实 PR 和 CI；它不替代测试和人工 review，而是在合并前先做一轮过滤：高风险问题推到前面，低置信反馈默认折叠。
+ReviewGate 是给 AI 生成（或 AI 大量参与）代码准备的**合并前质量闸口**，不是聊天式 review bot。  
+核心链路已可用于真实 PR 和 CI：**高风险问题推到前面，低置信反馈默认折叠；超时/未审完降级 WARN，绝不伪装成 PASS。**
 
 | 核心价值 | 对团队的意义 |
 |---|---|
-| 拦高危 | 按安全、逻辑、性能、业务规则等维度并行审查，把 must-fix 放到前面 |
-| 降噪音 | 去重、证伪、按置信度过滤，默认隐藏低价值反馈 |
-| 不假通过 | 超时、上下文过大、未审完都会降级 WARN，不把不完整审查伪装成 PASS |
+| 拦高危 | 安全 / 逻辑 / 性能 / AI 异味等维度并行审查，must-fix 优先 |
+| 降噪音 | 去重、证伪 Judge、按置信度过滤，默认隐藏低价值反馈 |
+| 不假通过 | 审查不完整时永不 PASS——闸口可信，才敢在 CI 开 `--fail-on block` |
 
-## 三个专注的工具，一套工作流
-
-**CodeLeveler 负责写代码，ReviewGate 负责代码 Review，AgentGate 负责连接和
-适配模型 API。** 三个工具都可以独立使用，也可以配合工作：
-
-| 工具 | 专注于 |
-|---|---|
-| **ReviewGate** | 审查代码改动并筛出高置信问题 |
-| [CodeLeveler](https://github.com/dengmengmian/CodeLeveler) | 在终端中理解、修改、运行并验证代码 |
-| [AgentGate](https://github.com/dengmengmian/agentgate-ai) | 通过一个本地网关适配不同模型 API |
+> **默认是闸口，不是扫描器。** 我们精度优先、报得少但准；需要更宽覆盖可显式加维度或提高采样。不替代测试与人工 review。
 
 ## 快速开始
 
-你只需要三样东西：一个 git 仓库、一个 LLM API key、`reviewgate` 命令。
+三样东西：安装包、LLM API key、任意 git 仓库。
 
 ```bash
-# 1) 安装
+# 1) 安装（macOS 也可用: brew install dengmengmian/tap/reviewgate）
 curl -fsSL https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.sh | sh
 
-# 2) 写一份全局配置，之后所有仓库都能用
+# 2) 交互写出全局配置（provider + 模型端点；密钥用环境变量）
+reviewgate init
+export REVIEWGATE_API_KEY="你的 key"
+
+# 3) 内置有毒样例，当场验证闸口会 BLOCK（不依赖你的业务仓库）
+reviewgate demo
+
+# 4) 审查你自己的改动
+cd /path/to/your/repo
+reviewgate review
+```
+
+| 判定 | 含义 |
+|---|---|
+| `BLOCK` | 高置信 must-fix，建议先处理（CI 可据此失败） |
+| `WARN` | 有风险，或审查未完整完成——**不是绿灯** |
+| `PASS` | 没有达到闸口阈值的问题（不等于「绝对无 bug」） |
+
+Windows：`irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex`  
+升级：重跑安装脚本，或 `reviewgate upgrade`。
+
+<details>
+<summary><b>不用 init？手写配置</b></summary>
+
+```bash
 mkdir -p ~/.reviewgate
 cat > ~/.reviewgate/config.toml <<'EOF'
 provider = "deepseek"
@@ -53,28 +69,21 @@ protocol = "openai"
 base_url = "https://api.deepseek.com/v1"
 model = "deepseek-v4-pro"
 EOF
-
-# 3) 用环境变量放 key，不写进配置文件
 export REVIEWGATE_API_KEY="你的 key"
-
-# 4) 确认模型能连上
 reviewgate llm test
-
-# 5) 进入任意有改动的 git 仓库，开始审查
-cd /path/to/your/repo
-reviewgate review
 ```
 
-看到 `BLOCK` 表示有高置信问题建议先处理；看到 `WARN` 表示有风险或审查未完整完成；`PASS` 表示没有发现达到闸口阈值的问题。
+</details>
 
-Windows 用户可以用 PowerShell 安装：
+## 三个专注的工具，一套工作流
 
-```powershell
-irm https://raw.githubusercontent.com/dengmengmian/ReviewGate/main/install.ps1 | iex
-```
+**CodeLeveler 写代码 · ReviewGate 做闸口 · AgentGate 适配模型 API。** 可独立用，也可配合：
 
-> **升级**：重新运行上面的安装命令即可——`install.sh` / `install.ps1` 总是拉取最新 release 并覆盖旧版本；或直接 `reviewgate upgrade` 自更新到最新版。
-
+| 工具 | 专注于 |
+|---|---|
+| **ReviewGate** | 审查改动、筛高置信问题、CI 闸口 |
+| [CodeLeveler](https://github.com/dengmengmian/CodeLeveler) | 在终端中理解、修改、运行并验证代码 |
+| [AgentGate](https://github.com/dengmengmian/agentgate-ai) | 通过本地网关适配不同模型 API |
 ## 输出长这样
 
 ```text
@@ -225,6 +234,8 @@ ReviewGate 一个引擎、多种形态，都只是调同一个 `reviewgate` CLI�
 ### 1. CLI（主形态）
 
 ```bash
+reviewgate init                         # 写全局配置（密钥用 REVIEWGATE_API_KEY）
+reviewgate demo                         # 内置有毒样例，应 BLOCK
 reviewgate review                       # 审查当前工作区改动
 reviewgate review --from main --to HEAD # 审查当前分支相对 main 的改动
 reviewgate review --intent spec.md      # 检查实现是否符合需求/设计
@@ -238,10 +249,15 @@ reviewgate security --from main --to HEAD
 <summary><b>更多 CLI 参数</b></summary>
 
 ```bash
+reviewgate review --profile gate         # 默认：严闸口（精度优先）
+reviewgate review --profile audit        # 更宽：samples≥2，默认含 style
+reviewgate review --estimate-only        # 只估成本/unit 计划，不调模型
+reviewgate review --max-cost 0.5         # 估费超限则开跑前拒绝（需 price_per_mtok_*）
+reviewgate review --max-input-tokens 2e5 # 估输入 token 上界
 reviewgate review --dimensions security,logic
 reviewgate review --no-judge             # 更快，误报略多
 reviewgate review --show-filtered        # 展开被过滤的低置信项
-reviewgate review --timeout 120          # 单维度墙钟上限（秒）
+reviewgate review --timeout 300          # 单维度墙钟上限（秒）；大 PR / 推理模型建议 ≥300
 reviewgate review --samples 3            # 每维度多采样取并集
 reviewgate review --incremental          # 增量：只重审 diff 变化的文件，未变文件复用缓存（迭代 PR 省钱，opt-in）
 reviewgate review --fix                  # 逐条 y/N 确认后应用建议代码（作用于本次 review 覆盖的改动）
@@ -253,7 +269,10 @@ reviewgate review --fanout-concurrency 6 # 限制 fan-out 并发
 reviewgate review --verbose              # 打印 token/缓存/轮数
 reviewgate review --commit <sha>         # 审查单个 commit
 reviewgate review --commit <sha> --intent-from-commit
+reviewgate review --no-metrics           # 不写 .reviewgate/cache/metrics.jsonl
 ```
+
+**大 PR**：超上下文时按**目录装箱**切成多个 unit；报告里输出 `unit_plan`（每 unit 路径/状态）与 `coverage`（covered / unfinished / oversized）。未审完永不 PASS。详见 [`docs/BIG_PR_HANDLING.md`](docs/BIG_PR_HANDLING.md)。
 
 > **注意：`--fix` / `--fix-all` 只作用于本次 review 覆盖的那份 diff。** 不带范围时，review 默认审**工作区未提交的改动**（`git diff HEAD`）——如果改动已经 commit、工作区是干净的，`--fix` 会「未检测到变更、无可应用修复」。要修**已提交**的改动，请带上范围，例如 `reviewgate review --commit HEAD --fix` 或 `reviewgate review --from main --to HEAD --fix`。
 

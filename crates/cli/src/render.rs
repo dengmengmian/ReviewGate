@@ -76,20 +76,43 @@ struct Envelope<'a> {
     decision: String,
     /// 是否未审完（请求失败/上下文超限/超时/超大文件跳过）。true 时 decision 不代表"无问题"。
     incomplete: bool,
+    /// 关键路径 incomplete 是否触发强制非 PASS。
+    critical_incomplete: bool,
     files_changed: usize,
     summary: Summary,
     warnings: &'a [ReviewWarning],
     findings: Vec<FindingView<'a>>,
     usage: &'a reviewgate_core::model::Usage,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cost_estimate: Option<&'a reviewgate_core::review::CostEstimate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unfinished_paths: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    advice: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unit_plan: Option<&'a reviewgate_core::review::UnitPlanSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coverage: Option<&'a reviewgate_core::review::CoverageSnapshot>,
 }
 
 /// 自包含的 JSON 输出：顶层判定 + 摘要 + 未审完告警 + 发现数组 + 用量。
 /// 字段顺序固定（位置在前），且消费方既能拿到 PASS/WARN/BLOCK，也知道哪个维度没审完。
 pub fn render_json(o: &ReviewOutcome) -> anyhow::Result<String> {
     let kept = o.findings.iter().filter(|f| !f.filtered).count();
+    let unfinished = o
+        .coverage
+        .as_ref()
+        .map(|c| c.unfinished_paths.clone())
+        .unwrap_or_else(|| reviewgate_core::review::unfinished_paths(&o.warnings));
+    let advice = o
+        .coverage
+        .as_ref()
+        .map(|c| c.advice.clone())
+        .unwrap_or_else(|| reviewgate_core::review::incomplete_advice(&o.warnings));
     let env = Envelope {
         decision: o.decision.as_str().to_lowercase(), // pass | warn | block
         incomplete: o.incomplete,
+        critical_incomplete: o.critical_incomplete,
         files_changed: o.files_changed,
         summary: Summary {
             total: o.findings.len(),
@@ -98,6 +121,15 @@ pub fn render_json(o: &ReviewOutcome) -> anyhow::Result<String> {
             warnings: o.warnings.len(),
         },
         warnings: &o.warnings,
+        cost_estimate: o.cost_estimate.as_ref(),
+        unfinished_paths: if unfinished.is_empty() {
+            None
+        } else {
+            Some(unfinished)
+        },
+        advice: if advice.is_empty() { None } else { Some(advice) },
+        unit_plan: o.unit_plan.as_ref(),
+        coverage: o.coverage.as_ref(),
         findings: o.findings.iter().map(FindingView::from).collect(),
         usage: &o.usage,
     };
@@ -382,6 +414,15 @@ fn render_text_lang(outcome: &ReviewOutcome, show_filtered: bool, t: Lang) -> St
             human_count(outcome.usage.output_tokens as u64),
         )));
     }
+    if let Some(est) = &outcome.cost_estimate {
+        out.push_str(&p.dim(&format!("  est {}\n", est.summary)));
+    }
+    if outcome.critical_incomplete {
+        out.push_str(&p.paint(
+            "1;31",
+            "  ✖ critical paths incomplete — forced non-PASS (auth/payment/…)\n",
+        ));
+    }
     out.push_str(&rule(&p));
     out.push('\n');
     if outcome.incomplete {
@@ -395,6 +436,82 @@ fn render_text_lang(outcome: &ReviewOutcome, show_filtered: bool, t: Lang) -> St
     }
     out.push('\n');
 
+    // 大 PR：合成 unit job 清单（多单元时展示）。
+    if let Some(plan) = &outcome.unit_plan {
+        if plan.unit_count > 1 || plan.oversized_units > 0 {
+            out.push_str(&section(&p, "UNITS (directory packing)", "36"));
+            out.push_str("\n\n");
+            out.push_str(&format!(
+                "  {} unit(s) · {} reviewable · {} oversized\n",
+                plan.unit_count, plan.reviewable_units, plan.oversized_units
+            ));
+            for job in &plan.units {
+                let tag = if job.oversized {
+                    "OVERSIZED"
+                } else {
+                    job.status.as_str()
+                };
+                let paths = if job.paths.len() > 6 {
+                    format!(
+                        "{} … (+{} files)",
+                        job.paths[..6].join(", "),
+                        job.paths.len() - 6
+                    )
+                } else {
+                    job.paths.join(", ")
+                };
+                out.push_str(&format!(
+                    "    • unit[{}] ~{} tok · {tag}\n      {}\n",
+                    job.id, job.est_tokens, paths
+                ));
+            }
+            out.push('\n');
+        }
+    }
+
+    // 覆盖：covered / unfinished（多单元或 incomplete 时展示；干净单单元不刷屏）。
+    if let Some(cov) = &outcome.coverage {
+        if cov.should_surface() {
+            out.push_str(&section(&p, "COVERAGE", "1;33"));
+            out.push_str("\n\n");
+            out.push_str(&format!(
+                "  changed {} · covered {} · unfinished {} · oversized-skipped {}\n",
+                cov.changed_paths.len(),
+                cov.covered_paths.len(),
+                cov.unfinished_paths.len(),
+                cov.skipped_oversized_paths.len()
+            ));
+            if !cov.unfinished_paths.is_empty() {
+                out.push_str(&format!(
+                    "\n  Unfinished paths ({}):\n",
+                    cov.unfinished_paths.len()
+                ));
+                for pth in cov.unfinished_paths.iter().take(40) {
+                    out.push_str(&format!("    • {}\n", sanitize(pth)));
+                }
+                if cov.unfinished_paths.len() > 40 {
+                    out.push_str(&p.dim(&format!(
+                        "    … {} more\n",
+                        cov.unfinished_paths.len() - 40
+                    )));
+                }
+            }
+            if !cov.skipped_oversized_paths.is_empty() {
+                out.push_str("\n  Oversized skipped:\n");
+                for pth in cov.skipped_oversized_paths.iter().take(20) {
+                    out.push_str(&format!("    • {}\n", sanitize(pth)));
+                }
+            }
+            if !cov.advice.is_empty() {
+                out.push_str(&format!("\n  {}\n", t.result_may_incomplete()));
+                for a in &cov.advice {
+                    out.push_str(&p.dim(&format!("    • {}\n", sanitize(a))));
+                }
+            }
+            out.push('\n');
+        }
+    }
+
     if !outcome.warnings.is_empty() {
         out.push_str(&section(&p, t.sec_incomplete_review(), "1;33"));
         out.push('\n');
@@ -407,8 +524,31 @@ fn render_text_lang(outcome: &ReviewOutcome, show_filtered: bool, t: Lang) -> St
                 sanitize(&w.message),
                 w.kind
             ));
+            if !w.paths.is_empty() {
+                out.push_str(&p.dim(&format!("      paths: {}\n", w.paths.join(", "))));
+            }
+            if let Some(a) = &w.advice {
+                out.push_str(&p.dim(&format!("      → {}\n", sanitize(a))));
+            }
         }
-        out.push_str(&format!("\n  {}\n", t.result_may_incomplete()));
+        // Prefer coverage-driven unfinished list when present (already shown above);
+        // still list path-less dimension timeouts under warnings.
+        if outcome.coverage.as_ref().map(|c| !c.should_surface()).unwrap_or(true) {
+            let unfinished = reviewgate_core::review::unfinished_paths(&outcome.warnings);
+            if !unfinished.is_empty() {
+                out.push_str(&format!(
+                    "\n  Unfinished paths ({}):\n",
+                    unfinished.len()
+                ));
+                for pth in unfinished.iter().take(30) {
+                    out.push_str(&format!("    • {}\n", sanitize(pth)));
+                }
+            }
+            out.push_str(&format!("\n  {}\n", t.result_may_incomplete()));
+            for a in reviewgate_core::review::incomplete_advice(&outcome.warnings) {
+                out.push_str(&p.dim(&format!("    • {a}\n")));
+            }
+        }
         out.push_str(&p.dim("    reviewgate review --timeout 300 -v\n\n"));
     }
 
@@ -620,7 +760,129 @@ mod tests {
     use super::*;
     use reviewgate_core::gate::GateDecision;
     use reviewgate_core::model::{Dimension, Usage};
-    use reviewgate_core::review::ReviewWarning;
+    use reviewgate_core::gate::GateDecision as GD;
+    use reviewgate_core::review::{
+        CoverageSnapshot, ReviewWarning, UnitJobSummary, UnitPlanSummary,
+    };
+
+    fn outcome_with_units(
+        decision: GateDecision,
+        incomplete: bool,
+        unit_plan: Option<UnitPlanSummary>,
+        coverage: Option<CoverageSnapshot>,
+        warnings: Vec<ReviewWarning>,
+    ) -> ReviewOutcome {
+        ReviewOutcome {
+            findings: vec![],
+            files_changed: 4,
+            decision,
+            incomplete,
+            warnings,
+            unit_plan,
+            coverage,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn render_text_and_json_surface_multi_unit_coverage() {
+        let plan = UnitPlanSummary {
+            unit_count: 2,
+            reviewable_units: 1,
+            oversized_units: 1,
+            units: vec![
+                UnitJobSummary {
+                    id: 0,
+                    paths: vec!["a/1.rs".into(), "a/2.rs".into()],
+                    est_tokens: 100,
+                    oversized: false,
+                    status: "incomplete".into(),
+                },
+                UnitJobSummary {
+                    id: 1,
+                    paths: vec!["huge.rs".into()],
+                    est_tokens: 99999,
+                    oversized: true,
+                    status: "skipped_oversized".into(),
+                },
+            ],
+        };
+        let cov = CoverageSnapshot {
+            changed_paths: vec!["a/1.rs".into(), "a/2.rs".into(), "huge.rs".into()],
+            planned_paths: vec!["a/1.rs".into(), "a/2.rs".into()],
+            skipped_oversized_paths: vec!["huge.rs".into()],
+            unfinished_paths: vec!["a/1.rs".into(), "huge.rs".into()],
+            covered_paths: vec!["a/2.rs".into()],
+            advice: vec!["Raise --timeout".into()],
+            multi_unit: true,
+            incomplete: true,
+        };
+        let o = outcome_with_units(
+            GateDecision::Warn,
+            true,
+            Some(plan),
+            Some(cov),
+            vec![ReviewWarning::new("logic", "timed_out", "timeout")],
+        );
+        // Must not look like a clean PASS with no coverage story.
+        assert_ne!(o.decision, GD::Pass);
+        assert!(o.incomplete);
+        let text = render_text_lang(&o, false, Lang::En);
+        assert!(
+            text.contains("UNITS") && text.contains("unit[0]") && text.contains("huge.rs"),
+            "text should list units: {text}"
+        );
+        assert!(
+            text.contains("COVERAGE") && text.contains("Unfinished paths"),
+            "text should list coverage: {text}"
+        );
+        assert!(text.contains("Raise --timeout") || text.contains("timeout"));
+        let json = render_json(&o).unwrap();
+        assert!(json.contains("unit_plan") && json.contains("coverage"));
+        assert!(json.contains("unfinished_paths") || json.contains("huge.rs"));
+        assert!(json.contains("\"incomplete\": true"));
+    }
+
+    #[test]
+    fn clean_pass_single_unit_no_fake_coverage_section() {
+        let o = ReviewOutcome {
+            files_changed: 1,
+            decision: GateDecision::Pass,
+            incomplete: false,
+            unit_plan: Some(UnitPlanSummary {
+                unit_count: 1,
+                reviewable_units: 1,
+                oversized_units: 0,
+                units: vec![UnitJobSummary {
+                    id: 0,
+                    paths: vec!["a.rs".into()],
+                    est_tokens: 10,
+                    oversized: false,
+                    status: "reviewed".into(),
+                }],
+            }),
+            coverage: Some(CoverageSnapshot {
+                changed_paths: vec!["a.rs".into()],
+                planned_paths: vec!["a.rs".into()],
+                skipped_oversized_paths: vec![],
+                unfinished_paths: vec![],
+                covered_paths: vec!["a.rs".into()],
+                advice: vec![],
+                multi_unit: false,
+                incomplete: false,
+            }),
+            ..Default::default()
+        };
+        let text = render_text_lang(&o, false, Lang::En);
+        assert!(
+            !text.contains("UNITS (directory packing)"),
+            "clean single-unit must not invent multi-unit section: {text}"
+        );
+        assert!(
+            !text.contains("Unfinished paths"),
+            "clean pass must not invent unfinished paths: {text}"
+        );
+    }
 
     #[test]
     fn render_text_shows_fingerprint_for_copy() {
@@ -633,6 +895,7 @@ mod tests {
             incomplete: false,
             warnings: vec![],
             usage: Usage::default(),
+            ..Default::default()
         };
         let text = render_text(&outcome, false);
         assert!(
@@ -714,17 +977,14 @@ mod tests {
             files_changed: 3,
             decision: GateDecision::Block,
             incomplete: true,
-            warnings: vec![ReviewWarning {
-                dimension: "logic".into(),
-                kind: "timed_out",
-                message: "墙钟超时".into(),
-            }],
+            warnings: vec![ReviewWarning::new("logic", "timed_out", "墙钟超时")],
             usage: Usage {
                 input_tokens: 1000,
                 output_tokens: 200,
                 cache_read_input_tokens: 1000,
                 cache_creation_input_tokens: 0,
             },
+            ..Default::default()
         };
 
         let text = render_text_lang(&outcome, false, Lang::En);
@@ -786,6 +1046,7 @@ mod tests {
             incomplete: false,
             warnings: vec![],
             usage: Usage::default(),
+            ..Default::default()
         };
 
         let text = render_text_lang(&outcome, false, Lang::En);
@@ -815,6 +1076,7 @@ mod tests {
                 cache_read_input_tokens: 0,
                 cache_creation_input_tokens: 0,
             },
+            ..Default::default()
         };
         let json = render_json(&outcome).unwrap();
         assert!(json.contains("\"decision\": \"block\""));
@@ -842,6 +1104,7 @@ mod tests {
             incomplete: false,
             warnings: vec![],
             usage: Usage::default(),
+            ..Default::default()
         };
         let json = render_json(&outcome).unwrap();
         assert!(json.contains("\"filtered\": true"));
@@ -855,17 +1118,14 @@ mod tests {
             files_changed: 1,
             decision: GateDecision::Pass,
             incomplete: true,
-            warnings: vec![ReviewWarning {
-                dimension: "logic".into(),
-                kind: "timed_out",
-                message: "timeout".into(),
-            }],
+            warnings: vec![ReviewWarning::new("logic", "timed_out", "timeout")],
             usage: Usage {
                 input_tokens: 100,
                 output_tokens: 50,
                 cache_read_input_tokens: 0,
                 cache_creation_input_tokens: 0,
             },
+            ..Default::default()
         };
         let json = render_json(&outcome).unwrap();
         assert!(json.contains("\"warnings\""));
@@ -883,6 +1143,7 @@ mod tests {
             incomplete: false,
             warnings: vec![],
             usage: Usage::default(),
+            ..Default::default()
         };
         let shown = render_text_lang(&outcome, true, Lang::En);
         let hidden = render_text_lang(&outcome, false, Lang::En);
@@ -899,6 +1160,7 @@ mod tests {
             incomplete: false,
             warnings: vec![],
             usage: Usage::default(),
+            ..Default::default()
         };
         let en = render_text_lang(&outcome, false, Lang::En);
         assert!(en.contains("No changes") || en.contains("no changes"));

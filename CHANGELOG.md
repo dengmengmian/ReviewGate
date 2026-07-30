@@ -6,6 +6,42 @@ Changes are listed in Chinese first, then English.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-30
+
+### Added
+- 新增 **`reviewgate init`**：交互/非交互写出全局配置（provider 预设 deepseek/openai/anthropic/custom）；密钥走环境变量，不写进文件；支持 `--force` / `--config-dir` / `--test`。
+  Added **`reviewgate init`**: interactive or non-interactive global config (deepseek/openai/anthropic/custom presets); API key stays in the environment; supports `--force` / `--config-dir` / `--test`.
+- 新增 **`reviewgate demo`**：内置 SQL 注入样例仓库，验证闸口会 BLOCK（`--prepare-only` 只建仓不调 LLM）。
+  Added **`reviewgate demo`**: built-in poisoned SQL-injection fixture to verify the gate BLOCKs (`--prepare-only` seeds without LLM).
+- 新增 **`--profile gate|audit`**：gate 默认严闸口；audit 更宽（samples≥2、默认含 style）。
+  Added **`--profile gate|audit`**: gate is the default precision profile; audit is wider (samples≥2, style on by default).
+- 新增跑前成本估算与预算：`[cost]` 行、`--estimate-only`、`--max-cost`、`--max-input-tokens`；可选 `price_per_mtok_*` 换 USD。
+  Added pre-run cost estimate and budgets: `[cost]` line, `--estimate-only`, `--max-cost`, `--max-input-tokens`; optional `price_per_mtok_*` for USD.
+- 新增大 PR 合成报告：`unit_plan`（目录装箱 unit 清单）+ `coverage`（covered/unfinished/oversized 路径与建议）；文本与 JSON 均输出；干净单 unit 不刷假「未覆盖」。
+  Added large-PR composite report: `unit_plan` (directory-packed units) + `coverage` (covered/unfinished/oversized paths and advice) in text and JSON; clean single-unit runs do not invent fake gaps.
+- 新增关键路径 incomplete 策略：`force_fail_incomplete_paths`（默认 auth/payment/… glob；`[]` 关闭）。
+  Added critical-path incomplete policy: `force_fail_incomplete_paths` (default auth/payment/… globs; `[]` disables).
+- 新增运行指标落盘：`.reviewgate/cache/metrics.jsonl`（`--no-metrics` 可关）。
+  Added run metrics append to `.reviewgate/cache/metrics.jsonl` (disable with `--no-metrics`).
+- GitHub 行内评论改为只发 **high 或 ≥ block 置信度** 的已定位发现，并使用配置的 `gate.block_threshold`。
+  GitHub inline comments now post only **high or ≥ block-threshold** located findings, using configured `gate.block_threshold`.
+
+### Fixed
+- `post_inline_suggestions` 不再写死 0.8，与闸口阈值一致。
+  `post_inline_suggestions` no longer hardcodes 0.8; matches gate threshold.
+- `home_dir` 在 core 导出，cli `init` 复用，去掉复制。
+  `home_dir` is exported from core and reused by CLI `init` (no duplicate copy).
+- 关键路径 incomplete 判定逻辑去重整理，去掉死分支。
+  Critical-path incomplete logic cleaned up (removed dead branches).
+
+### Docs
+- README 冷启动路径改为 init → demo → review；补充 profile / 成本 / 大 PR 覆盖说明。
+  README cold-start path is init → demo → review; documents profile / cost / large-PR coverage.
+- `docs/BIG_PR_HANDLING.md` 补充用户可见 unit/coverage 报告。
+  `docs/BIG_PR_HANDLING.md` documents the user-visible unit/coverage report.
+- 公开评测汇总：`docs/evals/2026-07-30__github-10-repos-batch.md`（10 仓 review+security）。
+  Public batch eval: `docs/evals/2026-07-30__github-10-repos-batch.md` (10-repo review+security).
+
 ## [0.8.0] - 2026-07-26
 
 ### Added

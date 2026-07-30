@@ -63,6 +63,8 @@ fn tiny_budget_config() -> Config {
             api_key: "x".into(),
             model: "m".into(),
             max_input_tokens: Some(1), // 1 token 预算：任何 diff 都超
+            price_per_mtok_input: None,
+            price_per_mtok_output: None,
         },
     );
     Config {

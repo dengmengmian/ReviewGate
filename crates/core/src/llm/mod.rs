@@ -49,6 +49,8 @@ mod tests {
             api_key: "sk-test".into(),
             model: "m".into(),
             max_input_tokens: None,
+            price_per_mtok_input: None,
+            price_per_mtok_output: None,
         }
     }
 

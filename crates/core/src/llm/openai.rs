@@ -248,6 +248,8 @@ mod tests {
             api_key: "k".into(),
             model: "m".into(),
             max_input_tokens: None,
+            price_per_mtok_input: None,
+            price_per_mtok_output: None,
         })
         .unwrap()
     }

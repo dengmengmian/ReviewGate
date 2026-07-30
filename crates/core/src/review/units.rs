@@ -6,6 +6,7 @@
 
 use crate::diff::Diff;
 use crate::llm::estimate_tokens;
+use serde::Serialize;
 use std::path::Path;
 
 /// 一个审查单元：一组 [`Diff::files`] 下标。
@@ -17,6 +18,64 @@ pub struct ReviewUnit {
     pub oversized: bool,
     /// 本单元 diff 的估算 token（仅供日志/诊断）。
     pub est_tokens: usize,
+}
+
+/// 报告用：单个 unit/job 的路径清单。
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct UnitJobSummary {
+    /// 0-based unit id。
+    pub id: usize,
+    /// 本单元覆盖的路径。
+    pub paths: Vec<String>,
+    /// 估算 token。
+    pub est_tokens: usize,
+    /// 是否 oversized（计划阶段即跳过审查内容）。
+    pub oversized: bool,
+    /// `planned` | `reviewed` | `skipped_oversized` | `incomplete`
+    pub status: String,
+}
+
+/// 整次审查的 unit 计划摘要（多单元时合成报告的核心）。
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+pub struct UnitPlanSummary {
+    pub unit_count: usize,
+    pub reviewable_units: usize,
+    pub oversized_units: usize,
+    pub units: Vec<UnitJobSummary>,
+}
+
+/// 从 `plan_units` 结果生成面向用户的 job 摘要。
+pub fn summarize_units(diff: &Diff, units: &[ReviewUnit]) -> UnitPlanSummary {
+    let mut jobs = Vec::with_capacity(units.len());
+    let mut oversized_units = 0usize;
+    let mut reviewable = 0usize;
+    for (id, u) in units.iter().enumerate() {
+        let paths: Vec<String> = u
+            .files
+            .iter()
+            .filter_map(|&i| diff.files.get(i).map(|f| f.path().to_string()))
+            .collect();
+        let status = if u.oversized {
+            oversized_units += 1;
+            "skipped_oversized"
+        } else {
+            reviewable += 1;
+            "planned"
+        };
+        jobs.push(UnitJobSummary {
+            id,
+            paths,
+            est_tokens: u.est_tokens,
+            oversized: u.oversized,
+            status: status.into(),
+        });
+    }
+    UnitPlanSummary {
+        unit_count: units.len(),
+        reviewable_units: reviewable,
+        oversized_units,
+        units: jobs,
+    }
 }
 
 /// 预留给单元上下文/工具轮次/输出的头寸：单元 diff 只占预算的 80%。
@@ -297,5 +356,33 @@ mod tests {
         };
         let units = plan_units(&diff, 100_000);
         assert!(units[0].est_tokens > 0);
+    }
+
+    #[test]
+    fn summarize_units_lists_every_path_exactly_once() {
+        let diff = Diff {
+            files: vec![
+                file("a/1.rs", 60, 40),
+                file("a/2.rs", 60, 40),
+                file("b/3.rs", 60, 40),
+                file("b/4.rs", 60, 40),
+            ],
+        };
+        let one = estimate_tokens(&diff.files[0].render_for_prompt());
+        let budget = (one * 2) * 5 / 4 + 1;
+        let units = plan_units(&diff, budget);
+        assert!(units.len() > 1, "fixture must force multi-unit");
+        let plan = summarize_units(&diff, &units);
+        assert_eq!(plan.unit_count, units.len());
+        let mut all: Vec<String> = plan.units.iter().flat_map(|u| u.paths.clone()).collect();
+        all.sort();
+        let mut expected: Vec<String> = diff.files.iter().map(|f| f.path().to_string()).collect();
+        expected.sort();
+        assert_eq!(all, expected, "every changed file in exactly one unit");
+        // no path appears twice
+        let mut seen = std::collections::HashSet::new();
+        for p in &all {
+            assert!(seen.insert(p.clone()), "duplicate path {p}");
+        }
     }
 }

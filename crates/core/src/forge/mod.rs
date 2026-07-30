@@ -161,16 +161,45 @@ pub fn render_markdown(outcome: &ReviewOutcome) -> String {
     if outcome.incomplete {
         md.push_str(
             "> 🟠 **审查未完整**：部分维度/单元因超时、请求失败、上下文超限或超大文件被跳过而**未审完** —— \
-             结论不代表“无问题”。请放宽 --timeout、调大 `max_input_tokens` 或拆分改动后重跑。\n\n",
+             结论不代表“无问题”。\n\n",
         );
+        let unfinished = crate::review::unfinished_paths(&outcome.warnings);
+        if !unfinished.is_empty() {
+            md.push_str(&format!(
+                "> **未覆盖路径:** {}\n\n",
+                unfinished
+                    .iter()
+                    .map(|p| format!("`{p}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        for a in crate::review::incomplete_advice(&outcome.warnings) {
+            md.push_str(&format!("> - {a}\n"));
+        }
+        if !outcome.warnings.is_empty() {
+            md.push('\n');
+        }
     }
     if !outcome.warnings.is_empty() {
         let list: Vec<String> = outcome
             .warnings
             .iter()
-            .map(|w| format!("`{}`（{}）", w.dimension, w.kind))
+            .map(|w| {
+                let paths = if w.paths.is_empty() {
+                    String::new()
+                } else {
+                    format!(" @ {}", w.paths.join(", "))
+                };
+                format!("`{}`（{}{}）", w.dimension, w.kind, paths)
+            })
             .collect();
         md.push_str(&format!("> ⚠️ **Incomplete**: {}.\n\n", list.join(", ")));
+    }
+    if outcome.critical_incomplete {
+        md.push_str(
+            "> 🛑 **关键路径未审完**：触及 auth/payment/security 等敏感路径的 incomplete 已强制非 PASS。\n\n",
+        );
     }
 
     if kept.is_empty() {
@@ -237,10 +266,34 @@ pub async fn post_summary(outcome: &ReviewOutcome) -> Result<()> {
     Ok(())
 }
 
-/// 在 PR 上为每条已定位发现发**行内 review 评论**，带 ` ```suggestion ` 块（一键应用，人把关）。
+/// 行内评论候选：已定位、未过滤，且 **high 或达到 block 置信度**（闸口级问题落到 PR 行上）。
+/// 意图维度走验收清单，不发行内 suggestion。
+pub fn inline_candidates<'a>(
+    outcome: &'a ReviewOutcome,
+    block_threshold: f32,
+) -> Vec<&'a Finding> {
+    use crate::model::Dimension;
+    outcome
+        .findings
+        .iter()
+        .filter(|f| {
+            !f.filtered
+                && f.start_line > 0
+                && f.dimension != Dimension::Intent
+                && (f.severity == Severity::High || f.confidence >= block_threshold)
+        })
+        .collect()
+}
+
+/// 在 PR 上为闸口级发现发**行内 review 评论**，带 ` ```suggestion ` 块（一键应用，人把关）。
 /// **目前仅 GitHub**——GitLab/AtomGit 的行内定位差异较大，暂只在摘要评论里给出发现。
 /// best-effort：逐条独立提交，单条失败不影响其它。
-pub async fn post_inline_suggestions(outcome: &ReviewOutcome) -> Result<()> {
+///
+/// `block_threshold` 应来自闸口配置（`gate.block_threshold`），与 PASS/BLOCK 判定一致。
+pub async fn post_inline_suggestions(
+    outcome: &ReviewOutcome,
+    block_threshold: f32,
+) -> Result<()> {
     let Some(ctx) = resolve_context(|k| std::env::var(k).ok(), detect_pr_number()) else {
         return Ok(());
     };
@@ -253,6 +306,12 @@ pub async fn post_inline_suggestions(outcome: &ReviewOutcome) -> Result<()> {
         return Ok(());
     };
 
+    let candidates = inline_candidates(outcome, block_threshold);
+    if candidates.is_empty() {
+        eprintln!("No high/BLOCK findings with line anchors; skipping inline comments.");
+        return Ok(());
+    }
+
     let url = format!(
         "{}/repos/{}/pulls/{}/comments",
         ctx.api_base.trim_end_matches('/'),
@@ -261,15 +320,12 @@ pub async fn post_inline_suggestions(outcome: &ReviewOutcome) -> Result<()> {
     );
     let client = crate::llm::http::shared_http_client()?;
     let mut posted = 0usize;
-    for f in outcome
-        .findings
-        .iter()
-        .filter(|f| !f.filtered && f.start_line > 0)
-    {
+    for f in candidates {
         let mut body = format!(
-            "**[{} · {}] ReviewGate**\n\n{}",
+            "**[{} · {} · {:.0}%] ReviewGate**\n\n{}",
             f.dimension.as_str(),
             f.severity.as_str(),
+            f.confidence * 100.0,
             f.message
         );
         if !f.suggestion_code.trim().is_empty() {
@@ -277,6 +333,8 @@ pub async fn post_inline_suggestions(outcome: &ReviewOutcome) -> Result<()> {
                 "\n\n```suggestion\n{}\n```",
                 f.suggestion_code.trim_end_matches('\n')
             ));
+        } else if let Some(s) = f.suggestion.as_deref().filter(|s| !s.trim().is_empty()) {
+            body.push_str(&format!("\n\n**Fix hint:** {s}"));
         }
         let mut payload = serde_json::json!({
             "body": body,
@@ -316,7 +374,7 @@ pub async fn post_inline_suggestions(outcome: &ReviewOutcome) -> Result<()> {
             ),
         }
     }
-    eprintln!("Posted {posted} inline suggestion comment(s).");
+    eprintln!("Posted {posted} inline suggestion comment(s) (high/BLOCK only).");
     Ok(())
 }
 
@@ -547,10 +605,9 @@ mod tests {
         ReviewOutcome {
             files_changed: 1,
             decision: d,
-            warnings: vec![],
             incomplete,
-            usage: Default::default(),
             findings,
+            ..Default::default()
         }
     }
 
@@ -567,16 +624,36 @@ mod tests {
         f.filtered = true;
         let mut o = outcome_with(vec![f], GateDecision::Warn, true);
         o.files_changed = 2;
-        o.warnings = vec![crate::review::ReviewWarning {
-            dimension: "logic".into(),
-            kind: "timed_out",
-            message: "timeout".into(),
-        }];
+        o.warnings = vec![crate::review::ReviewWarning::new("logic", "timed_out", "timeout")];
         let md = render_markdown(&o);
         assert!(md.contains("WARN"));
         assert!(md.contains("审查未完整"));
         assert!(md.contains("timed_out"));
         assert!(md.contains("1 条已过滤"));
+    }
+
+    #[test]
+    fn inline_candidates_only_high_or_block_confidence() {
+        let high = base_finding(); // high + 0.95
+        let mut med = base_finding();
+        med.severity = Severity::Med;
+        med.confidence = 0.6;
+        med.start_line = 5;
+        let mut low_located = base_finding();
+        low_located.severity = Severity::Low;
+        low_located.confidence = 0.5;
+        let mut unlocated = base_finding();
+        unlocated.start_line = 0;
+        let o = outcome_with(vec![high, med, low_located, unlocated], GateDecision::Block, false);
+        let c = inline_candidates(&o, 0.8);
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].severity, Severity::High);
+        // med with confidence >= block threshold
+        let mut med_block = base_finding();
+        med_block.severity = Severity::Med;
+        med_block.confidence = 0.85;
+        let o2 = outcome_with(vec![med_block], GateDecision::Block, false);
+        assert_eq!(inline_candidates(&o2, 0.8).len(), 1);
     }
 
     #[test]

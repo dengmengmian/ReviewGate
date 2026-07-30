@@ -204,6 +204,7 @@ mod tests {
             warn_threshold: 0.7,
             block_threshold: 0.9,
             fail_on_incomplete: true,
+            force_fail_incomplete_paths: None,
         };
         let mut a = [finding(0.85)];
         assert_eq!(apply_gate(&mut a, &g), GateDecision::Warn);

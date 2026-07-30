@@ -18,6 +18,17 @@ ReviewGate 面向「AI 一次改很多文件」的场景，因此对超出模型
 - 判定降级为 **WARN**（不会是 PASS）；
 - 配合 `--fail-on`（CI 中）可使进程非 0 退出，避免「没审完」被误读为「干净通过」。
 
+## 用户可见：合成 unit / 覆盖报告
+
+多单元或 incomplete 时，结果附带（文本 + JSON）：
+
+| 字段 | 含义 |
+|---|---|
+| `unit_plan` | 每个目录装箱 unit 的路径、估 token、状态（`reviewed` / `incomplete` / `skipped_oversized`） |
+| `coverage` | `changed` / `covered` / `unfinished` / `skipped_oversized` 路径清单 + 建议（timeout / 拆 PR / `max_input_tokens`） |
+
+干净的**单单元完整**审查不会刷屏捏造「未覆盖」——`coverage.should_surface()` 仅在多单元或 incomplete 时为真。
+
 ## 实测（2026-06-27）
 
 用真实开源 PR / 多提交范围压测大 diff（修复了一处「固定开销未预留导致单元首轮全部超预算」的健壮性 Bug 后）：

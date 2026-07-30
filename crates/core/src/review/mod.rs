@@ -5,20 +5,32 @@
 
 mod aggregate;
 mod context;
+pub mod cost;
+pub mod coverage;
+pub mod critical;
 mod dedup;
 mod incremental;
 mod intent;
+pub mod metrics;
 mod prefetch;
+pub mod profile;
 mod rules;
 mod secrets;
 mod suppress;
 mod units;
 
+pub use cost::{estimate_from_units, estimate_review_cost, exceeds_budget, CostEstimate, TokenPrices};
+pub use coverage::{build_coverage, refresh_unit_statuses, CoverageSnapshot};
+pub use critical::{
+    critical_incomplete_forces_fail, incomplete_advice, resolve_critical_globs, unfinished_paths,
+};
 pub use dedup::dedupe;
+pub use metrics::RunMetrics;
+pub use profile::RunProfile;
 pub use rules::{build_rules_section, build_rules_section_with_warnings};
 pub use secrets::{match_added_line as match_secret_line, scan_diff as scan_secrets};
 pub use suppress::fingerprint;
-pub use units::{plan_units, ReviewUnit};
+pub use units::{plan_units, summarize_units, ReviewUnit, UnitJobSummary, UnitPlanSummary};
 
 use aggregate::{boost_cross_dimension_agreement, sort_findings};
 use context::{build_unit_prompt, new_ref_for};
@@ -103,6 +115,20 @@ pub struct ReviewOptions {
     pub incremental: bool,
     /// Standard vs deep security profile (does not add a new Dimension).
     pub profile: ReviewProfile,
+    /// 运行姿态 gate/audit（影响默认采样等；与 Deep 正交）。
+    pub run_profile: RunProfile,
+    /// 跑前成本上限（USD）。需配置 price_per_mtok_* 才生效。
+    pub max_cost_usd: Option<f64>,
+    /// 跑前估算输入 token 上限；超过则拒绝开跑。
+    pub max_est_input_tokens: Option<u64>,
+    /// 仅估算成本后返回（不调 LLM）。由 CLI `--estimate-only` 使用。
+    pub estimate_only: bool,
+    /// 是否写入 `.reviewgate/cache/metrics.jsonl`（默认 true）。
+    pub write_metrics: bool,
+    /// Token 单价（USD / 百万 token），用于成本估算。
+    pub token_prices: TokenPrices,
+    /// 墙钟起点（毫秒指标）；None 则在 run 内自取。
+    pub started: Option<std::time::Instant>,
 }
 
 impl ReviewOptions {
@@ -122,6 +148,13 @@ impl ReviewOptions {
             progress: None,
             incremental: false,
             profile: ReviewProfile::Standard,
+            run_profile: RunProfile::Gate,
+            max_cost_usd: None,
+            max_est_input_tokens: None,
+            estimate_only: false,
+            write_metrics: true,
+            token_prices: TokenPrices::default(),
+            started: None,
         }
     }
 
@@ -150,6 +183,38 @@ pub struct ReviewWarning {
     /// `timed_out` | `failed` | `incomplete` | `oversized` | `rules_unavailable`
     pub kind: &'static str,
     pub message: String,
+    /// 相关文件路径（oversized / 单元级告警尽量填全）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<String>,
+    /// 可操作建议（提高 timeout、拆 PR 等）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub advice: Option<String>,
+}
+
+impl ReviewWarning {
+    pub fn new(
+        dimension: impl Into<String>,
+        kind: &'static str,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            dimension: dimension.into(),
+            kind,
+            message: message.into(),
+            paths: Vec::new(),
+            advice: None,
+        }
+    }
+
+    pub fn with_paths(mut self, paths: Vec<String>) -> Self {
+        self.paths = paths;
+        self
+    }
+
+    pub fn with_advice(mut self, advice: impl Into<String>) -> Self {
+        self.advice = Some(advice.into());
+        self
+    }
 }
 
 /// 审查结果。
@@ -163,6 +228,34 @@ pub struct ReviewOutcome {
     pub incomplete: bool,
     /// 本次审查累计 token 用量（Agent + Judge）。
     pub usage: Usage,
+    /// 跑前成本估算（若编排阶段已计算）。
+    pub cost_estimate: Option<CostEstimate>,
+    /// 关键路径 incomplete 是否触发强制失败策略。
+    pub critical_incomplete: bool,
+    /// 落盘/展示用的运行指标（可选）。
+    pub run_metrics: Option<RunMetrics>,
+    /// 多单元目录装箱计划（大 PR 合成报告）。
+    pub unit_plan: Option<UnitPlanSummary>,
+    /// 覆盖快照：covered / unfinished / oversized 路径。
+    pub coverage: Option<CoverageSnapshot>,
+}
+
+impl Default for ReviewOutcome {
+    fn default() -> Self {
+        Self {
+            findings: Vec::new(),
+            files_changed: 0,
+            decision: GateDecision::Pass,
+            warnings: Vec::new(),
+            incomplete: false,
+            usage: Usage::default(),
+            cost_estimate: None,
+            critical_incomplete: false,
+            run_metrics: None,
+            unit_plan: None,
+            coverage: None,
+        }
+    }
 }
 
 /// 执行一次审查。管线：多维并行 → 重定位 → 去重 → 证伪 Judge → 闸口。
@@ -180,14 +273,12 @@ pub async fn run_review_with_client(
 ) -> Result<ReviewOutcome> {
     let root = diff::git::repo_root().await?;
     let diff: Arc<Diff> = Arc::new(diff::collect(&opts.mode).await?);
+    let started = opts.started.unwrap_or_else(std::time::Instant::now);
+
     if diff.files.is_empty() {
         return Ok(ReviewOutcome {
-            findings: Vec::new(),
             files_changed: 0,
-            decision: GateDecision::Pass,
-            warnings: Vec::new(),
-            incomplete: false,
-            usage: Usage::default(),
+            ..Default::default()
         });
     }
 
@@ -199,11 +290,10 @@ pub async fn run_review_with_client(
     let rules_section = build_rules_section_with_warnings(&cfg.business, &diff, Path::new(&root));
     let rules_body = rules_section.body.clone();
     for message in rules_section.warnings {
-        warnings.push(ReviewWarning {
-            dimension: Dimension::Business.as_str().to_string(),
-            kind: "rules_unavailable",
-            message,
-        });
+        warnings.push(
+            ReviewWarning::new(Dimension::Business.as_str(), "rules_unavailable", message)
+                .with_advice("Fix rules_dir / path_rules globs or set builtin_path_rules"),
+        );
     }
 
     // 配置了任一规则来源（inline / rules_dir / skills_dir）就自动并入 Business 维度。
@@ -232,6 +322,7 @@ pub async fn run_review_with_client(
         + 256;
     let plan_budget = budget.saturating_sub(overhead).max(512);
     let mut units = plan_units(&diff, plan_budget);
+    let mut unit_plan = summarize_units(&diff, &units);
     // 多单元（大 PR）本就庞大：不再叠采样，避免 单元×维度×样本 的成本放大。
     // 多采样只在单单元（正常 PR）上用于提升 flaky 漏报（如 SSRF）的召回稳定性。
     let samples = if units.len() > 1 {
@@ -239,11 +330,57 @@ pub async fn run_review_with_client(
     } else {
         opts.samples.max(1)
     };
-    if opts.verbose && units.len() > 1 {
+    if units.len() > 1 {
         eprintln!(
-            "  [units] diff exceeds input budget ({budget} tok); split into {} review units; samples forced to 1 (cost control)",
+            "  [units] large diff → {} review units (directory packing); samples forced to 1",
             units.len()
         );
+        for job in &unit_plan.units {
+            eprintln!(
+                "    unit[{}] ~{} tok{}: {}",
+                job.id,
+                job.est_tokens,
+                if job.oversized { " OVERSIZED" } else { "" },
+                job.paths.join(", ")
+            );
+        }
+    }
+
+    // 跑前成本估算 + 预算守卫（estimate-only 在此返回）。
+    let cost_estimate = estimate_from_units(
+        &diff,
+        &units,
+        &dims,
+        samples,
+        opts.judge,
+        opts.token_prices,
+    );
+    eprintln!("  [cost] {}", cost_estimate.summary);
+    if let Some(why) = exceeds_budget(
+        &cost_estimate,
+        opts.max_cost_usd,
+        opts.max_est_input_tokens,
+    ) {
+        anyhow::bail!(
+            "budget exceeded before review: {why}\n  estimate: {}\n  raise --max-cost / --max-input-tokens, narrow --dimensions, or split the PR",
+            cost_estimate.summary
+        );
+    }
+    if opts.estimate_only {
+        let coverage = build_coverage(&diff, &unit_plan, &[], false);
+        return Ok(ReviewOutcome {
+            findings: Vec::new(),
+            files_changed: diff.files.len(),
+            decision: GateDecision::Pass,
+            warnings: Vec::new(),
+            incomplete: false,
+            usage: Usage::default(),
+            cost_estimate: Some(cost_estimate),
+            critical_incomplete: false,
+            run_metrics: None,
+            unit_plan: Some(unit_plan),
+            coverage: Some(coverage),
+        });
     }
 
     // 增量复审（opt-in）：签名一致且文件 diff 逐字节不变的文件复用上轮发现，
@@ -444,11 +581,14 @@ pub async fn run_review_with_client(
     if let Some(ir) = intent_outcome {
         if ir.incomplete {
             incomplete = true;
-            warnings.push(ReviewWarning {
-                dimension: Dimension::Intent.as_str().to_string(),
-                kind: "incomplete",
-                message: "intent review did not finish (timeout/context overflow); the result may be partial".into(),
-            });
+            warnings.push(
+                ReviewWarning::new(
+                    Dimension::Intent.as_str(),
+                    "incomplete",
+                    "intent review did not finish (timeout/context overflow); the result may be partial",
+                )
+                .with_advice("Raise --timeout or shorten the intent document"),
+            );
         }
         for mut f in ir.findings {
             use crate::model::IntentStatus::{Met, Unknown};
@@ -538,6 +678,21 @@ pub async fn run_review_with_client(
     // Deep security always forces fail_on_incomplete (even if config turned it off).
     let fail_incomplete = opts.gate.fail_on_incomplete || deep;
     decision = apply_incomplete_policy(decision, incomplete, fail_incomplete);
+
+    // 关键路径 incomplete：即便全局 fail_on_incomplete=false，触及 auth/payment 等路径仍强制非 PASS。
+    let changed_paths: Vec<String> = diff.files.iter().map(|f| f.path().to_string()).collect();
+    let critical_globs = resolve_critical_globs(&opts.gate.force_fail_incomplete_paths);
+    let critical_incomplete =
+        critical_incomplete_forces_fail(incomplete, &warnings, &changed_paths, &critical_globs);
+    if critical_incomplete {
+        decision = apply_incomplete_policy(decision, true, true);
+        if opts.verbose || incomplete {
+            eprintln!(
+                "  [critical] incomplete review touches security-sensitive paths → force non-PASS"
+            );
+        }
+    }
+
     // 已满足(met)的验收项和已抑制项在闸口之后并入：
     // 它们是信息项，只供验收清单 / --show-filtered 展示，不影响判定。
     findings.append(&mut intent_met);
@@ -547,6 +702,42 @@ pub async fn run_review_with_client(
     let mut usage = agent_stats.usage.clone();
     usage.add(&judge_stats.usage);
 
+    let kept = findings.iter().filter(|f| !f.filtered).count();
+    let duration_ms = started.elapsed().as_millis() as u64;
+    let run_metrics = RunMetrics::build(
+        decision,
+        incomplete,
+        diff.files.len(),
+        findings.len(),
+        kept,
+        warnings.len(),
+        &usage,
+        duration_ms,
+        Some(opts.run_profile.as_str()),
+        Some(&cost_estimate),
+        critical_incomplete,
+    );
+    if opts.write_metrics {
+        if let Err(e) = run_metrics.append_jsonl(Path::new(&root)) {
+            if opts.verbose {
+                eprintln!("  [metrics] write failed (ignored): {e}");
+            }
+        }
+    }
+
+    // 合成 unit/coverage 报告：刷新 unit 状态 + covered/unfinished 路径。
+    refresh_unit_statuses(&mut unit_plan, &warnings);
+    let coverage = build_coverage(&diff, &unit_plan, &warnings, incomplete);
+    if coverage.should_surface() {
+        eprintln!(
+            "  [coverage] units={} covered={} unfinished={} oversized_skipped={}",
+            unit_plan.unit_count,
+            coverage.covered_paths.len(),
+            coverage.unfinished_paths.len(),
+            coverage.skipped_oversized_paths.len()
+        );
+    }
+
     Ok(ReviewOutcome {
         findings,
         files_changed: diff.files.len(),
@@ -554,6 +745,11 @@ pub async fn run_review_with_client(
         warnings,
         incomplete,
         usage,
+        cost_estimate: Some(cost_estimate),
+        critical_incomplete,
+        run_metrics: Some(run_metrics),
+        unit_plan: Some(unit_plan),
+        coverage: Some(coverage),
     })
 }
 
@@ -617,23 +813,31 @@ async fn build_unit_prompts(
         }
         // 单文件 diff 自身就超预算，无法再切 → 跳过并标记未审完（绝不静默放行）。
         *incomplete = true;
-        let label = unit
+        let paths: Vec<String> = unit
             .files
-            .first()
+            .iter()
             .map(|&i| diff.files[i].path().to_string())
+            .collect();
+        let label = paths
+            .first()
+            .cloned()
             .unwrap_or_else(|| format!("unit{ui}"));
         eprintln!(
             "! file [{label}] diff exceeds input budget (~{} tok); skipped (not reviewed)",
             unit.est_tokens
         );
-        warnings.push(ReviewWarning {
-            dimension: format!("unit:{label}"),
-            kind: "oversized",
-            message: format!(
-                "this file's diff exceeds the input budget (~{} tok > {budget}); skipped (not reviewed); split the change or raise max_input_tokens",
-                unit.est_tokens
-            ),
-        });
+        warnings.push(
+            ReviewWarning::new(
+                format!("unit:{label}"),
+                "oversized",
+                format!(
+                    "this file's diff exceeds the input budget (~{} tok > {budget}); skipped (not reviewed)",
+                    unit.est_tokens
+                ),
+            )
+            .with_paths(paths)
+            .with_advice("Split the change into a smaller PR or raise provider max_input_tokens"),
+        );
         unit_prompts.push(None);
     }
     unit_prompts
@@ -667,11 +871,10 @@ fn collect_agent_results(
             }
             Err(e) => {
                 *incomplete = true;
-                warnings.push(ReviewWarning {
-                    dimension: dim.as_str().to_string(),
-                    kind: "failed",
-                    message: e.to_string(),
-                });
+                warnings.push(
+                    ReviewWarning::new(dim.as_str(), "failed", e.to_string())
+                        .with_advice("Re-run with -v; check network/provider limits"),
+                );
                 eprintln!(
                     "! dimension [{}] review failed (skipped): {e}",
                     dim.as_str()
@@ -691,29 +894,41 @@ fn warning_for_exit(dim: Dimension, run: &AgentRun) -> Option<ReviewWarning> {
             .unwrap_or_default()
     };
     match run.exit_reason {
-        AgentExitReason::TimedOut => Some(ReviewWarning {
-            dimension: dim.as_str().to_string(),
-            kind: "timed_out",
-            message: "wall-clock timeout; this dimension did not finish (its partial findings are kept)".into(),
-        }),
-        AgentExitReason::AuthFailed => Some(ReviewWarning {
-            dimension: dim.as_str().to_string(),
-            kind: "auth_failed",
-            message: format!(
-                "LLM authentication failed — check the API key for the active provider (api_key in the config, or REVIEWGATE_API_KEY){}; this dimension did not finish",
-                detail()
-            ),
-        }),
-        AgentExitReason::RequestFailed => Some(ReviewWarning {
-            dimension: dim.as_str().to_string(),
-            kind: "incomplete",
-            message: format!("LLM request failed{}; this dimension did not finish", detail()),
-        }),
-        AgentExitReason::ContextOverflow => Some(ReviewWarning {
-            dimension: dim.as_str().to_string(),
-            kind: "incomplete",
-            message: "context exceeded the input budget; pre-send check wrapped up early; this dimension did not finish".into(),
-        }),
+        AgentExitReason::TimedOut => Some(
+            ReviewWarning::new(
+                dim.as_str(),
+                "timed_out",
+                "wall-clock timeout; this dimension did not finish (its partial findings are kept)",
+            )
+            .with_advice("Raise --timeout (e.g. --timeout 300) and re-run"),
+        ),
+        AgentExitReason::AuthFailed => Some(
+            ReviewWarning::new(
+                dim.as_str(),
+                "auth_failed",
+                format!(
+                    "LLM authentication failed — check the API key for the active provider (api_key in the config, or REVIEWGATE_API_KEY){}; this dimension did not finish",
+                    detail()
+                ),
+            )
+            .with_advice("Set REVIEWGATE_API_KEY or providers.*.api_key and re-run"),
+        ),
+        AgentExitReason::RequestFailed => Some(
+            ReviewWarning::new(
+                dim.as_str(),
+                "incomplete",
+                format!("LLM request failed{}; this dimension did not finish", detail()),
+            )
+            .with_advice("Re-run with -v; check provider rate limits / network"),
+        ),
+        AgentExitReason::ContextOverflow => Some(
+            ReviewWarning::new(
+                dim.as_str(),
+                "incomplete",
+                "context exceeded the input budget; pre-send check wrapped up early; this dimension did not finish",
+            )
+            .with_advice("Split the PR or raise provider max_input_tokens"),
+        ),
         AgentExitReason::Completed | AgentExitReason::MaxRounds => None,
     }
 }

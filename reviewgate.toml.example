@@ -10,6 +10,8 @@ base_url = "https://api.deepseek.com/v1"   # 换成你的端点（OpenAI 兼容�
 model = "deepseek-v4-pro"    # 1M context
 # max_input_tokens = 200000  # 输入上下文窗口预算（token）。大 diff 会按此切成多个审查单元，
                              # 并在发送前预检避免撞上限。缺省 200000；小窗 provider（如 64k/128k）请调小。
+# price_per_mtok_input = 0.14   # 可选：USD / 百万输入 token，用于跑前成本估算与 --max-cost
+# price_per_mtok_output = 0.28  # 可选：USD / 百万输出 token
 
 # 也可配 Anthropic 协议的提供方：
 # [providers.anthropic]
@@ -23,6 +25,8 @@ model = "deepseek-v4-pro"    # 1M context
 # block_threshold = 0.8        # 置信度 ≥ 此值 → 阻断（CI 非 0 退出）
 # warn_threshold = 0.5         # ≥ 此值 → 警告；低于则默认折叠
 # fail_on_incomplete = true    # 审查未完成（单元请求失败/超上下文/被跳过）时永不 PASS、CI 非 0 退出
+# # incomplete 且触及敏感路径时强制非 PASS：null=内置 auth/payment/…；[]=关闭；列表=自定义 glob
+# # force_fail_incomplete_paths = ["**/auth/**", "**/payment/**"]
 
 # 业务/项目规则。配置后自动启用 business 维度，并把规则注入到共享 prompt 块。
 # [business]
