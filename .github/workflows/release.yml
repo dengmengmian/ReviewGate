@@ -73,7 +73,9 @@ jobs:
           git push -f origin "${MAJOR}"
 
   # 发布成功后自动更新 Homebrew tap 的 formula(version + 4 个平台 sha256)。
-  # 需要 Secret HOMEBREW_TAP_TOKEN:对 dengmengmian/homebrew-tap 有 contents:write 的 PAT。
+  # 需要 Secret HOMEBREW_TAP_SSH_KEY:dengmengmian/homebrew-tap 上一把带写权限的
+  # deploy key 私钥。用 deploy key 而不是 PAT,是因为 fine-grained PAT 强制带过期时间
+  # (最长 366 天),到期后这个 job 会在 clone 处失效;deploy key 不过期,且只能动这一个仓库。
   homebrew:
     needs: publish
     if: ${{ !contains(github.ref_name, '-') }}
@@ -81,16 +83,24 @@ jobs:
     steps:
       - name: Update tap formula
         env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_SSH_KEY: ${{ secrets.HOMEBREW_TAP_SSH_KEY }}
         run: |
-          if [ -z "$TAP_TOKEN" ]; then
-            echo "::error::HOMEBREW_TAP_TOKEN secret is required to update dengmengmian/homebrew-tap"
+          if [ -z "$TAP_SSH_KEY" ]; then
+            echo "::error::HOMEBREW_TAP_SSH_KEY secret is required to update dengmengmian/homebrew-tap"
             exit 1
           fi
           VERSION="${GITHUB_REF_NAME#v}"
           curl -fsSL -o sha256sum.txt "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/sha256sum.txt"
 
-          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/dengmengmian/homebrew-tap.git" tap
+          # deploy key 只用于这一次 clone/push,写到 runner 私有目录后立刻收紧权限。
+          mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+          printf '%s
+' "$TAP_SSH_KEY" > "$HOME/.ssh/tap_deploy_key"
+          chmod 600 "$HOME/.ssh/tap_deploy_key"
+          ssh-keyscan -t ed25519 github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/tap_deploy_key -o IdentitiesOnly=yes"
+
+          git clone --depth 1 git@github.com:dengmengmian/homebrew-tap.git tap
           F=tap/Formula/reviewgate.rb
           sed -E -i "s/^  version \"[0-9.]+\"/  version \"${VERSION}\"/" "$F"
           # 每条 url 行标注平台,其后第一条 sha256 行替换成该平台的校验和
