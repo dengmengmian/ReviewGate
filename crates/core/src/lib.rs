@@ -12,6 +12,7 @@ pub mod diff;
 pub mod forge;
 pub mod gate;
 pub mod index;
+pub mod issue;
 pub mod judge;
 pub mod language;
 pub mod llm;

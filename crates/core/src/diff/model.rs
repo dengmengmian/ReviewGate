@@ -11,6 +11,25 @@ pub enum DiffMode {
     Commit(String),
     /// `from...to` 自 merge-base 起 `to` 的改动。
     Range { from: String, to: String },
+    /// 自某个 commit 起、**直到当前工作区**的改动（`git diff <sha>`）：
+    /// 既含之后新提交的 commit，也含未提交的编辑。用于「只审上次审查之后新增的部分」。
+    Since(String),
+}
+
+impl DiffMode {
+    /// 人类可读的审查范围描述。进报告/JSON/PR 评论——PASS 必须说清楚"审的是哪一段"，
+    /// 否则增量审查的通过会被读成全量通过。
+    pub fn scope_label(&self) -> String {
+        match self {
+            DiffMode::Workspace => "working tree vs HEAD".to_string(),
+            DiffMode::Commit(c) => format!("commit {c}"),
+            DiffMode::Range { from, to } => format!("{from}...{to}"),
+            DiffMode::Since(sha) => {
+                let short: String = sha.chars().take(12).collect();
+                format!("since last review ({short}) incl. working tree")
+            }
+        }
+    }
 }
 
 /// 文件改动状态。

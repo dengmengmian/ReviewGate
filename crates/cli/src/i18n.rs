@@ -70,6 +70,33 @@ impl Lang {
             Lang::Zh => format!("{n} 隐藏"),
         }
     }
+    /// 本次审查覆盖的范围。
+    pub fn scope(self, scope: &str) -> String {
+        match self {
+            Lang::En => format!("scope: {scope}"),
+            Lang::Zh => format!("审查范围：{scope}"),
+        }
+    }
+    /// 被排除规则挡下、未送审的文件数（附前若干路径）。
+    pub fn excluded(self, n: usize, sample: &str) -> String {
+        match self {
+            Lang::En => format!("{n} file(s) excluded from review: {sample}"),
+            Lang::Zh => format!("{n} 个文件被排除、未送审：{sample}"),
+        }
+    }
+    /// 全部改动都被排除规则挡下——不能当成"没有改动"。
+    pub fn all_excluded(self, n: usize) -> String {
+        match self {
+            Lang::En => format!(
+                "All {n} changed file(s) were excluded from review by exclude rules.\n\
+                 Nothing was sent to the model. Check [exclude] patterns in the config and .reviewgateignore."
+            ),
+            Lang::Zh => format!(
+                "本次改动的 {n} 个文件全部被排除规则挡下，未送审。\n\
+                 没有任何内容发给模型。请检查配置里的 [exclude] patterns 与 .reviewgateignore。"
+            ),
+        }
+    }
 
     // ── 状态词 ──
     pub fn gate_label(self, pass: GateLabel) -> &'static str {

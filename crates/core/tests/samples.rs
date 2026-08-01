@@ -87,6 +87,9 @@ fn mock_config() -> Config {
         providers: HashMap::new(),
         gate: GateConfig::default(),
         business: BusinessConfig::default(),
+        issue_review: Default::default(),
+        exclude: Default::default(),
+        severity_labels: Vec::new(),
     }
 }
 

@@ -5,6 +5,12 @@
 //! 平台识别：显式 `REVIEWGATE_FORGE`（github|gitlab|atomgit）优先；否则按 CI 环境自动识别
 //! （GitHub Actions 的 `GITHUB_*`、GitLab CI 的 `CI_*`）。AtomGit 无公开 CI 约定，走显式变量。
 
+pub mod discussion;
+pub mod i18n;
+pub mod local;
+
+use i18n::MdLang;
+
 use crate::gate::GateDecision;
 use crate::model::{Finding, Severity};
 use crate::review::ReviewOutcome;
@@ -140,11 +146,17 @@ pub fn auth_header(forge: Forge, token: &str) -> (&'static str, String) {
 }
 
 /// 把审查结果渲染成 Markdown 摘要（平台中立，三平台通用）。
+/// 散文跟随 `output_language()`；维度/severity/路径等技术标识保持英文。
 pub fn render_markdown(outcome: &ReviewOutcome) -> String {
+    render_markdown_lang(outcome, MdLang::detect())
+}
+
+/// 同 [`render_markdown`]，语言可注入（测试用，避免依赖进程 locale）。
+pub fn render_markdown_lang(outcome: &ReviewOutcome, t: MdLang) -> String {
     let badge = match outcome.decision {
-        GateDecision::Pass => "✅ **PASS** — 放行",
-        GateDecision::Warn => "⚠️ **WARN** — 有需关注的问题",
-        GateDecision::Block => "🛑 **BLOCK** — 阻断合并",
+        GateDecision::Pass => t.badge_pass(),
+        GateDecision::Warn => t.badge_warn(),
+        GateDecision::Block => t.badge_block(),
     };
     let kept: Vec<&Finding> = outcome.findings.iter().filter(|f| !f.filtered).collect();
     let filtered = outcome.findings.len() - kept.len();
@@ -152,21 +164,37 @@ pub fn render_markdown(outcome: &ReviewOutcome) -> String {
     let mut md = String::new();
     md.push_str("## 🚪 ReviewGate\n\n");
     md.push_str(&format!(
-        "{badge}\n\n{} 个文件改动 · {} 条可信发现 · {} 条已过滤\n\n",
-        outcome.files_changed,
-        kept.len(),
-        filtered
+        "{badge}\n\n{}\n\n",
+        t.counts(outcome.files_changed, kept.len(), filtered)
     ));
+    if !outcome.scope.is_empty() {
+        md.push_str(&format!("{}\n\n", t.scope(&outcome.scope)));
+    }
+
+    if !outcome.excluded.is_empty() {
+        // 少审了哪些文件必须写进 PR 评论——否则 reviewer 看到 PASS 会以为全审过了。
+        let list = outcome
+            .excluded
+            .iter()
+            .take(10)
+            .map(|e| format!("`{}` ({})", e.path, e.reason.as_str()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let more = if outcome.excluded.len() > 10 {
+            t.excluded_more(outcome.excluded.len())
+        } else {
+            String::new()
+        };
+        md.push_str(&format!("> {} {list}{more}\n\n", t.excluded_label()));
+    }
 
     if outcome.incomplete {
-        md.push_str(
-            "> 🟠 **审查未完整**：部分维度/单元因超时、请求失败、上下文超限或超大文件被跳过而**未审完** —— \
-             结论不代表“无问题”。\n\n",
-        );
+        md.push_str(t.incomplete_note());
         let unfinished = crate::review::unfinished_paths(&outcome.warnings);
         if !unfinished.is_empty() {
             md.push_str(&format!(
-                "> **未覆盖路径:** {}\n\n",
+                "{} {}\n\n",
+                t.uncovered_paths(),
                 unfinished
                     .iter()
                     .map(|p| format!("`{p}`"))
@@ -191,19 +219,17 @@ pub fn render_markdown(outcome: &ReviewOutcome) -> String {
                 } else {
                     format!(" @ {}", w.paths.join(", "))
                 };
-                format!("`{}`（{}{}）", w.dimension, w.kind, paths)
+                format!("`{}` ({}{})", w.dimension, w.kind, paths)
             })
             .collect();
-        md.push_str(&format!("> ⚠️ **Incomplete**: {}.\n\n", list.join(", ")));
+        md.push_str(&format!("{} {}.\n\n", t.incomplete_list(), list.join(", ")));
     }
     if outcome.critical_incomplete {
-        md.push_str(
-            "> 🛑 **关键路径未审完**：触及 auth/payment/security 等敏感路径的 incomplete 已强制非 PASS。\n\n",
-        );
+        md.push_str(t.critical_incomplete());
     }
 
     if kept.is_empty() {
-        md.push_str("No issues reached the display threshold.\n");
+        md.push_str(t.no_issues());
         return md;
     }
 
@@ -234,10 +260,23 @@ pub fn render_markdown(outcome: &ReviewOutcome) -> String {
     md
 }
 
+/// 解析评论上下文：**CI 环境变量优先**（行为与之前完全一致），解析不出时回退到本地
+/// 已认证的 `gh` / `glab` CLI。这样本地跑 `--comment` 不必再单独配一份 token。
+pub async fn resolve_context_any() -> Option<ForgeContext> {
+    if let Some(ctx) = resolve_context(|k| std::env::var(k).ok(), detect_pr_number()) {
+        return Some(ctx);
+    }
+    local::resolve_context_from_cli().await
+}
+
 /// 发一条摘要评论到检测到的 forge（GitHub/GitLab/AtomGit）。非 PR/MR 上下文则跳过。
 pub async fn post_summary(outcome: &ReviewOutcome) -> Result<()> {
-    let Some(ctx) = resolve_context(|k| std::env::var(k).ok(), detect_pr_number()) else {
-        eprintln!("no forge PR/MR context detected; skipping summary comment.");
+    let Some(ctx) = resolve_context_any().await else {
+        eprintln!(
+            "no forge PR/MR context detected; skipping summary comment.\n  \
+             In CI set REVIEWGATE_TOKEN (+ repo/PR vars); locally make sure `gh`/`glab` is \
+             authenticated and the current branch has an open PR/MR."
+        );
         return Ok(());
     };
 
@@ -288,7 +327,7 @@ pub fn inline_candidates(outcome: &ReviewOutcome, block_threshold: f32) -> Vec<&
 ///
 /// `block_threshold` 应来自闸口配置（`gate.block_threshold`），与 PASS/BLOCK 判定一致。
 pub async fn post_inline_suggestions(outcome: &ReviewOutcome, block_threshold: f32) -> Result<()> {
-    let Some(ctx) = resolve_context(|k| std::env::var(k).ok(), detect_pr_number()) else {
+    let Some(ctx) = resolve_context_any().await else {
         return Ok(());
     };
     if ctx.forge != Forge::GitHub {
@@ -606,8 +645,32 @@ mod tests {
     }
 
     #[test]
+    fn markdown_states_the_reviewed_scope() {
+        // 增量审查的 PASS 只对某个范围成立；PR 评论必须写清楚审的是哪一段。
+        let mut o = outcome_with(vec![], GateDecision::Pass, false);
+        o.scope = "since last review (abc123def456) incl. working tree".into();
+        let md = render_markdown_lang(&o, MdLang::En);
+        assert!(md.contains("Scope:"), "{md}");
+        assert!(md.contains("abc123def456"), "{md}");
+        let zh = render_markdown_lang(&o, MdLang::Zh);
+        assert!(zh.contains("审查范围"), "{zh}");
+    }
+
+    #[test]
+    fn markdown_lists_excluded_files_so_a_pass_is_not_misread() {
+        let mut o = outcome_with(vec![], GateDecision::Pass, false);
+        o.excluded = vec![crate::diff::ExcludedFile {
+            path: "vendor/dep.go".into(),
+            reason: crate::diff::ExcludeReason::Builtin,
+        }];
+        let md = render_markdown_lang(&o, MdLang::En);
+        assert!(md.contains("Not reviewed"), "{md}");
+        assert!(md.contains("vendor/dep.go"), "{md}");
+    }
+
+    #[test]
     fn markdown_summary_pass_no_issues() {
-        let md = render_markdown(&outcome_with(vec![], GateDecision::Pass, false));
+        let md = render_markdown_lang(&outcome_with(vec![], GateDecision::Pass, false), MdLang::En);
         assert!(md.contains("PASS"));
         assert!(md.contains("No issues reached the display threshold"));
     }
@@ -623,11 +686,17 @@ mod tests {
             "timed_out",
             "timeout",
         )];
-        let md = render_markdown(&o);
+        let md = render_markdown_lang(&o, MdLang::En);
         assert!(md.contains("WARN"));
-        assert!(md.contains("审查未完整"));
+        assert!(md.contains("Review incomplete"));
         assert!(md.contains("timed_out"));
-        assert!(md.contains("1 条已过滤"));
+        assert!(md.contains("1 filtered"));
+
+        // 同一结果的中文版：散文换语言，技术标识不变。
+        let zh = render_markdown_lang(&o, MdLang::Zh);
+        assert!(zh.contains("审查未完整"));
+        assert!(zh.contains("1 条已过滤"));
+        assert!(zh.contains("timed_out"), "维度/kind 等技术标识保持英文");
     }
 
     #[test]
@@ -662,7 +731,10 @@ mod tests {
     fn markdown_summary_has_decision_and_escapes_pipe() {
         let mut f = base_finding();
         f.message = "SQL 注入 | 危险".into();
-        let md = render_markdown(&outcome_with(vec![f], GateDecision::Block, false));
+        let md = render_markdown_lang(
+            &outcome_with(vec![f], GateDecision::Block, false),
+            MdLang::En,
+        );
         assert!(md.contains("BLOCK"));
         assert!(md.contains("a.rs:3"));
         assert!(md.contains("\\|"));
@@ -679,7 +751,10 @@ mod tests {
         f2.path = "b.rs".into();
         f2.start_line = 10;
         f2.end_line = 12;
-        let md = render_markdown(&outcome_with(vec![f1, f2], GateDecision::Block, false));
+        let md = render_markdown_lang(
+            &outcome_with(vec![f1, f2], GateDecision::Block, false),
+            MdLang::En,
+        );
         assert!(md.contains("🛑 **BLOCK"));
         assert!(md.contains("🔴 high"));
         assert!(md.contains("🟡 med"));

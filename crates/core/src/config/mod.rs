@@ -3,6 +3,9 @@
 //! 发现顺序：`REVIEWGATE_CONFIG` 环境变量 → 当前目录 `./reviewgate.toml`
 //! → `~/.reviewgate/config.toml`。后续里程碑再加环境变量字段级覆盖。
 
+mod labels;
+pub use labels::{SeverityLabel, SeverityLabels};
+
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -149,6 +152,203 @@ impl Default for BusinessConfig {
     }
 }
 
+/// Issue Review 配置（统一进 reviewgate.toml）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IssueReviewFileConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// suggest = 默认 dry-run 风格；publish = 允许写评论（仍需 CLI --publish）。
+    #[serde(default = "default_issue_mode")]
+    pub mode: String,
+    #[serde(default)]
+    pub sync: IssueSyncConfig,
+    #[serde(default)]
+    pub actions: IssueActionsConfig,
+    #[serde(default)]
+    pub duplicate: IssueDuplicateConfig,
+    #[serde(default)]
+    pub vector: IssueVectorConfig,
+    /// 评论 @mention（不指派 Assignees）。
+    #[serde(default)]
+    pub mentions: IssueMentionsConfig,
+}
+
+fn default_issue_mode() -> String {
+    "suggest".into()
+}
+
+impl Default for IssueReviewFileConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            mode: default_issue_mode(),
+            sync: IssueSyncConfig::default(),
+            actions: IssueActionsConfig::default(),
+            duplicate: IssueDuplicateConfig::default(),
+            vector: IssueVectorConfig::default(),
+            mentions: IssueMentionsConfig::default(),
+        }
+    }
+}
+
+/// 评论 @mention 配置（login，可带或不带 `@`）。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct IssueMentionsConfig {
+    pub default: Vec<String>,
+    pub on_needs_info: Vec<String>,
+    pub on_probable_duplicate: Vec<String>,
+    pub on_security: Vec<String>,
+    pub on_likely_bug: Vec<String>,
+    pub on_confirmed_bug: Vec<String>,
+    pub on_regression: Vec<String>,
+    pub on_already_fixed: Vec<String>,
+    pub on_spam: Vec<String>,
+    pub on_advertisement: Vec<String>,
+    pub on_question: Vec<String>,
+    pub on_feature_request: Vec<String>,
+    /// 置信度不足时的指定处理人。留空 = 不转人工（保持静默）。
+    pub on_needs_triage: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IssueSyncConfig {
+    #[serde(default = "default_interval")]
+    pub interval: String,
+    #[serde(default = "default_overlap")]
+    pub overlap: String,
+    #[serde(default = "default_max_history")]
+    pub max_history_issues: usize,
+}
+
+fn default_interval() -> String {
+    "5m".into()
+}
+fn default_overlap() -> String {
+    "5m".into()
+}
+fn default_max_history() -> usize {
+    10_000
+}
+
+impl Default for IssueSyncConfig {
+    fn default() -> Self {
+        Self {
+            interval: default_interval(),
+            overlap: default_overlap(),
+            max_history_issues: default_max_history(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IssueActionsConfig {
+    #[serde(default = "default_true")]
+    pub comment: bool,
+    #[serde(default = "default_true")]
+    pub update_existing_comment: bool,
+    #[serde(default)]
+    pub add_labels: bool,
+    #[serde(default)]
+    pub close_issue: bool,
+    /// 只自动关闭广告 / 垃圾内容。与 `close_issue`（能关任意类型）分开：
+    /// 关广告是低风险动作，不该被迫连带打开总闸。
+    #[serde(default)]
+    pub close_spam: bool,
+    /// 结论置信度低于该阈值时不发评论、不关闭，只保留打标签（0 = 关闭该闸门）。
+    #[serde(default = "default_issue_min_confidence")]
+    pub min_confidence: f32,
+    /// 转人工时是否同时把 Issue 指派给处理人。默认开。
+    #[serde(default = "default_true")]
+    pub assign_on_triage: bool,
+}
+
+fn default_issue_min_confidence() -> f32 {
+    0.5
+}
+
+impl Default for IssueActionsConfig {
+    fn default() -> Self {
+        Self {
+            comment: true,
+            update_existing_comment: true,
+            add_labels: false,
+            close_issue: false,
+            close_spam: false,
+            min_confidence: default_issue_min_confidence(),
+            assign_on_triage: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IssueDuplicateConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_candidate_limit")]
+    pub candidate_limit: usize,
+    #[serde(default = "default_min_sim")]
+    pub min_similarity: f32,
+}
+
+fn default_candidate_limit() -> usize {
+    20
+}
+fn default_min_sim() -> f32 {
+    0.35
+}
+
+impl Default for IssueDuplicateConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            candidate_limit: default_candidate_limit(),
+            min_similarity: default_min_sim(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IssueVectorConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+impl Default for IssueVectorConfig {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
+/// 审查范围排除配置（`[exclude]`）。
+///
+/// 与 `.reviewgateignore` 是叠加关系：两者都生效，这里的 `patterns` 优先级更高
+/// （可用 `!foo` 把 ignore 文件或内置规则排掉的文件救回来）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExcludeConfig {
+    /// gitignore 语法的排除模式（相对仓库根）。例：`["docs/**", "*.golden", "!Cargo.lock"]`。
+    #[serde(default)]
+    pub patterns: Vec<String>,
+    /// 是否启用内置默认排除（lock / vendored / 生成代码 / 压缩产物）。默认 true。
+    #[serde(default = "default_true")]
+    pub builtin: bool,
+}
+
+impl Default for ExcludeConfig {
+    fn default() -> Self {
+        Self {
+            patterns: Vec::new(),
+            builtin: true,
+        }
+    }
+}
+
 /// 顶层配置。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -163,6 +363,15 @@ pub struct Config {
     /// 业务/项目规则（缺省为空）。
     #[serde(default)]
     pub business: BusinessConfig,
+    /// Issue Review（缺省启用建议模式）。
+    #[serde(default)]
+    pub issue_review: IssueReviewFileConfig,
+    /// 审查范围排除（缺省只开内置规则）。
+    #[serde(default)]
+    pub exclude: ExcludeConfig,
+    /// 严重度标签自定义（显示名 / 颜色 / 团队定义）。缺省为内置 high/med/low。
+    #[serde(default)]
+    pub severity_labels: Vec<SeverityLabel>,
 }
 
 impl Config {

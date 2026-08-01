@@ -11,7 +11,7 @@ const HUNK_CONTEXT_LINES: usize = 80;
 /// 该模式下「新版本」内容的来源 ref。
 pub(super) fn new_ref_for(mode: &DiffMode) -> Option<String> {
     match mode {
-        DiffMode::Workspace => None,
+        DiffMode::Workspace | DiffMode::Since(_) => None,
         DiffMode::Commit(c) => Some(c.clone()),
         DiffMode::Range { to, .. } => Some(to.clone()),
     }

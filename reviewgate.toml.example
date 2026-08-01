@@ -28,6 +28,30 @@ model = "deepseek-v4-pro"    # 1M context
 # # incomplete 且触及敏感路径时强制非 PASS：null=内置 auth/payment/…；[]=关闭；列表=自定义 glob
 # # force_fail_incomplete_paths = ["**/auth/**", "**/payment/**"]
 
+# 审查范围排除：命中的文件不进 LLM（省 token、降噪），但**会在报告/PR 评论里列出**，
+# 不会静默少审。gitignore 语法，相对仓库根。也可写进仓库根的 .reviewgateignore（同语法）。
+# 优先级：内置默认 < .reviewgateignore < 这里的 patterns（后者可用 ! 反选救回）。
+# 二进制文件永远排除。.reviewgateignore 本身**不**自动排除——改动它等于改动闸口范围，必须可审。
+# [exclude]
+# patterns = ["docs/**", "*.golden", "!Cargo.lock"]
+# # 注意：默认排除锁文件意味着依赖替换类供应链改动不进审查（见 docs/LIMITATIONS.md #8）。
+# # 想让它进审查就用上面那样的 "!Cargo.lock" 反选。
+# builtin = true   # 内置默认：Cargo.lock/package-lock.json/go.sum 等锁文件、vendor//node_modules//
+#                  # third_party/、*.pb.go/*_pb2.py 等生成代码、*.min.js/*.js.map 等打包产物
+
+# 严重度标签自定义：改显示名 / 报告配色 / **本项目对该档位的定义**。
+# definition 会注入 review prompt，直接影响模型怎么分级；label/color 只影响报告显示。
+# 档位仍是 high/med/low 三档（闸口阈值、退出码都建立在这三档上，不可增删）。
+# color 可选值：red | yellow | green | blue | magenta | cyan | gray
+# [[severity_labels]]
+# id = "high"
+# label = "Blocker"
+# color = "red"
+# definition = "必须修复才能合并：数据损坏、鉴权绕过、线上事故风险"
+# [[severity_labels]]
+# id = "med"
+# definition = "下个迭代内修复：正确性缺陷但有兜底，或明确的性能退化"
+
 # 业务/项目规则。配置后自动启用 business 维度，并把规则注入到共享 prompt 块。
 # [business]
 # rules = [
@@ -49,6 +73,52 @@ model = "deepseek-v4-pro"    # 1M context
 # [[business.path_rules]]
 # pattern = "**/api/**"
 # rule = "公开 API 变更必须保持向后兼容，破坏性变更需要版本号升级"
+
+# Issue Review：发评论用 `reviewgate issue review <n> --publish`（需 REVIEWGATE_TOKEN）。
+# AtomGit（官方 API：https://docs.atomgit.com/docs/apis/ ，base = https://api.atomgit.com/api/v5）
+# GitCode 是 AtomGit 的旧称，同一套后端（token 通用、数据相同），统一用 --forge atomgit。
+# 打标签走独立 labels 子资源（POST .../issues/:number/labels，body 为字符串数组）。
+# 关闭 / 指派走 PATCH /repos/:owner/issues/:number，body 必须同时带 repo 和 title，
+# 且状态值是 close 而非 closed——少一项都会被判成「没有传任何参数」。
+#   export REVIEWGATE_FORGE=atomgit
+#   export REVIEWGATE_TOKEN=...       # 或 ATOMGIT_TOKEN
+#   export REVIEWGATE_REPO=owner/repo
+#   reviewgate issue review 12 --forge atomgit --publish
+# [issue_review]
+# enabled = true
+# mode = "suggest"
+# [issue_review.actions]
+# comment = true
+# update_existing_comment = true
+# add_labels = false
+# close_issue = false
+# # 只自动关闭广告/垃圾内容（低风险），不必为此打开能关任意 Issue 的 close_issue。
+# # 仍需广告置信度 ≥95% 才会真的关。
+# close_spam = false
+# # 结论置信度低于阈值时不下结论：转人工（见 mentions.on_needs_triage）；设 0 关闭该闸门。
+# min_confidence = 0.5
+# # 转人工时是否同时把 Issue 指派给处理人（默认 true）。
+# assign_on_triage = true
+# [issue_review.mentions]
+# # 写在同一条 bot 评论里。login 可带或不带 @。
+# # 有结论时只抄送不指派；只有转人工会指派（assign_on_triage）。
+# # spam/advertisement 只用 on_spam / on_advertisement，不叠加 default。
+# default = []
+# # 置信度不足时的指定处理人：机器人不下结论，改为发移交评论 @ 他们、打 needs-triage 标签，
+# # 并把 Issue 指派给列表第一个人。留空 = 不转人工，被拦下的 Issue 静默跳过
+# # （只能用 `reviewgate issue stats --gated` 看到）。
+# on_needs_triage = ["triage-owner"]
+# on_needs_info = ["triage-owner"]
+# on_probable_duplicate = ["triage-owner"]
+# on_security = ["sec-oncall"]
+# on_likely_bug = []
+# on_confirmed_bug = []
+# on_regression = []
+# on_already_fixed = []
+# on_spam = []
+# on_advertisement = []
+# on_question = []
+# on_feature_request = []
 
 # 误报抑制：把确认过的误报指纹写进仓库根 .reviewgate/ignore，命中后自动标记为 filtered。
 # 一行一个指纹（首个空白分隔 token），# 开始为注释。可全队共享、随仓库版本控制。

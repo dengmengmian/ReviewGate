@@ -11,7 +11,7 @@ homepage = "https://dengmengmian.github.io/ReviewGate/"
 description = "A pre-merge quality gate for AI-generated code."
 
 [workspace.dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "process", "time", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "process", "time", "sync", "net", "io-util"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

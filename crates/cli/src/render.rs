@@ -79,6 +79,9 @@ struct Envelope<'a> {
     /// 关键路径 incomplete 是否触发强制非 PASS。
     critical_incomplete: bool,
     files_changed: usize,
+    /// 本次审查覆盖的范围。PASS 只对这个范围成立。
+    #[serde(skip_serializing_if = "str::is_empty")]
+    scope: &'a str,
     summary: Summary,
     warnings: &'a [ReviewWarning],
     findings: Vec<FindingView<'a>>,
@@ -93,6 +96,9 @@ struct Envelope<'a> {
     unit_plan: Option<&'a reviewgate_core::review::UnitPlanSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
     coverage: Option<&'a reviewgate_core::review::CoverageSnapshot>,
+    /// 被排除规则挡下、未送审的文件（带原因）。让"少审了什么"可核对。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    excluded: Option<&'a [reviewgate_core::diff::ExcludedFile]>,
 }
 
 /// 自包含的 JSON 输出：顶层判定 + 摘要 + 未审完告警 + 发现数组 + 用量。
@@ -114,6 +120,7 @@ pub fn render_json(o: &ReviewOutcome) -> anyhow::Result<String> {
         incomplete: o.incomplete,
         critical_incomplete: o.critical_incomplete,
         files_changed: o.files_changed,
+        scope: &o.scope,
         summary: Summary {
             total: o.findings.len(),
             kept,
@@ -134,6 +141,11 @@ pub fn render_json(o: &ReviewOutcome) -> anyhow::Result<String> {
         },
         unit_plan: o.unit_plan.as_ref(),
         coverage: o.coverage.as_ref(),
+        excluded: if o.excluded.is_empty() {
+            None
+        } else {
+            Some(&o.excluded)
+        },
         findings: o.findings.iter().map(FindingView::from).collect(),
         usage: &o.usage,
     };
@@ -243,10 +255,12 @@ fn break_units(s: &str) -> Vec<String> {
 
 struct Palette {
     on: bool,
+    /// 严重度的显示名与配色（团队可在配置里改，缺省即内置 high/med/low）。
+    labels: reviewgate_core::config::SeverityLabels,
 }
 
 impl Palette {
-    fn new() -> Self {
+    fn with_labels(labels: reviewgate_core::config::SeverityLabels) -> Self {
         // 颜色开关：尊重 `NO_COLOR`（任意值即关）；`FORCE_COLOR`/`CLICOLOR_FORCE` 可强制开
         // （管道/CI 里也上色）；否则按 stdout 是否为终端自适应。
         let no_color = std::env::var_os("NO_COLOR").is_some();
@@ -254,6 +268,7 @@ impl Palette {
             || std::env::var_os("CLICOLOR_FORCE").is_some();
         Palette {
             on: !no_color && (force || std::io::stdout().is_terminal()),
+            labels,
         }
     }
     fn paint(&self, code: &str, s: &str) -> String {
@@ -264,12 +279,11 @@ impl Palette {
         }
     }
     fn sev(&self, sev: Severity, s: &str) -> String {
-        let code = match sev {
-            Severity::High => "1;31",
-            Severity::Med => "33",
-            Severity::Low => "2",
-        };
-        self.paint(code, s)
+        self.paint(self.labels.color(sev), s)
+    }
+    /// 该严重度的显示名（默认 high/med/low，可被配置改成团队用语）。
+    fn sev_name(&self, sev: Severity) -> &str {
+        self.labels.label(sev)
     }
     fn dim(&self, s: &str) -> String {
         self.paint("2", s)
@@ -342,17 +356,54 @@ pub(crate) fn truncate_to_width(s: &str, max: usize) -> String {
     out
 }
 
-/// 渲染人类可读文本。`show_filtered` 时展开被过滤的低置信项。
-pub fn render_text(outcome: &ReviewOutcome, show_filtered: bool) -> String {
-    render_text_lang(outcome, show_filtered, Lang::detect())
+/// 被排除文件的紧凑摘要：最多 `max` 条路径，其余折成 `(+N more)`。
+fn excluded_sample(excluded: &[reviewgate_core::diff::ExcludedFile], max: usize) -> String {
+    let shown: Vec<&str> = excluded.iter().take(max).map(|e| e.path.as_str()).collect();
+    if excluded.len() > max {
+        format!("{} (+{} more)", shown.join(", "), excluded.len() - max)
+    } else {
+        shown.join(", ")
+    }
+}
+
+/// 被排除文件的逐条明细（路径 + 原因）。用于"全被排除"这种必须交代清楚的场景。
+fn excluded_detail(excluded: &[reviewgate_core::diff::ExcludedFile]) -> String {
+    excluded
+        .iter()
+        .map(|e| format!("  - {} ({})", e.path, e.reason.as_str()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// 渲染人类可读文本。`show_filtered` 时展开被过滤的低置信项；`labels` 为严重度显示名/配色
+/// （`SeverityLabels::default()` 即内置 high/med/low）。
+pub fn render_text_with_labels(
+    outcome: &ReviewOutcome,
+    show_filtered: bool,
+    labels: reviewgate_core::config::SeverityLabels,
+) -> String {
+    render_text_lang(outcome, show_filtered, Lang::detect(), labels)
 }
 
 /// 报告渲染的语言可注入版本（测试用，避免依赖进程 locale）。
-fn render_text_lang(outcome: &ReviewOutcome, show_filtered: bool, t: Lang) -> String {
-    let p = Palette::new();
+fn render_text_lang(
+    outcome: &ReviewOutcome,
+    show_filtered: bool,
+    t: Lang,
+    labels: reviewgate_core::config::SeverityLabels,
+) -> String {
+    let p = Palette::with_labels(labels);
     let mut out = String::new();
 
     if outcome.files_changed == 0 {
+        // 全被排除 ≠ 没有改动。说清楚，否则用户会把"规则写太宽"读成"这次没改东西"。
+        if !outcome.excluded.is_empty() {
+            return format!(
+                "{}\n{}\n",
+                t.all_excluded(outcome.excluded.len()),
+                excluded_detail(&outcome.excluded)
+            );
+        }
         return format!("{}\n", t.no_changes());
     }
 
@@ -420,6 +471,19 @@ fn render_text_lang(outcome: &ReviewOutcome, show_filtered: bool, t: Lang) -> St
     }
     if let Some(est) = &outcome.cost_estimate {
         out.push_str(&p.dim(&format!("  est {}\n", est.summary)));
+    }
+    if !outcome.scope.is_empty() {
+        // 审的是哪一段必须写明——增量审查的 PASS 不等于整个 PR 通过。
+        out.push_str(&p.dim(&format!("  {}\n", t.scope(&outcome.scope))));
+    }
+    if !outcome.excluded.is_empty() {
+        out.push_str(&p.dim(&format!(
+            "  {}\n",
+            t.excluded(
+                outcome.excluded.len(),
+                &excluded_sample(&outcome.excluded, 4)
+            )
+        )));
     }
     if outcome.critical_incomplete {
         out.push_str(&p.paint(
@@ -700,7 +764,7 @@ fn render_finding(p: &Palette, f: &Finding, num: usize, t: Lang) -> String {
     let meta_plain = format!(
         "{} · {} · {:.0}%",
         f.dimension.as_str(),
-        f.severity.as_str(),
+        p.sev_name(f.severity),
         f.confidence * 100.0
     );
     let meta_painted = p.sev(f.severity, &meta_plain);
@@ -832,7 +896,7 @@ mod tests {
         // Must not look like a clean PASS with no coverage story.
         assert_ne!(o.decision, GD::Pass);
         assert!(o.incomplete);
-        let text = render_text_lang(&o, false, Lang::En);
+        let text = render_text_lang(&o, false, Lang::En, Default::default());
         assert!(
             text.contains("UNITS") && text.contains("unit[0]") && text.contains("huge.rs"),
             "text should list units: {text}"
@@ -878,7 +942,7 @@ mod tests {
             }),
             ..Default::default()
         };
-        let text = render_text_lang(&o, false, Lang::En);
+        let text = render_text_lang(&o, false, Lang::En, Default::default());
         assert!(
             !text.contains("UNITS (directory packing)"),
             "clean single-unit must not invent multi-unit section: {text}"
@@ -887,6 +951,70 @@ mod tests {
             !text.contains("Unfinished paths"),
             "clean pass must not invent unfinished paths: {text}"
         );
+    }
+
+    #[test]
+    fn custom_severity_label_replaces_default_name() {
+        use reviewgate_core::config::{SeverityLabel, SeverityLabels};
+        let outcome = ReviewOutcome {
+            findings: vec![finding(Severity::High, false)],
+            files_changed: 1,
+            decision: GateDecision::Block,
+            ..Default::default()
+        };
+        let labels = SeverityLabels::resolve(&[SeverityLabel {
+            id: "high".into(),
+            label: Some("Blocker".into()),
+            color: Some("magenta".into()),
+            definition: None,
+        }])
+        .unwrap();
+        let text = render_text_lang(&outcome, false, Lang::En, labels);
+        assert!(text.contains("Blocker"), "应显示团队标签：{text}");
+        assert!(!text.contains(" · high · "), "不应再出现默认标签：{text}");
+    }
+
+    #[test]
+    fn all_files_excluded_does_not_read_as_no_changes() {
+        let o = ReviewOutcome {
+            files_changed: 0,
+            excluded: vec![reviewgate_core::diff::ExcludedFile {
+                path: "Cargo.lock".into(),
+                reason: reviewgate_core::diff::ExcludeReason::Builtin,
+            }],
+            ..Default::default()
+        };
+        let text = render_text_lang(&o, false, Lang::En, Default::default());
+        assert!(
+            text.contains("excluded") && text.contains("Cargo.lock"),
+            "全被排除必须说清楚是排除而非无改动：{text}"
+        );
+        assert!(
+            !text.contains("No changes detected"),
+            "不能把'全被排除'渲染成'没有改动'：{text}"
+        );
+    }
+
+    #[test]
+    fn excluded_files_are_surfaced_in_text_and_json() {
+        let o = ReviewOutcome {
+            files_changed: 1,
+            decision: GateDecision::Pass,
+            excluded: vec![reviewgate_core::diff::ExcludedFile {
+                path: "vendor/dep.go".into(),
+                reason: reviewgate_core::diff::ExcludeReason::Builtin,
+            }],
+            ..Default::default()
+        };
+        let text = render_text_lang(&o, false, Lang::En, Default::default());
+        assert!(
+            text.contains("vendor/dep.go"),
+            "文本应列出被排除文件：{text}"
+        );
+        let json = render_json(&o).unwrap();
+        assert!(json.contains("\"excluded\""));
+        assert!(json.contains("vendor/dep.go"));
+        assert!(json.contains("\"builtin\""));
     }
 
     #[test]
@@ -902,7 +1030,7 @@ mod tests {
             usage: Usage::default(),
             ..Default::default()
         };
-        let text = render_text(&outcome, false);
+        let text = render_text_with_labels(&outcome, false, Default::default());
         assert!(
             text.contains(&fp),
             "文本输出应打印指纹供复制进 .reviewgate/ignore，实际:\n{text}"
@@ -992,7 +1120,7 @@ mod tests {
             ..Default::default()
         };
 
-        let text = render_text_lang(&outcome, false, Lang::En);
+        let text = render_text_lang(&outcome, false, Lang::En, Default::default());
         assert!(text.contains("BLOCK"));
         assert!(text.contains("ReviewGate"));
         assert!(text.contains("3 files · 1 must-fix · 1 warn · 1 hidden"));
@@ -1004,7 +1132,7 @@ mod tests {
         assert!(text.contains("NEXT STEPS"));
 
         // 同一结果切到中文：章节/状态/计数行均本地化，命令名保持原样。
-        let zh = render_text_lang(&outcome, false, Lang::Zh);
+        let zh = render_text_lang(&outcome, false, Lang::Zh, Default::default());
         assert!(zh.contains("拦截"));
         assert!(zh.contains("3 个文件 · 1 必须修复 · 1 警告 · 1 隐藏"));
         assert!(zh.contains("必须修复"));
@@ -1054,7 +1182,7 @@ mod tests {
             ..Default::default()
         };
 
-        let text = render_text_lang(&outcome, false, Lang::En);
+        let text = render_text_lang(&outcome, false, Lang::En, Default::default());
         // 验收清单区出现,按 criterion 分组,带状态标签。
         assert!(text.contains("INTENT / ACCEPTANCE CHECKLIST"));
         assert!(text.contains("验收#2:dispatch 处理 URL 对象"));
@@ -1150,8 +1278,8 @@ mod tests {
             usage: Usage::default(),
             ..Default::default()
         };
-        let shown = render_text_lang(&outcome, true, Lang::En);
-        let hidden = render_text_lang(&outcome, false, Lang::En);
+        let shown = render_text_lang(&outcome, true, Lang::En, Default::default());
+        let hidden = render_text_lang(&outcome, false, Lang::En, Default::default());
         assert!(shown.contains("NOT SHOWN") || shown.contains("低置信"));
         assert!(!hidden.contains("The new lookup"));
     }
@@ -1167,9 +1295,9 @@ mod tests {
             usage: Usage::default(),
             ..Default::default()
         };
-        let en = render_text_lang(&outcome, false, Lang::En);
+        let en = render_text_lang(&outcome, false, Lang::En, Default::default());
         assert!(en.contains("No changes") || en.contains("no changes"));
-        let zh = render_text_lang(&outcome, false, Lang::Zh);
+        let zh = render_text_lang(&outcome, false, Lang::Zh, Default::default());
         assert!(zh.contains("无改动") || zh.contains("没有"));
     }
 
@@ -1194,7 +1322,7 @@ mod tests {
             })
             .collect();
         let refs: Vec<&Finding> = findings.iter().collect();
-        let p = Palette::new();
+        let p = Palette::with_labels(Default::default());
         let out = render_intent_checklist(&p, &refs, Lang::En);
         for (_, label) in [
             (IntentStatus::Met, "met"),
