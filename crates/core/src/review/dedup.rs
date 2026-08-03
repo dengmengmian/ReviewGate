@@ -31,6 +31,25 @@ fn merge_group(mut group: Vec<Finding>) -> Finding {
             .then(b.severity.cmp(&a.severity))
     });
     let mut best = group.remove(0);
+    // 同维度的多条 = samples>1 的重复采样（而非跨维度交叉印证）。此时取组内最高值等于
+    // 「跑 N 次里有一次报高就算高」的 OR 语义，samples 越大越容易阻断——而 gate 的两个
+    // 阻断硬因子（severity 非 Low、confidence ≥ block_threshold）都是分界线，一次标注
+    // 抖动就翻转 WARN/BLOCK。故同维度内两者都取中位数（偶数个取偏低者），让多采样稳住
+    // 判定而不是放大它。跨维度合并语义不变：两者仍来自 best 那条。
+    let mut sevs: Vec<crate::model::Severity> = Vec::new();
+    let mut confs: Vec<f32> = Vec::new();
+    for f in group.iter().filter(|f| f.dimension == best.dimension) {
+        sevs.push(f.severity);
+        confs.push(f.confidence);
+    }
+    if !sevs.is_empty() {
+        sevs.push(best.severity);
+        confs.push(best.confidence);
+        sevs.sort();
+        confs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        best.severity = sevs[(sevs.len() - 1) / 2];
+        best.confidence = confs[(confs.len() - 1) / 2];
+    }
     // 统计组内**不同维度**数（含 best 自身），作为跨维度交叉印证信号。
     let mut all_dims: Vec<&str> = std::iter::once(best.dimension.as_str())
         .chain(group.iter().map(|f| f.dimension.as_str()))
@@ -429,6 +448,100 @@ mod tests {
     #[test]
     fn dedupe_preserves_empty_input() {
         assert!(dedupe(vec![]).is_empty());
+    }
+
+    /// 指定 severity 的构造。
+    fn fs(dim: Dimension, conf: f32, line: u32, sev: Severity) -> Finding {
+        Finding {
+            severity: sev,
+            ..f(dim, conf, line)
+        }
+    }
+
+    #[test]
+    fn same_dimension_samples_take_consensus_severity_not_max() {
+        // samples>1：同一维度对同一处报两次，confidence 相同、severity 一 med 一 low。
+        // 旧的 tie-break 取 severity 高者 = 「跑 N 次有一次报高就算高」的 OR 语义，
+        // samples 越大越容易翻成 BLOCK（gate 规则：Low 永不阻断）。
+        // 实测 clap#6455 custom.rs:456 就是这么在 WARN/BLOCK 间抖的。
+        let out = dedupe(vec![
+            fs(Dimension::Perf, 0.95, 456, Severity::Med),
+            fs(Dimension::Perf, 0.95, 456, Severity::Low),
+        ]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(
+            out[0].severity,
+            Severity::Low,
+            "同维度双采样应取偏保守的共识值"
+        );
+    }
+
+    #[test]
+    fn same_dimension_majority_severity_wins() {
+        // 三次采样 med/med/low → 中位数 med，多数意见不该被单次低值拉下来。
+        let out = dedupe(vec![
+            fs(Dimension::Perf, 0.9, 10, Severity::Med),
+            fs(Dimension::Perf, 0.9, 10, Severity::Med),
+            fs(Dimension::Perf, 0.9, 10, Severity::Low),
+        ]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].severity, Severity::Med);
+    }
+
+    #[test]
+    fn same_dimension_samples_take_consensus_confidence_not_max() {
+        // confidence 与 severity 同为阻断硬因子（gate: confidence ≥ block_threshold）。
+        // 同维度双采样取最高值同样是 OR 语义：一次 0.9 一次 0.68 会稳定按 0.9 判，
+        // 实测 clap#6455 complete.rs:368 的 confidence 就在 0.68/0.90 间跨越 0.8 分界。
+        let out = dedupe(vec![
+            fs(Dimension::Perf, 0.90, 368, Severity::Med),
+            fs(Dimension::Perf, 0.68, 368, Severity::Med),
+        ]);
+        assert_eq!(out.len(), 1);
+        assert!(
+            (out[0].confidence - 0.68).abs() < f32::EPSILON,
+            "同维度双采样应取偏保守的共识置信度，实际 {}",
+            out[0].confidence
+        );
+    }
+
+    #[test]
+    fn same_dimension_majority_confidence_wins() {
+        // 三次采样 0.9/0.9/0.68 → 中位数 0.9，多数意见不该被单次低值拉下来。
+        let out = dedupe(vec![
+            fs(Dimension::Perf, 0.90, 10, Severity::Med),
+            fs(Dimension::Perf, 0.90, 10, Severity::Med),
+            fs(Dimension::Perf, 0.68, 10, Severity::Med),
+        ]);
+        assert_eq!(out.len(), 1);
+        assert!(
+            (out[0].confidence - 0.90).abs() < f32::EPSILON,
+            "三采样应取中位数 0.9，实际 {}",
+            out[0].confidence
+        );
+    }
+
+    #[test]
+    fn cross_dimension_confidence_keeps_best_finding_value() {
+        // 跨维度合并语义不变：confidence 仍是 best（最高）那条的值，不做共识归并。
+        let out = dedupe(vec![
+            fs(Dimension::Security, 0.95, 5, Severity::High),
+            fs(Dimension::Perf, 0.60, 5, Severity::High),
+        ]);
+        assert_eq!(out.len(), 1);
+        assert!((out[0].confidence - 0.95).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn cross_dimension_severity_keeps_best_finding_value() {
+        // 不同维度各一条 → 不是多采样，severity 仍取 best（confidence 最高）那条的值。
+        // 共识归并只针对同维度重复采样，不得改变跨维度合并语义。
+        let out = dedupe(vec![
+            fs(Dimension::Security, 0.9, 5, Severity::High),
+            fs(Dimension::Perf, 0.95, 5, Severity::Low),
+        ]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].severity, Severity::Low);
     }
 
     #[test]
