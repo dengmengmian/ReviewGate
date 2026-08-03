@@ -1546,6 +1546,8 @@ mod tests {
         );
     }
 
+    /// 断言的是中文文案，正文就必须足够中文——否则 `detect_reply_lang` 判不出语言、
+    /// 回退到机器的输出语言，测试在中文机器上绿、在英文 CI 上红。
     #[test]
     fn shape_adapts_by_verdict() {
         let mut d = dec();
@@ -1556,25 +1558,31 @@ mod tests {
             symptom: "程序闪退了但是没有日志".into(),
             ..Default::default()
         };
-        let t = deterministic_narrative(&d, &n, "闪退", None);
+        let body = "程序运行一段时间后直接闪退，没有留下任何日志文件，重启也没用。";
+        let t = deterministic_narrative(&d, &n, body, None);
         assert!(t.contains("补") || t.contains("不够"));
         assert!(!t.contains("**定位：**"));
 
         d.verdict = IssueVerdict::Duplicate;
         d.duplicate_of = Some(12);
         assert_eq!(reply_shape(&d), ReplyShape::Duplicate);
-        let t = deterministic_narrative(&d, &n, "闪退", None);
+        let t = deterministic_narrative(&d, &n, body, None);
         assert!(t.contains("#12") || t.contains("像"));
 
         d.verdict = IssueVerdict::Spam;
         assert_eq!(reply_shape(&d), ReplyShape::SpamShort);
-        let t = deterministic_narrative(&d, &n, "买课", None);
+        let t = deterministic_narrative(&d, &n, "买课程加微信，走过路过不要错过，限时优惠。", None);
         assert!(t.len() < 400);
 
         d.verdict = IssueVerdict::Regression;
         d.related_commits = vec!["abc fix foo".into()];
         assert_eq!(reply_shape(&d), ReplyShape::Regression);
-        let t = deterministic_narrative(&d, &n, "又出现了", None);
+        let t = deterministic_narrative(
+            &d,
+            &n,
+            "这个问题之前修过，最近又出现了，版本升级之后复现。",
+            None,
+        );
         assert!(t.contains("回归") || t.contains("版本"));
         assert!(!t.contains("**建议：**"));
     }
