@@ -38,7 +38,12 @@ PAIRS=(
   "sindresorhus/got 2454"
 )
 
-REVIEW_TIMEOUT="${REVIEW_TIMEOUT:-200}"
+# 200s 会卡出假 WARN：ai_smell 是探索型维度，串行 tool-call 往返最多，四维并发时被拖最狠。
+# 实测 clap#6455 单跑 164s（10 轮 LLM）、got#2454 单跑 90s（2 轮，45s/轮 全是代理延迟），
+# 两者在 200s 并发下都超时降级 WARN，而单跑都是 PASS——警报是评测脚本自己造的，不是被测对象的问题。
+# 400s 下 clap 四维并发实测 379s，余量只剩 5%，代理慢一点就会再次假 WARN，故给到 600s。
+# 产品默认是不限时（review --timeout 0），这里设上限只为防止一个仓库卡死拖垮整批。
+REVIEW_TIMEOUT="${REVIEW_TIMEOUT:-600}"
 SECURITY_TIMEOUT="${SECURITY_TIMEOUT:-200}"
 
 run_one() {

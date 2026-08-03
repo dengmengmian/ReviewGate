@@ -28,3 +28,10 @@ docs/evals/aacr-bench-results/
 # 批量评测原始 log / 明细（体积大、含本地路径；汇总 md 单独提交）
 docs/evals/batch-raw/
 .leveler/
+
+# 真实仓库分诊评测的本地产物（scripts/eval-issue-triage.sh）
+.eval-issue/
+
+# 批量评测拼汇总表时的中间文件（scripts/batch-github-review.sh），汇总 md 本身照常提交
+docs/evals/*.md.rows
+docs/evals/*.md.tsv
