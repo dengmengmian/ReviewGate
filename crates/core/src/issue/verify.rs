@@ -1660,6 +1660,19 @@ fn is_noise_path(p: &str) -> bool {
         || l.contains("site/referral")
         || l.contains("create_tag_release")
         || l.ends_with(".mcp.json.example")
+        // CI / 模板配置不是实现。cli/cli#11 实测：锚点指到了
+        // `.github/workflows/scripts/spam-detection/eval-prompts.yml`——437KB 的
+        // prompt 语料，塞满各种 Issue 文本，grep 什么都命中，成了"锚点磁铁"。
+        || l.starts_with(".github/")
+        || l.contains("/.github/")
+        || l.ends_with(".yml")
+        || l.ends_with(".yaml")
+        // 测试语料同理：里面本来就放着各种输入样本，匹配率虚高。
+        || l.contains("testdata/")
+        || l.contains("fixtures/")
+        || l.contains("__snapshots__")
+        || l.ends_with(".golden")
+        || l.ends_with(".snap")
 }
 
 /// 数字越小优先级越高。
@@ -1824,6 +1837,33 @@ pub fn resolve_repo_root(explicit: Option<&Path>) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+
+    /// 线上回归（cli/cli#11 真实分诊）：代码锚点指到了
+    /// `.github/workflows/scripts/spam-detection/eval-prompts.yml`——一个 437KB、
+    /// 5039 行的 prompt 语料文件。那种文件塞满各种 Issue 文本，grep 什么都能命中，
+    /// 是个"锚点磁铁"，然后被当成「可以顺着查的方向」发给用户。
+    #[test]
+    fn ci_config_and_test_corpora_are_not_code_anchors() {
+        for p in [
+            ".github/workflows/scripts/spam-detection/eval-prompts.yml",
+            ".github/workflows/ci.yml",
+            ".github/ISSUE_TEMPLATE/bug.yml",
+            "pkg/cmd/pr/testdata/create.golden",
+            "internal/fixtures/sample-issues.json",
+            "__snapshots__/render.snap",
+            "config/settings.yaml",
+        ] {
+            assert!(is_noise_path(p), "不该被当成代码锚点: {p}");
+        }
+        // 真正的实现文件必须照常可锚
+        for p in [
+            "pkg/cmd/pr/create/create.go",
+            "src/issue/verify.rs",
+            "internal/api/client.go",
+        ] {
+            assert!(!is_noise_path(p), "这是实现文件，不该被排除: {p}");
+        }
+    }
     use super::*;
     use crate::issue::normalize::normalize_issue;
 

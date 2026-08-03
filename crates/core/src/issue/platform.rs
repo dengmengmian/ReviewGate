@@ -60,7 +60,9 @@ pub trait IssuePlatform: Send + Sync {
     ) -> Result<Vec<RawIssue>>;
     async fn list_comments(&self, number: u64) -> Result<Vec<RawComment>>;
     async fn create_comment(&self, number: u64, body: &str) -> Result<String>;
-    async fn update_comment(&self, comment_id: &str, body: &str) -> Result<()>;
+    /// 更新已有评论。`number` 是所属 Issue 号——GitLab / Gitee 的 note 端点是父资源作用域的，
+    /// 光有评论 id 拼不出合法 URL；GitHub 用不到它。
+    async fn update_comment(&self, number: u64, comment_id: &str, body: &str) -> Result<()>;
     async fn find_bot_comment(&self, number: u64) -> Result<Option<String>>;
     async fn add_labels(&self, number: u64, labels: &[String]) -> Result<()>;
     async fn close_issue(&self, number: u64, reason: &str) -> Result<()>;
@@ -196,11 +198,10 @@ impl<H: HttpDoer> IssuePlatform for GitHubIssuePlatform<H> {
         if !(200..300).contains(&status) {
             bail!("list_issues status={status} body={val}");
         }
+        // 原样返回，**不在这里滤 PR**：调用方要靠页长判断"还有没有下一页"，
+        // 在适配器里滤掉会让一页 PR 多的结果被误读成"到底了"。PR 由 `sync_from_platform` 排除。
         let items: Vec<RawIssue> = serde_json::from_value(val).context("parse issues list")?;
-        Ok(items
-            .into_iter()
-            .filter(|i| i.pull_request.is_none())
-            .collect())
+        Ok(items)
     }
 
     async fn list_comments(&self, number: u64) -> Result<Vec<RawComment>> {
@@ -242,7 +243,7 @@ impl<H: HttpDoer> IssuePlatform for GitHubIssuePlatform<H> {
             .to_string())
     }
 
-    async fn update_comment(&self, comment_id: &str, body: &str) -> Result<()> {
+    async fn update_comment(&self, _number: u64, comment_id: &str, body: &str) -> Result<()> {
         let url = format!(
             "{}/repos/{}/issues/comments/{comment_id}",
             self.api_base, self.repo
@@ -539,11 +540,11 @@ impl<H: HttpDoer> IssuePlatform for GitLabIssuePlatform<H> {
             .to_string())
     }
 
-    async fn update_comment(&self, comment_id: &str, body: &str) -> Result<()> {
-        // GitLab: PUT /projects/:id/issues/:issue_iid/notes/:note_id — need issue iid; store as note id only
-        // Use issues notes endpoint via search is hard; use generic notes API
+    async fn update_comment(&self, number: u64, comment_id: &str, body: &str) -> Result<()> {
+        // GitLab 的 note 端点是父资源作用域的：`/projects/:id/issues/:iid/notes/:note_id`。
+        // 曾经打的是 `/projects/:id/notes/:note_id`——那个端点不存在，每次复审都 404。
         let url = format!(
-            "{}/projects/{}/notes/{comment_id}",
+            "{}/projects/{}/issues/{number}/notes/{comment_id}",
             self.api_base, self.project
         );
         let (status, val) = self
@@ -1012,7 +1013,7 @@ impl<H: HttpDoer> IssuePlatform for GiteeStyleIssuePlatform<H> {
         Ok(id.to_string())
     }
 
-    async fn update_comment(&self, comment_id: &str, body: &str) -> Result<()> {
+    async fn update_comment(&self, _number: u64, comment_id: &str, body: &str) -> Result<()> {
         // Edit Repository Issue Comment: PATCH /repos/:owner/:repo/issues/comments/:id
         let path = format!("/repos/{}/issues/comments/{comment_id}", self.repo);
         let url = self.url(&path);
@@ -1242,7 +1243,7 @@ impl IssuePlatform for FixturePlatform {
         Ok(id.to_string())
     }
 
-    async fn update_comment(&self, comment_id: &str, body: &str) -> Result<()> {
+    async fn update_comment(&self, _number: u64, comment_id: &str, body: &str) -> Result<()> {
         let id: u64 = comment_id.parse().context("comment id")?;
         let mut map = self.comments.lock().unwrap();
         for list in map.values_mut() {
@@ -1335,7 +1336,7 @@ mod tests {
         let found = p.find_bot_comment(7).await.unwrap().unwrap();
         assert_eq!(found, id1);
         let body2 = format!("{BOT_COMMENT_MARKER}\n\nsecond");
-        p.update_comment(&found, &body2).await.unwrap();
+        p.update_comment(7, &found, &body2).await.unwrap();
         assert_eq!(p.comment_count(7), 1);
     }
 
@@ -1453,5 +1454,183 @@ mod tests {
         let url = p.url("/repos/o/r/issues/1");
         assert!(url.starts_with("https://api.atomgit.com/api/v5/repos/o/r/issues/1"));
         assert!(url.contains("access_token=tok123"));
+    }
+
+    // ───────── 写操作出口：请求形状逐条锁死 ─────────
+    //
+    // 这些是唯一会改动别人仓库的代码路径。AtomGit 打标签那次的教训是：形状写错了
+    // 也能一路静默——功能从没工作过，只因为动作默认关闭而没人发现。所以每个平台的
+    // 每个写操作都要把 method + URL + body 钉住。
+
+    /// 记录所有请求的 HttpDoer；`reply` 决定返回体。
+    struct Rec {
+        calls: std::sync::Mutex<Vec<(String, String, Option<Value>)>>,
+        reply: Value,
+    }
+
+    impl Rec {
+        fn new(reply: Value) -> Self {
+            Self {
+                calls: std::sync::Mutex::new(Vec::new()),
+                reply,
+            }
+        }
+        fn call(&self, i: usize) -> (String, String, Option<Value>) {
+            self.calls.lock().unwrap()[i].clone()
+        }
+    }
+
+    #[async_trait]
+    impl HttpDoer for Rec {
+        async fn request_json(
+            &self,
+            method: &str,
+            url: &str,
+            _headers: &[(&str, String)],
+            body: Option<Value>,
+        ) -> Result<(u16, Value)> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((method.into(), url.into(), body));
+            Ok((200, self.reply.clone()))
+        }
+    }
+
+    fn gh(reply: Value) -> GitHubIssuePlatform<Rec> {
+        GitHubIssuePlatform::new("https://api.github.com", "o/r", "tok", Rec::new(reply))
+    }
+
+    fn gl(reply: Value) -> GitLabIssuePlatform<Rec> {
+        GitLabIssuePlatform::new("https://gitlab.com/api/v4", "42", "tok", Rec::new(reply))
+    }
+
+    #[tokio::test]
+    async fn github_write_paths_have_the_right_shape() {
+        let p = gh(serde_json::json!({"id": 987}));
+        assert_eq!(p.create_comment(7, "hi").await.unwrap(), "987");
+        let (m, u, b) = p.http.call(0);
+        assert_eq!(
+            (m.as_str(), u.as_str()),
+            ("POST", "https://api.github.com/repos/o/r/issues/7/comments")
+        );
+        assert_eq!(b.unwrap()["body"], "hi");
+
+        p.update_comment(7, "987", "edited").await.unwrap();
+        let (m, u, b) = p.http.call(1);
+        // 评论更新按评论 id 走仓库级端点，不带 issue 号。
+        assert_eq!(
+            (m.as_str(), u.as_str()),
+            (
+                "PATCH",
+                "https://api.github.com/repos/o/r/issues/comments/987"
+            )
+        );
+        assert_eq!(b.unwrap()["body"], "edited");
+
+        p.add_labels(7, &["needs-triage".into()]).await.unwrap();
+        let (m, u, b) = p.http.call(2);
+        assert_eq!(
+            (m.as_str(), u.as_str()),
+            ("POST", "https://api.github.com/repos/o/r/issues/7/labels")
+        );
+        assert_eq!(b.unwrap()["labels"][0], "needs-triage");
+
+        p.assign(7, "alice").await.unwrap();
+        let (m, u, b) = p.http.call(3);
+        assert_eq!(
+            (m.as_str(), u.as_str()),
+            (
+                "POST",
+                "https://api.github.com/repos/o/r/issues/7/assignees"
+            )
+        );
+        assert_eq!(b.unwrap()["assignees"][0], "alice");
+
+        p.close_issue(7, "spam").await.unwrap();
+        let (m, u, b) = p.http.call(4);
+        assert_eq!(
+            (m.as_str(), u.as_str()),
+            ("PATCH", "https://api.github.com/repos/o/r/issues/7")
+        );
+        assert_eq!(b.unwrap()["state"], "closed");
+    }
+
+    #[tokio::test]
+    async fn gitlab_note_update_is_scoped_to_its_issue() {
+        // GitLab 没有 `/projects/:id/notes/:note_id` 这个端点——note 永远挂在父资源下。
+        // 打错端点的后果是每次复审都 404，而 `update_existing_comment` 默认是开的。
+        let p = gl(serde_json::json!({"id": 55}));
+        p.update_comment(7, "55", "edited").await.unwrap();
+        let (m, u, b) = p.http.call(0);
+        assert_eq!(m, "PUT");
+        assert_eq!(u, "https://gitlab.com/api/v4/projects/42/issues/7/notes/55");
+        assert_eq!(b.unwrap()["body"], "edited");
+    }
+
+    #[tokio::test]
+    async fn gitlab_write_paths_have_the_right_shape() {
+        let p = gl(serde_json::json!({"id": 55}));
+        assert_eq!(p.create_comment(7, "hi").await.unwrap(), "55");
+        let (m, u, _) = p.http.call(0);
+        assert_eq!(
+            (m.as_str(), u.as_str()),
+            (
+                "POST",
+                "https://gitlab.com/api/v4/projects/42/issues/7/notes"
+            )
+        );
+
+        p.add_labels(7, &["a".into(), "b".into()]).await.unwrap();
+        let (m, u, b) = p.http.call(1);
+        assert_eq!(
+            (m.as_str(), u.as_str()),
+            ("PUT", "https://gitlab.com/api/v4/projects/42/issues/7")
+        );
+        // GitLab 的 add_labels 收逗号分隔字符串，不是数组。
+        assert_eq!(b.unwrap()["add_labels"], "a,b");
+
+        p.close_issue(7, "spam").await.unwrap();
+        let (m, u, b) = p.http.call(2);
+        assert_eq!(
+            (m.as_str(), u.as_str()),
+            ("PUT", "https://gitlab.com/api/v4/projects/42/issues/7")
+        );
+        assert_eq!(b.unwrap()["state_event"], "close");
+    }
+
+    /// 空标签列表不该发出任何请求——多一次写操作就多一次改动别人仓库的机会。
+    #[tokio::test]
+    async fn empty_labels_issue_no_request() {
+        let p = gh(Value::Null);
+        p.add_labels(7, &[]).await.unwrap();
+        assert!(p.http.calls.lock().unwrap().is_empty());
+        let p2 = gl(Value::Null);
+        p2.add_labels(7, &[]).await.unwrap();
+        assert!(p2.http.calls.lock().unwrap().is_empty());
+    }
+
+    /// 非 2xx 必须报错而不是假成功——静默失败会让"已回复"的记录和现实对不上。
+    #[tokio::test]
+    async fn non_2xx_is_an_error_not_a_silent_success() {
+        struct Fail;
+        #[async_trait]
+        impl HttpDoer for Fail {
+            async fn request_json(
+                &self,
+                _: &str,
+                _: &str,
+                _: &[(&str, String)],
+                _: Option<Value>,
+            ) -> Result<(u16, Value)> {
+                Ok((422, serde_json::json!({"message": "nope"})))
+            }
+        }
+        let p = GitHubIssuePlatform::new("https://api.github.com", "o/r", "t", Fail);
+        assert!(p.create_comment(1, "x").await.is_err());
+        assert!(p.add_labels(1, &["a".into()]).await.is_err());
+        assert!(p.close_issue(1, "r").await.is_err());
+        assert!(p.assign(1, "u").await.is_err());
+        assert!(p.update_comment(1, "9", "x").await.is_err());
     }
 }

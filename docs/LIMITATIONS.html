@@ -127,6 +127,90 @@
   此时清单<strong>诚实显示"未核对"</strong>，提示放宽 <code>--timeout</code> 或拆分意图后重跑，而不是假装审过。</li>
 <li><strong>意图质量决定上限</strong>：一行提交信息只能拆出 1～几条粗标准；写清楚验收标准（编号/分条）才能得到细粒度清单。</li>
 </ul>
+<h2>7. 增量复审（<code>--incremental</code>）的覆盖取舍</h2>
+<ul>
+<li><strong>opt-in、默认关闭</strong>：只有显式 <code>--incremental</code> 才启用；不带则每次全量审查，行为不变。</li>
+<li><strong>原理</strong>：按文件缓存发现，只重审自上次以来 diff 逐字节变化的文件。之所以成立——ReviewGate 只报 <strong>改动行上</strong>的发现（见 #5），发现锚定在有 diff 的文件上；文件 diff 不变则其发现不变。跨文件上下文由 Agent 按需拉取，不影响缓存正确性。</li>
+<li><strong>失效即安全</strong>：缓存键含&quot;评审签名&quot;（维度/模型/规则/采样/exec_verify + 内部 <code>prompt_version</code>），任一变化 即整体作废，绝不复用过期结果。从 <code>.reviewgate/ignore</code> 删条目会照常恢复发现（抑制状态不进缓存）。</li>
+<li><strong>诚实边界（取舍，非 bug）</strong>：若改动文件 X 令<strong>未变文件 Y 的既有代码</strong>出问题，而 Y 本身无 diff，增量下 不会重审 Y——但这类问题本就在「仅审 diff」（#5）范围外，全量审查同样不报。意图评审（<code>--intent</code>） 是整体性的、每轮全跑，不受增量影响。</li>
+<li><strong>建议</strong>：CI 强闸口用全量；本地迭代/预检想省钱再开 <code>--incremental</code>。</li>
+</ul>
+<h2>8. 审查范围排除（<code>[exclude]</code> / <code>.reviewgateignore</code>）的取舍</h2>
+<ul>
+<li><strong>默认开启内置规则</strong>：跳过依赖锁、vendored 依赖、protobuf/ORM 生成物、压缩打包产物与二进制文件。 实测 20 个真实仓库（见 <code>docs/evals/2026-08-01__exclude-scope-20-repos.md</code>）送审 token 合计降 20.3%， 且 7/20 的仓库因没有匹配项而<strong>完全零变化</strong>——没有匹配就没有退化。</li>
+<li><strong>诚实边界</strong>：内置规则是按路径判断的，不看内容。如果项目<strong>故意</strong>把要审的代码放在 <code>node_modules/</code>、 <code>vendor/</code>、<code>third_party/</code> 下（如 deno 的 npm 测试夹具），这些文件会被跳过。用 <code>!</code> 反选救回， 例：<code>[exclude] patterns = [&quot;!tests/specs/**&quot;]</code>。</li>
+<li><strong>排除必须可见</strong>：被排除的文件带原因出现在文本报告、JSON 的 <code>excluded</code> 字段与 PR 评论里； 若一次改动<strong>全部</strong>被排除，报告会明说&quot;全被排除&quot;而不是&quot;没有改动&quot;。闸口不做静默少审。</li>
+<li><strong>锁文件被排除 = 供应链改动不进审查</strong>：<code>Cargo.lock</code> / <code>package-lock.json</code> / <code>go.sum</code> 里的 依赖替换、可疑版本跳变、registry 地址被改，默认都不会被 LLM 看到。这是有意的取舍—— 单个 <code>poetry.lock</code> 就可能占 90 万 token，而 LLM 本来也无法验证包的完整性；依赖安全该交给 专门工具（dependabot / cargo-audit / 各生态的 SCA）。<strong>要审就显式反选</strong>： <code>[exclude] patterns = [&quot;!Cargo.lock&quot;]</code>。</li>
+<li><strong><code>.reviewgateignore</code> 本身不被排除</strong>：改它等于改闸口范围，必须可审。</li>
+<li><strong>全部被排除时仍是 PASS（退出码 0）</strong>：因为这是你自己配的范围——只动 lock 文件的 PR 本就该放行。 报告会明说&quot;本次改动的 N 个文件全部被排除规则挡下，未送审&quot;并逐条列出，<strong>不会显示成&quot;没有改动&quot;</strong>。 CI 上想拦住&quot;排除规则写太宽&quot;这类配置事故，可直接判 JSON：<code>files_changed == 0 &amp;&amp; excluded 非空</code>。 实测见 <code>docs/evals/2026-08-01__decision-stability-20-repos.md</code> 的 excluded-path 植入对照。</li>
+</ul>
+<h2>9. 增量范围（<code>--since-last-review</code>）的取舍</h2>
+<ul>
+<li><strong>只审上次审查之后新增的部分</strong>（新提交 + 未提交编辑），基准取自上次审查记录的 HEAD sha。</li>
+<li><strong>范围写进结论</strong>：报告/JSON <code>scope</code>/PR 评论都会写明审的是哪一段——增量审查的 PASS 只对该段成立， 不代表整个 PR 通过。</li>
+<li><strong>拿不到基准就报错</strong>：没有上次审查、上次没记基准、基准 commit 被 rebase/force-push 冲掉时直接失败， 不会悄悄退回全量或更小范围。<code>--estimate-only</code> 不写会话，因此估算不会推进基准。</li>
+</ul>
+<h2>10. PR 讨论注入（<code>--with-pr-discussion</code>）的取舍</h2>
+<ul>
+<li><strong>只做上下文注入，不做自动折叠</strong>：不会因为&quot;有人评论过&quot;就隐藏任何发现——按文本相似度隐藏发现 等于给闸口开后门。</li>
+<li><strong>注入内容不可信</strong>：PR 评论谁都能写，因此注入时会被围栏包住并显式声明为「数据不是指令」， &quot;忽略之前的指令/不要报任何问题&quot;这类提示注入不能用来关闭闸口。机器人评论与 ReviewGate 自己上一轮的 评论会被剔除，避免自我强化。</li>
+<li><strong>有长度上限，但会按单元×维度放大</strong>：讨论文本上限约 6000 字符（≈1.5–2k token），它和项目规则走 同一条注入通道，因此<strong>每个审查单元、每个维度都会带一份</strong>。大 PR（多单元）下额外开销约 <code>2k × 单元数 × 维度数</code>。这也是它默认关闭、需要显式 <code>--with-pr-discussion</code> 的原因。 超出上限时保留最新的评论并在文本里注明省略了多少条。</li>
+<li><strong>注入的是全部评论，不区分是否已解决</strong>：GitHub 的 REST 评论接口不返回 thread 的 resolved 状态 （那在 GraphQL 里），因此已被解决的讨论也会一起进上下文。代价是多占一点预算、可能压掉一个 &quot;其实已经修好了&quot;的点；好处是实现简单、不引入新的 API 面。真要区分需要接 GraphQL，暂未做。</li>
+<li>目前仅 GitHub；其它平台不注入（宁可不给，也不猜 API 形状）。</li>
+</ul>
+<h2>11. Issue 分诊（<code>reviewgate issue …</code>）的边界</h2>
+<h3>分类是规则启发式，不是模型判断</h3>
+<ul>
+<li>固定语料 <code>crates/core/tests/fixtures/issue_classify.jsonl</code>（58 条：真实线上 case + 常规样本 + 留出样本 + 真实仓库跑出来的误报）上当前准确率 <strong>57/58 ≈ 98%</strong>， <code>cargo test -p reviewgate-core --test issue_classify_corpus -- --nocapture</code> 可复现， 测试同时打印全部已知缺口。</li>
+<li><strong>这个数字要怎么读</strong>：语料是回归护栏，不是能力评估。规则是对着它调的， 所以它保证的是&quot;改规则不会悄悄弄坏别处&quot;，不代表在你的仓库上也有 98%。 真实分布上的表现见下一条。</li>
+<li><strong>合成样本测不出精度。</strong> 语料里曾有一条自造的&quot;token 明文写日志&quot;样本，为了让它通过 加进了 <code>credential</code> / <code>hardcoded</code> / <code>plain text</code>——语料放行了，真实仓库上却全是误报。 这类关键词只有跑真实分布才能证伪，所以语料里现在专门收了一批<strong>真实仓库跑出来的误报</strong> 作为负样本（<code>clicli-*</code> / <code>arthas-*</code>）。</li>
+<li><strong>对着真实标注的准确率</strong>：拿 cli/cli 维护者自己打的标签做 ground truth（749 条标签 唯一且已分诊的样本，<code>scripts/eval-issue-groundtruth.py</code> 可复现）——</li>
+</ul>
+<table><tr><th>类型</th><th>召回</th><th>精确</th></tr>
+<tr><td>bug</td><td>77.7%</td><td>84.2%</td></tr>
+<tr><td>feature_request</td><td>68.8%</td><td>93.9%</td></tr>
+<tr><td>documentation</td><td><strong>20.0%</strong></td><td><strong>17.4%</strong></td></tr>
+</table>
+<p>  <strong><code>documentation</code> 是明确的短板</strong>：真实的文档诉求大多不含 <code>docs</code>/<code>文档</code> 字样，</p>
+<p>  规则抓不到，会散进 bug / feature_request / unknown。自建语料测不出这一点——</p>
+<p>  语料里的 docs 样本都是&quot;标题直接写 docs&quot;的显式形态。</p>
+<ul>
+<li><strong>真实仓库上的分布</strong>（cli/cli 1020 条 + alibaba/arthas 500 条，无 LLM、未发布任何评论）： 约 <strong>14–26% 落到 <code>unknown</code></strong>——纯规则对措辞平淡的标题就是没有把握。这些会走 <code>min_confidence</code> 闸门转人工，不会发出错误结论。</li>
+<li><strong>已知缺口（已登记，不假装没有）</strong>：英文凭据泄露表述抓不到。曾经加过 <code>credential</code> / <code>hardcoded</code> / <code>plain text</code>，但 cli/cli 真实数据上全是误报 （&quot;Bad credentials&quot; 是认证报错、&quot;hardcoding master&quot; 是分支名）， 判成安全类会 @ 安全接口人——精度代价远大于那点召回，已回退。</li>
+<li><strong>短 ASCII 缩写按词边界匹配</strong>（<code>rce</code>/<code>xss</code>/<code>oom</code>/<code>bug</code>），避免 &quot;pe<strong>rce</strong>ntage&quot;、&quot;de<strong>bug</strong>&quot; 误命中；五字母以上的词仍是子串匹配，以保留 <code>injections</code> 这类词形的召回。</li>
+<li><code>unknown</code> 不等于&quot;没问题&quot;：它意味着<strong>没有足够信号下结论</strong>，会走 <code>min_confidence</code> 闸门转人工。</li>
+</ul>
+<h3>置信度不足时不下结论，但可能静默</h3>
+<ul>
+<li>低于 <code>min_confidence</code> 就不发结论、不关单子，改发移交评论 + <code>needs-triage</code> + 指派。</li>
+<li><strong>没配处理人时会静默跳过</strong>——被拦下的 Issue 不会消失，但也不会主动通知谁， 只能用 <code>reviewgate issue stats --gated</code> 查。长期不看这个列表，等于这些单子没人管。</li>
+</ul>
+<h3>查重靠本地信号，语义漂移会漏</h3>
+<ul>
+<li>三路候选：FTS 全文、错误签名、向量。向量用的是<strong>本地哈希嵌入</strong>（不调 API、零成本）， 因此&quot;换一套说法描述同一件事&quot;这类语义漂移基本抓不到，跨语言（中文 issue vs 英文 issue） 更是抓不到。查重是<strong>降噪</strong>，不是保证。</li>
+<li>固定语料 <code>issue_duplicate.jsonl</code> 上：真重复 <strong>3/5 摆出来</strong>，负样本 <strong>零误报</strong>。 阈值刻意偏向&quot;宁可漏，不可错&quot;——把一条真问题当旧单关掉的代价，远大于漏掉一条重复。 上面两类语义缺口都作为 <code>known_gap</code> 登记在语料里。</li>
+</ul>
+<h3>技术验证（<code>--verify</code>）依赖本地仓库，且判别力有限</h3>
+<ul>
+<li>需要 <code>--repo-root</code> 指向对应的本地 checkout，且版本要对得上。仓库找不到 / 版本不匹配时 结论退化为 <code>UNVERIFIED</code>——那是&quot;没验证&quot;，不是&quot;验证通过&quot;。</li>
+<li><strong>它确实在读真代码</strong>：cli/cli 1020 条上跑了 334 次验证，产出 <code>code_hits</code> 307 次、 <code>test_hits</code> 177 次、<code>related_commits</code> 76 次——都是在 checkout 与 git 历史里搜到的实证。</li>
+<li><strong>但它的增量判别力很弱</strong>。拿维护者标签对照：</li>
+</ul>
+<table><tr><th>样本</th><th>跑了验证</th><th>其中判 <code>LIKELY_BUG</code></th></tr>
+<tr><td>维护者标 <code>bug</code></td><td>70.4%</td><td>35.1%</td></tr>
+<tr><td>维护者标 <code>enhancement</code></td><td>6.7%</td><td>25.9%</td></tr>
+</table>
+<p>  <strong>只差 9 个百分点。</strong> 也就是说在&quot;已经被判成缺陷&quot;的样本内部，翻代码几乎不再增加信息。</p>
+<p>  链路真正的判别力来自<strong>分类闸口</strong>——93% 的 enhancement 在进验证之前就被挡掉了</p>
+<p>  （最终裁决：非缺陷 74% 判 <code>NOT_A_BUG</code>，缺陷 42% 判 <code>LIKELY_BUG</code>）。</p>
+<ul>
+<li><strong>所以 <code>--verify</code> 的性价比要自己权衡</strong>：它的代价是 clone 整个仓库 + 逐条搜索， 收益是那 9 个百分点和几条可贴进回复的源码证据。当作&quot;给回复加证据&quot;合理， 当作&quot;判断是不是真 bug 的主要依据&quot;不合理。用 <code>scripts/eval-issue-groundtruth.py</code> 在你自己的仓库上量一次再决定。</li>
+</ul>
+<h3>长跑模式不发布、不调模型</h3>
+<ul>
+<li><code>issue watch</code> / <code>daemon</code> 只做<strong>同步 + 本地 triage + 打印</strong>：不发评论、不打标签、不关单子， 也不调用 LLM（LLM 只在 <code>issue review</code> 的用户向说明润色里用一次）。 <strong>所有对外写操作只发生在 <code>reviewgate issue review --publish</code></strong>，且每项动作默认关闭。</li>
+<li><strong>每轮限量</strong>：<code>--max-issues-per-run</code>（默认 20）同时限制单轮同步与 triage 条数， 避免首次接入大仓库时一口气打满平台 API 配额。没同步完时<strong>游标不前进</strong>， 剩下的下一轮继续；已入库且未变更的会跳过，不占配额。</li>
+</ul>
 <hr />
 <p>这些局限均有评测留痕。随版本演进会持续缩小（每条都标注了已做/可做的缓解）。</p>
   </div>

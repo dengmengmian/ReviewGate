@@ -4,6 +4,67 @@
 每条变更先中文、后英文。
 Changes are listed in Chinese first, then English.
 
+## [Unreleased]
+
+### Fixed
+- Issue 分诊：**中文 Issue 会让整批分诊崩掉**。摘要截断时按字节下标切片，截断点一旦落在中文句号（`。` 占 3 字节）上就 panic，进程直接退出、后面的 Issue 全部没跑。这段代码在两个文件里各有一份逐字拷贝，alibaba/arthas 全量分诊先崩在第一份（第 144 条），修掉后第二轮又崩在第二份（第 560 条）——现在两处合并成一个实现。
+  Issue triage: **Chinese issues could crash the whole run**. Summary clipping sliced by byte index, so a cut landing on a Chinese full stop (`。`, three bytes) panicked and killed the process, leaving every remaining issue unprocessed. The code existed as a verbatim copy in two files: a full triage of alibaba/arthas died at issue 144 in the first copy, and after that was fixed the next run died at issue 560 in the second. The two are now a single implementation.
+- Issue 分类：**字节码注入不再被判成安全问题**。裸的「注入」在 APM / JVM 诊断 / 依赖注入语境里是功能词，alibaba/arthas 上有两条字节码增强的缺陷因此被判成安全类。现在只认「SQL注入 / 命令注入 / 代码注入 / 脚本注入 / 模板注入 / 注入攻击 / 注入漏洞」这类攻击语义唯一的搭配。
+  Issue classification: **bytecode injection is no longer classified as a security issue**. The bare word 注入 is a feature term in APM, JVM diagnostics, and dependency-injection contexts; two instrumentation defects in alibaba/arthas were classified as security because of it. Only compounds with unambiguous attack semantics are recognised now.
+- Issue 分类：**内存泄露不再被判成安全问题**。中文的「泄露」同时是"数据泄露"和"内存泄露"，裸词进安全表的结果是 alibaba/arthas 500 条里判成安全类的 10 条中有 3 条其实是 ClassLoader / 内存泄露——那会走安全回复模板并 @ 安全接口人。现在裸词归缺陷，安全类只认「数据泄露 / 信息泄露 / 隐私泄露 / 密钥泄露 / 凭据泄露」这种无歧义搭配。
+  Issue classification: **memory leaks are no longer classified as security issues**. The Chinese word 泄露 means both "data leak" and "memory leak", and having the bare word in the security vocabulary meant 3 of the 10 security classifications across 500 alibaba/arthas issues were actually ClassLoader or memory leaks — which would have been answered with the security template and paged to the security on-call. The bare word now counts as a defect; the security path only recognises unambiguous compounds.
+- Issue 分类：带疑问语气的缺陷报告不再被当成提问。「arthas貌似存在内存泄露？」以问号结尾，但它是缺陷报告——标题里已经有故障词时不再按提问处理。
+  Issue classification: defect reports phrased tentatively are no longer read as questions. "arthas貌似存在内存泄露？" ends in a question mark but is a bug report; a title that already carries failure wording is no longer treated as a question.
+- Issue 分类：英文安全词表收紧。`credential(s)` / `hardcoded` / `plain text` 在 cli/cli 的 500 条真实 Issue 上全是误报——"Bad credentials" 是认证报错、"hardcoding master" 是分支名、"printing in plain text" 是输出格式，一个安全问题都不是。判成安全类会走安全回复模板并 @ 安全接口人，代价太大，已回退到语义上无法作他解的词。
+  Issue classification: the English security vocabulary was tightened. `credential(s)`, `hardcoded`, and `plain text` were pure false positives across 500 real issues from cli/cli — "Bad credentials" is an auth error, "hardcoding master" is a branch name, "printing in plain text" is an output format, and none of them are security problems. Classifying those as security routes them to the security template and pages the security on-call, so the terms were rolled back to ones that cannot mean anything else.
+- Issue 同步：**PR 多的仓库只能索引到第一页**。GitHub 的接口把 PR 和 Issue 混在一起返回，过滤掉 PR 之后那一页变短，翻页逻辑把「这页 PR 多」当成了「没有下一页」——`issue init --max 10000` 在活跃仓库上实际只拉得到几条，查重索引形同虚设。真机复测：cli/cli 从 12 条变成完整的 500 条。
+  Issue sync: **repositories with many pull requests only indexed the first page**. GitHub returns PRs and issues from the same endpoint; after PRs were filtered out the page looked short, and pagination read "this page is mostly PRs" as "there is no next page" — so `issue init --max 10000` fetched only a handful on an active repository, leaving duplicate detection with almost nothing to work from. Verified against the live API: cli/cli went from 12 issues to the full 500.
+- Issue 回复：**GitLab 上更新已有评论必定失败**。用的端点是 `/projects/:id/notes/:id`，GitLab 没有这个地址——note 必须挂在所属 Issue 下。而"复审时改同一条评论"是默认开启的，等于每次复审都静默 404。
+  Issue replies: **updating an existing comment always failed on GitLab**. The endpoint used was `/projects/:id/notes/:id`, which does not exist — a note must be addressed under its parent issue. Since "update the same comment on re-triage" is on by default, every re-triage silently 404'd.
+- Issue 分类：中文故障表述（必现/偶现/复现）、英文结果不符表述（no longer / stuck / stops at / invalid）、英文凭据泄露表述（credential / password / plaintext / hardcoded / unauthorized）、中文校验缺失表述（未校验/未鉴权/未授权）此前都没覆盖，对应的 Issue 会落到 `unknown`。
+  Issue classification: Chinese reproducibility wording, English "wrong result" wording, English credential-exposure wording, and Chinese missing-validation wording were all uncovered, so those issues fell through to `unknown`.
+- Issue 分类：疑问句标题（「请问…支持…吗？」）不再被「支持」拽成需求；反过来，问句形式的请求（「Can you add …?」「能否…」）仍然算需求，不会被当成提问。
+  Issue classification: interrogative titles are no longer pulled into "feature request" by a stray "support", while requests phrased as questions ("Can you add …?") still read as requests rather than questions.
+- Issue 分类：同分时按主题的具体程度排，不再依赖关键词块的书写顺序——「建议补齐文档」以前会被判成普通需求。
+  Issue classification: ties are now broken by how specific the type is, instead of by the order the keyword blocks happen to be written in — "please fill in the docs" used to come out as a generic feature request.
+- Issue 分诊：**同步不再丢单**。一轮没拉完时游标会跳到"现在"，没拉到的那些永远落在游标之后、再也不会被处理。现在只有确实拉完了才推进游标，剩下的下一轮接着来。
+  Issue triage: **syncing no longer drops issues**. When a round couldn't fetch everything, the cursor still jumped to "now", leaving the rest permanently behind it. The cursor now only advances once the batch is actually drained; the remainder is picked up next round.
+- 定位不到当前 diff 上的发现不再拿去发行内评论（平台会拒绝）。这类发现照常完整列在摘要评论的表格里，控制台也会说明有几条没能落到行上。
+  Findings that cannot be anchored to the reviewed diff are no longer submitted as inline comments (the platform rejects them). They still appear in full in the summary comment's table, and the console states how many could not be placed on a line.
+- Issue 分类：`rce`、`oom`、`bug` 这类三四个字母的缩写以前是裸子串匹配，会在 "pe**rce**ntage"、"de**bug**" 里误命中——一条进度条显示缺陷因此被判成安全问题，走安全的回复模板、@ 安全接口人。现在短缩写按词边界匹配。
+  Issue classification: short abbreviations like `rce`, `oom`, and `bug` were matched as bare substrings and fired inside words such as "pe**rce**ntage" and "de**bug**" — a progress-bar display defect was classified as a security issue, replied to with the security template and routed to the security on-call. Short abbreviations now match on word boundaries.
+
+### Added
+- Issue 分类新增 **LLM 兜底**：规则没把握（置信度 < 0.5 或判成 unknown）时问一次模型，规则有把握时不调。分类是整条链路的地基——`primary_type` 决定回复话术、裁决走向、要不要翻代码、@ 谁——而纯规则在真实仓库上有 14–26% 落到 unknown。**永远不会比纯规则更差**：没配模型、模型报错、返回值解析不出、返回了未知类型，任何一种都原样退回规则结论；广告 / 垃圾 / 辱骂由确定性规则短路，压根不会送进模型。
+  Added an **LLM fallback for issue classification**: when the rules are unsure (confidence below 0.5, or `unknown`) the model is asked once; when the rules are confident it is not called at all. Classification is the foundation of the whole pipeline — `primary_type` decides the reply's wording, the verdict path, whether the code is searched, and who gets mentioned — and on real repositories 14–26% of issues fall through to `unknown`. It **can never be worse than the rules alone**: no model configured, a provider error, an unparseable reply, or an unknown type all fall straight back to the rule-based result, and advertisements / spam / abuse short-circuit deterministically without ever reaching the model.
+
+### Fixed（架构）
+- `[issue_review] mode` **终于真的生效了**。它此前只是个配置字段：定义了、`reviewgate.toml.example` 里写着「suggest = dry-run」，但代码从头到尾没读过——等于向用户承诺了一个不存在的安全语义。现在它是最外层闸门，`suggest`（默认）下任何命令行参数和 actions 开关都打不开写操作。
+  `[issue_review] mode` **now actually does something**. It used to be a config field that was defined and documented ("suggest = dry-run") but never read anywhere in the code — a safety promise that did not exist. It is now the outermost gate: under `suggest` (the default) no command-line flag or action switch can enable a write.
+- 缺失字段的中文措辞有两份拷贝且已分叉，其中一份不认识 `affected_scope`，中文用户会收到「还缺 affected_scope」这种内部字段名。合并成一份实现。
+  The Chinese wording for missing fields existed as two diverged copies; one did not know about `affected_scope`, so Chinese users were shown the raw internal field name. The two are now one implementation.
+
+- 新增两套**可复现的评测语料**：分类 `crates/core/tests/fixtures/issue_classify.jsonl`（58 条真实线上 case + 常规样本 + 留出样本 + 真实仓库跑出来的误报，当前 57/58），查重 `issue_duplicate.jsonl`（真重复 3/5 摆出、负样本零误报）。跑 `cargo test -p reviewgate-core --test issue_classify_corpus -- --nocapture` 就能看到准确率和每一条已知缺口——缺口是登记在案的，不是没发现。
+  Added two **reproducible eval corpora**: classification (`issue_classify.jsonl`, 58 cases — real production issues, ordinary samples, a held-out set, and false positives harvested from real repositories; currently 57/58) and duplicate detection (`issue_duplicate.jsonl`, 3/5 true duplicates surfaced with zero false positives). Running the corpus tests prints the accuracy and every recorded gap — the gaps are on the record, not undiscovered.
+- 新增 `scripts/eval-issue-groundtruth.py`：用**维护者自己打的标签**做 ground truth，量分类的真实召回/精确，以及 `--verify` 到底有没有判别力。自建语料只能防回归、测不出真实水位，因为规则是对着语料调的。在 cli/cli 上跑出来的第一批数字已经写进 [LIMITATIONS](docs/LIMITATIONS.md)：`documentation` 召回只有 20%，`--verify` 的增量判别力只有 9 个百分点。
+  Added `scripts/eval-issue-groundtruth.py`: uses **maintainers' own labels** as ground truth to measure real classification recall and precision, and whether `--verify` discriminates at all. A hand-built corpus only guards against regressions — it cannot measure real-world accuracy, because the rules were tuned against it. The first numbers from cli/cli are now in [LIMITATIONS](docs/LIMITATIONS.md): `documentation` recall is only 20%, and `--verify` adds just nine points of discriminative power.
+- 新增 `scripts/eval-issue-triage.sh`：在**自己的仓库**上跑一次分诊评测——同步真实 Issue、本地分诊、打印类型与裁决分布，全程只读不发布，遇到 panic 以非零退出码报出来。接入前先用它看看 `unknown` 占比和安全类判得对不对。
+  Added `scripts/eval-issue-triage.sh`: run a triage evaluation against **your own** repository — sync real issues, triage locally, print the type and verdict distribution. It never publishes, and it exits non-zero if anything panics. Use it before rollout to see your `unknown` rate and check what gets classified as security.
+- 新增 [`docs/ISSUE_TRIAGE.md`](docs/ISSUE_TRIAGE.md) 运维手册：部署形态怎么选、webhook secret 与 token 权限怎么配、配置项全表、巡检该看什么、常见现象怎么排查、成本从哪来。
+  Added an [operations guide](docs/ISSUE_TRIAGE.md) for issue triage: choosing a deployment shape, webhook secret and token permissions, the full configuration table, what to check routinely, how to diagnose common symptoms, and where the cost comes from.
+- `reviewgate issue watch` / `daemon` 新增 `--max-issues-per-run`（默认 20）：限制单轮同步与分诊的条数，剩下的排队等下一轮。第一次接上一个存量很多的仓库时，不会一口气把平台 API 配额打满。已经入库且没变过的会跳过，不占额度。
+  Added `--max-issues-per-run` (default 20) to `reviewgate issue watch` / `daemon`: caps how many issues one round syncs and triages, leaving the rest queued. Pointing it at a repository with a large backlog for the first time no longer burns the platform's API quota in one go. Issues already stored and unchanged are skipped and don't consume the budget.
+
+### Changed
+- PR/MR 上的 **ReviewGate 摘要评论现在只有一条**：每次审查更新同一条评论，而不是每次 push 追加一条。翻了 5 次代码的 PR 不会再挂着 5 条陈旧的闸口结论。
+  The **ReviewGate summary comment is now a single comment** on the PR/MR: each review updates it in place instead of appending a new one. A PR you pushed to five times no longer carries five stale gate verdicts.
+- **行内评论支持 GitLab**：以前只有 GitHub 能把闸口级发现落到具体代码行上，GitLab MR 只能看摘要表格。现在 GitLab MR 也会收到行内评论（重命名的文件和上下文行都能正确定位）。AtomGit 仍只发摘要。
+  **Inline comments now work on GitLab**: previously only GitHub got gate-level findings anchored to the actual lines of code, while GitLab MRs only had the summary table. GitLab MRs now receive inline comments too, positioned correctly on renamed files and context lines. AtomGit still gets the summary only.
+- **同一处问题不会被反复评论**：已经发过行内评论的发现，在后续审查里不再重发；只有代码改动导致它变成另一个问题时才会再出现。
+  **The same issue is no longer commented on twice**: a finding that already has an inline comment is not posted again on later reviews; it reappears only if the code changed enough to make it a different issue.
+- GitHub 的行内评论**一次性提交为一条 review**，不再逐条发送——一次审查只产生一封通知，不是十几封。
+  Inline comments on GitHub are now **submitted as one review** instead of one request per finding — a review sends a single notification rather than a dozen.
+
 ## [0.10.0] - 2026-08-03
 
 ### Added

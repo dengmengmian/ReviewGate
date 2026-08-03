@@ -254,6 +254,9 @@ pub struct ReviewOutcome {
     /// 本次审查的范围描述（如 `working tree vs HEAD`、`main...HEAD`、`since last review (…)`）。
     /// PASS 只对这个范围成立。
     pub scope: String,
+    /// 本次 diff 上可挂 PR 行内评论的锚点。`None` = 未知（不做校验，保持旧行为），
+    /// 与 `Some(空)`（确实无处可挂）语义不同。
+    pub diff_anchors: Option<crate::diff::DiffAnchors>,
 }
 
 impl Default for ReviewOutcome {
@@ -272,6 +275,7 @@ impl Default for ReviewOutcome {
             coverage: None,
             excluded: Vec::new(),
             scope: String::new(),
+            diff_anchors: None,
         }
     }
 }
@@ -447,6 +451,7 @@ pub async fn run_review_with_client(
             coverage: Some(coverage),
             excluded,
             scope,
+            diff_anchors: None,
         });
     }
 
@@ -819,6 +824,7 @@ pub async fn run_review_with_client(
         coverage: Some(coverage),
         excluded,
         scope,
+        diff_anchors: Some(diff.comment_anchors()),
     })
 }
 

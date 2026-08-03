@@ -107,6 +107,26 @@ fn clean_body(body: &str) -> String {
     out.join("\n")
 }
 
+/// Markdown 表格行（含分隔行）。表格是结构化数据，不是散文——
+/// cli/cli#11 实测：一整行测试结果表被当成「实际现象」原样发给了用户，
+/// 读起来是坏掉的数据。判据是"至少两个管道符"，避免误伤正文里顺带用一个 `|` 的句子。
+fn is_markdown_table_line(l: &str) -> bool {
+    let t = l.trim();
+    if t.matches('|').count() < 2 {
+        return false;
+    }
+    // 分隔行 `--- | --- | ---`
+    let cells: Vec<&str> = t.trim_matches('|').split('|').map(str::trim).collect();
+    if cells
+        .iter()
+        .all(|c| !c.is_empty() && c.chars().all(|ch| ch == '-' || ch == ':'))
+    {
+        return true;
+    }
+    // 数据行：多于两个单元格，且不是一句带管道符的正常散文
+    cells.len() >= 3
+}
+
 /// 跳过 Issue 模板栏目名、纯图片行，取第一条有信息量的描述。
 fn first_substantive_line(s: &str) -> Option<String> {
     const SKIP: &[&str] = &[
@@ -133,6 +153,7 @@ fn first_substantive_line(s: &str) -> Option<String> {
         .filter(|l| !is_markdown_heading_only(l))
         .filter(|l| !is_template_boilerplate(l))
         .filter(|l| !is_image_or_asset_only_line(l))
+        .filter(|l| !is_markdown_table_line(l))
         .filter(|l| {
             let low = l.to_ascii_lowercase();
             let stripped = l.trim_start_matches('#').trim().to_ascii_lowercase();
@@ -400,7 +421,13 @@ fn intro_announces_error(intro: &str) -> bool {
 fn extract_error_signatures(body: &str) -> Vec<String> {
     let mut out = Vec::new();
     let patterns = [
+        // 认的是**运行时输出**的样子，不是源码里的写法：
+        // `panic!` 是宏名，真实报错里出现的是 `panicked at`。
+        "panicked",
         "panic!",
+        "fatal error",
+        "unhandled",
+        "stack trace",
         "segfault",
         "access violation",
         "nullpointerexception",
@@ -599,7 +626,42 @@ fn build_embed_text(
 
 #[cfg(test)]
 mod tests {
+
+    /// 线上回归（cli/cli#11 真实分诊）：正文是一张 Markdown 表格，
+    /// 「实际现象」于是取到了一整行表格，最后原样发给用户：
+    /// 「What you're seeing: PR Body with text, PR does not exist | `gh pr create` | HTTP 422 | ✅ |」
+    /// ——那读起来是坏掉的数据，不是现象概括。表格行与分隔行都不该当散文。
+    #[test]
+    fn markdown_table_rows_are_not_used_as_the_symptom() {
+        let body = "Testing results for `gh version 0.0.0`:\n\n\
+                    ### gh pr list\n\n\
+                    Test | cmd | Result | Note |\n\
+                    ------------ | ------------ | ------------ |\n\
+                    basic command | `gh pr list` | shows all three areas | ✅ |\n\
+                    half command | `gh pr` | Shows list of PRs | ✅ |\n";
+        let n = normalize_issue("gh pr testing results", body);
+        assert!(
+            !n.symptom.contains('|'),
+            "表格行不该当成现象发出去: {:?}",
+            n.symptom
+        );
+        assert!(
+            !n.symptom.contains("---"),
+            "表格分隔行更不该: {:?}",
+            n.symptom
+        );
+    }
     use super::*;
+
+    /// 语料基线（exact-error-signature）：两条 Issue 贴了一模一样的 panic 行，
+    /// 却因为签名列表里写的是宏名 `panic!` 而不是运行时输出 `panicked at`，
+    /// 一个签名都提不出来，最硬的重复证据反而落空。
+    #[test]
+    fn runtime_panic_line_yields_a_signature() {
+        let body = "thread 'main' panicked at src/config.rs:42: called `Option::unwrap()` on a `None` value";
+        let sigs = extract_error_signatures(body);
+        assert!(sigs.iter().any(|s| s.contains("panicked at")), "{sigs:?}");
+    }
 
     /// 线上回归（GitHub pallets/click#3740、clap-rs/clap#6421）：把 Issue 里贴的
     /// **源码**当成了错误签名，评论于是写出「Error fragment "use clap_complete::…"

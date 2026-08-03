@@ -5,6 +5,13 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionPolicy {
+    /// 最外层闸门，来自 `[issue_review] mode`（`publish` 才为真，`suggest` 为假）。
+    ///
+    /// 关着的时候**任何**下游开关都打不开写操作——这是仓库级的"这个仓库还在观察期"，
+    /// 优先级高于命令行。之前这个配置项只存在于文档里、代码从没读过，
+    /// 等于向用户承诺了一个不存在的安全语义。
+    #[serde(default)]
+    pub publish: bool,
     pub comment: bool,
     pub update_existing_comment: bool,
     pub add_labels: bool,
@@ -34,6 +41,8 @@ fn default_true_bool() -> bool {
 impl Default for ActionPolicy {
     fn default() -> Self {
         Self {
+            // 默认 suggest：新接入的仓库先只分析不发言。
+            publish: false,
             comment: true,
             update_existing_comment: true,
             add_labels: false,
@@ -95,6 +104,19 @@ pub fn plan_actions(
 ) -> PlannedActions {
     let has_triage_owner = triage_owner.is_some();
     let mut blocked = Vec::new();
+    // 仓库级闸门优先于一切：suggest 模式下直接返回"什么都不做"，
+    // 不再往下算——省得任何一条分支不小心把某个动作放出去。
+    if !policy.publish {
+        return PlannedActions {
+            post_or_update_comment: false,
+            labels_to_add: Vec::new(),
+            close: false,
+            close_reason: None,
+            reasons_blocked: vec!["suggest_mode:writes_disabled".into()],
+            needs_human_notice: false,
+            assign_to: None,
+        };
+    }
     // 结论没把握就别对外说话：低置信度只留打标签，人来接手。
     let confident = decision.confidence >= policy.min_confidence;
     if !confident {
@@ -175,8 +197,55 @@ pub fn plan_actions(
 
 #[cfg(test)]
 mod tests {
+
+    /// `[issue_review] mode` 之前只是个配置字段：定义了、文档写了「suggest = dry-run」，
+    /// 但代码从头到尾没读过它——向用户承诺了一个不存在的安全语义。
+    /// 现在它是最外层闸门：suggest 模式下任何 CLI 参数都打不开写操作。
+    #[test]
+    fn suggest_mode_blocks_every_write_no_matter_what_else_is_enabled() {
+        let decision = dec(IssueVerdict::Advertisement, true, true, vec!["spam".into()]);
+        // 所有开关全开、置信度拉满——只要 mode 不是 publish 就一个都不许发。
+        let policy = ActionPolicy {
+            publish: false,
+            comment: true,
+            update_existing_comment: true,
+            add_labels: true,
+            close_issue: true,
+            close_spam: true,
+            min_confidence: 0.0,
+            ..Default::default()
+        };
+        let p = plan_actions(&policy, &decision, Some("owner"));
+        assert!(!p.post_or_update_comment, "suggest 模式不许发评论");
+        assert!(!p.close, "suggest 模式不许关单");
+        assert!(p.labels_to_add.is_empty(), "suggest 模式不许打标签");
+        assert!(p.assign_to.is_none(), "suggest 模式不许指派");
+        assert!(
+            p.reasons_blocked.iter().any(|b| b.contains("suggest_mode")),
+            "要说清楚是被 mode 挡的：{:?}",
+            p.reasons_blocked
+        );
+
+        // publish 模式下同样的配置照常放行，证明挡住的确实是 mode。
+        let publishing = ActionPolicy {
+            publish: true,
+            ..policy
+        };
+        let p2 = plan_actions(&publishing, &decision, Some("owner"));
+        assert!(p2.post_or_update_comment);
+    }
     use super::*;
     use crate::issue::model::*;
+
+    /// 已经放行发布的策略（`mode = "publish"`）。下面这些用例测的是**发布之后**的
+    /// 各级闸门（置信度、动作开关、auto_action_allowed），所以先把最外层打开；
+    /// 最外层本身由 `suggest_mode_blocks_every_write_no_matter_what_else_is_enabled` 覆盖。
+    fn publishing() -> ActionPolicy {
+        ActionPolicy {
+            publish: true,
+            ..Default::default()
+        }
+    }
 
     fn dec(
         v: IssueVerdict,
@@ -229,7 +298,7 @@ mod tests {
 
     #[test]
     fn default_policy_never_closes() {
-        let p = ActionPolicy::default();
+        let p = publishing();
         let plan = plan_actions(
             &p,
             &dec(
@@ -248,6 +317,7 @@ mod tests {
     #[test]
     fn high_confidence_spam_close_when_enabled() {
         let p = ActionPolicy {
+            publish: true,
             close_spam: true,
             add_labels: true,
             ..Default::default()
@@ -272,6 +342,7 @@ mod tests {
     #[test]
     fn low_confidence_blocks_comment_but_keeps_labels() {
         let p = ActionPolicy {
+            publish: true,
             add_labels: true,
             ..Default::default()
         };
@@ -296,6 +367,7 @@ mod tests {
     #[test]
     fn low_confidence_marks_issue_for_human_triage() {
         let p = ActionPolicy {
+            publish: true,
             add_labels: true,
             ..Default::default()
         };
@@ -312,6 +384,7 @@ mod tests {
     #[test]
     fn confident_issue_gets_no_triage_label() {
         let p = ActionPolicy {
+            publish: true,
             add_labels: true,
             ..Default::default()
         };
@@ -325,7 +398,7 @@ mod tests {
 
     #[test]
     fn confidence_at_threshold_still_comments() {
-        let p = ActionPolicy::default();
+        let p = publishing();
         let mut d = dec(IssueVerdict::NeedsInfo, false, false, vec![]);
         d.confidence = p.min_confidence;
         assert!(plan_actions(&p, &d, None).post_or_update_comment);
@@ -335,7 +408,7 @@ mod tests {
     /// 结论性回复该拦，但求助性回复必须放行，否则该来的人永远收不到通知。
     #[test]
     fn low_confidence_with_a_triage_owner_still_speaks() {
-        let p = ActionPolicy::default();
+        let p = publishing();
         let mut d = dec(IssueVerdict::Unverified, false, false, vec![]);
         d.confidence = 0.4;
         let plan = plan_actions(&p, &d, Some("alice"));
@@ -349,7 +422,7 @@ mod tests {
 
     #[test]
     fn low_confidence_without_owner_stays_silent() {
-        let p = ActionPolicy::default();
+        let p = publishing();
         let mut d = dec(IssueVerdict::Unverified, false, false, vec![]);
         d.confidence = 0.4;
         let plan = plan_actions(&p, &d, None);
@@ -359,7 +432,7 @@ mod tests {
 
     #[test]
     fn confident_issue_never_uses_handoff_wording() {
-        let p = ActionPolicy::default();
+        let p = publishing();
         let d = dec(IssueVerdict::NeedsInfo, false, false, vec![]);
         let plan = plan_actions(&p, &d, Some("alice"));
         assert!(plan.post_or_update_comment);
@@ -373,6 +446,7 @@ mod tests {
     #[test]
     fn comment_disabled_blocks_handoff_too() {
         let p = ActionPolicy {
+            publish: true,
             comment: false,
             ..Default::default()
         };
@@ -385,6 +459,7 @@ mod tests {
     #[test]
     fn spam_can_be_closed_without_the_master_switch() {
         let p = ActionPolicy {
+            publish: true,
             close_spam: true,
             ..Default::default()
         };
@@ -402,6 +477,7 @@ mod tests {
     #[test]
     fn close_spam_does_not_close_ordinary_issues() {
         let p = ActionPolicy {
+            publish: true,
             close_spam: true,
             ..Default::default()
         };
@@ -412,7 +488,7 @@ mod tests {
     /// 转人工要落到「谁负责」上：@ 是会被淹没的通知，指派才进 Issue 列表的筛选。
     #[test]
     fn handoff_assigns_the_triage_owner() {
-        let p = ActionPolicy::default();
+        let p = publishing();
         let mut d = dec(IssueVerdict::Unverified, false, false, vec![]);
         d.confidence = 0.4;
         let plan = plan_actions(&p, &d, Some("alice"));
@@ -422,6 +498,7 @@ mod tests {
     #[test]
     fn assignment_can_be_turned_off() {
         let p = ActionPolicy {
+            publish: true,
             assign_on_triage: false,
             ..Default::default()
         };
@@ -434,7 +511,7 @@ mod tests {
 
     #[test]
     fn confident_issue_is_never_assigned() {
-        let p = ActionPolicy::default();
+        let p = publishing();
         let d = dec(IssueVerdict::NeedsInfo, false, false, vec![]);
         assert!(plan_actions(&p, &d, Some("alice")).assign_to.is_none());
     }
@@ -442,6 +519,7 @@ mod tests {
     #[test]
     fn low_confidence_never_closes() {
         let p = ActionPolicy {
+            publish: true,
             close_spam: true,
             ..Default::default()
         };
@@ -454,6 +532,7 @@ mod tests {
     #[test]
     fn safe_labels_can_enable_without_close() {
         let p = ActionPolicy {
+            publish: true,
             add_labels: true,
             ..Default::default()
         };

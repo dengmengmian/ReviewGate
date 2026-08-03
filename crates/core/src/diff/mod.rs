@@ -9,7 +9,9 @@ mod model;
 mod parse;
 
 pub use exclude::{ExcludeReason, ExcludedFile, Excluder};
-pub use model::{Diff, DiffMode, FileDiff, FileStatus, Hunk, Line, LineKind};
+pub use model::{
+    Diff, DiffAnchors, DiffMode, FileAnchors, FileDiff, FileStatus, Hunk, Line, LineKind,
+};
 
 use anyhow::Result;
 

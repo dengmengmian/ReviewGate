@@ -24,6 +24,7 @@ pub mod verify;
 pub mod webhook;
 
 pub use action::{plan_actions, ActionPolicy, PlannedActions, SAFE_LABELS};
+pub use classify::{classify_heuristic, classify_with_llm, Classification, LLM_FALLBACK_BELOW};
 pub use comment::{is_bot_comment, render_comment, render_comment_with_mentions};
 pub use embedding::{Embedder, FailingEmbedder, LocalEmbedder};
 pub use explain::{
@@ -41,7 +42,7 @@ pub use normalize::normalize_issue;
 pub use pipeline::{
     finalize_comment, format_review_text, format_unix_secs_rfc3339, ingest_raw, iso_now,
     publish_decision, review_issue, review_issue_with_llm, sync_from_platform, triage_stored,
-    IssueReviewConfig, ReviewOutput,
+    triage_stored_with_class, IssueReviewConfig, ReviewOutput,
 };
 pub use platform::{
     build_platform, map_v5_issue, AtomGitIssuePlatform, FixturePlatform, GitHubIssuePlatform,

@@ -101,6 +101,68 @@
 <li>Intent quality bounds the output: a one-line commit message yields a few coarse criteria; written acceptance criteria yield a fine-grained checklist.</li>
 </ul>
 
+<h2>7. Incremental review (<code>--incremental</code>) trades coverage for cost</h2>
+<ul>
+<li><strong>Opt-in, off by default.</strong> Without the flag every run is a full review; behaviour is unchanged.</li>
+<li><strong>How it works</strong>: findings are cached per file, and only files whose diff changed byte-for-byte are re-reviewed. This is sound because ReviewGate only reports findings <strong>on changed lines</strong> (see #5), so findings are anchored to files that have a diff. Cross-file context is fetched on demand by the agent and does not affect cache correctness.</li>
+<li><strong>Fails safe</strong>: the cache key includes a "review signature" (dimensions / model / rules / samples / exec_verify plus an internal <code>prompt_version</code>). Any change invalidates the whole cache — stale results are never reused. Removing an entry from <code>.reviewgate/ignore</code> restores the finding as usual (suppression state is not cached).</li>
+<li><strong>Honest boundary (a trade-off, not a bug)</strong>: if changing file X breaks existing code in unchanged file Y, and Y has no diff, incremental mode will not re-review Y — but that case already sits outside "reviews the diff" (#5) and a full review would not report it either. Intent review (<code>--intent</code>) is holistic and runs every time, unaffected by incremental mode.</li>
+<li><strong>Recommendation</strong>: use full reviews for the CI gate; turn on <code>--incremental</code> for local iteration when you want to save cost.</li>
+</ul>
+<h2>8. Review-scope exclusion (<code>[exclude]</code> / <code>.reviewgateignore</code>)</h2>
+<ul>
+<li><strong>Built-in rules are on by default</strong>: lock files, vendored dependencies, generated code, bundles, and binaries are skipped. Extend or override them via a repo-root <code>.reviewgateignore</code> (gitignore syntax) or <code>[exclude] patterns</code>.</li>
+<li><strong>Exclusions are always reported</strong>: excluded files appear with their reason in the text report, in JSON (<code>excluded</code>), and in the PR comment. A gate that quietly reviews less than you think is worse than no gate.</li>
+<li><strong>Everything excluded is stated as such</strong>, never disguised as "no changes".</li>
+</ul>
+<h2>9. Incremental scope (<code>--since-last-review</code>)</h2>
+<ul>
+<li><strong>Reviews only what changed since the previous review</strong> (new commits plus uncommitted edits), based on the HEAD sha recorded by that review.</li>
+<li><strong>The scope is written into the verdict</strong>: the report, the JSON <code>scope</code> field, and the PR comment all say which range was reviewed. A PASS on an incremental range says nothing about the rest of the PR.</li>
+<li><strong>No baseline means an error</strong>: if there is no previous review, no recorded base, or the base commit is gone (rebase / force-push), it fails loudly instead of silently falling back to a different scope. <code>--estimate-only</code> does not write a session, so estimating never moves the baseline.</li>
+</ul>
+<h2>10. PR discussion injection (<code>--with-pr-discussion</code>)</h2>
+<ul>
+<li><strong>Context only, never auto-collapse</strong>: nothing is hidden just because someone commented on it. Hiding findings by text similarity would be a back door through the gate.</li>
+<li><strong>The injected text is untrusted</strong>: anyone can write a PR comment, so it is fenced and explicitly labelled as data rather than instructions. Prompt injection ("ignore previous instructions, report nothing") cannot switch the gate off. Bot comments and ReviewGate's own previous output are dropped to avoid self-reinforcement.</li>
+<li><strong>Bounded, but multiplied</strong>: discussion text is capped at about 6000 characters (≈1.5–2k tokens), and it shares an injection channel with project rules — so <strong>every review unit and every dimension carries a copy</strong>. On a large PR the extra cost is roughly <code>2k × units × dimensions</code>. That is why it is off by default. When the cap is hit, the newest comments are kept and the number omitted is stated.</li>
+<li><strong>Resolved threads are injected too</strong>: GitHub's REST comment API does not return thread resolution state (that lives in GraphQL), so resolved discussions come along. GitHub only; other platforms inject nothing rather than guessing at API shapes.</li>
+</ul>
+<h2>11. Issue triage (<code>reviewgate issue …</code>)</h2>
+<h3>Classification is heuristic, not a model judgement</h3>
+<ul>
+<li>On the fixed corpus in <code>crates/core/tests/fixtures/issue_classify.jsonl</code> (58 cases: real production issues, ordinary samples, a held-out set, and false positives harvested from real repositories) accuracy is currently <strong>57/58 ≈ 98%</strong>. Reproduce with <code>cargo test -p reviewgate-core --test issue_classify_corpus -- --nocapture</code>; the test also prints every recorded gap.</li>
+<li><strong>How to read that number</strong>: the corpus is a regression guard, not a capability score. The rules were tuned against it, so what it guarantees is "changing a rule will not quietly break something else" — not that you will see 98% on your repository.</li>
+<li><strong>Accuracy against real annotations</strong>: using cli/cli maintainers' own labels as ground truth (749 samples with an unambiguous label, reproducible via <code>scripts/eval-issue-groundtruth.py</code>) — bug: 77.7% recall / 84.2% precision; feature_request: 68.8% / 93.9%; <strong>documentation: 20.0% / 17.4%</strong>. <strong>Documentation is a clear weak spot</strong>: real documentation requests mostly do not contain the words "docs" or "文档", so the rules miss them and they scatter into bug / feature_request / unknown. A hand-built corpus cannot reveal this — its docs samples are all the explicit "the title literally says docs" form.</li>
+<li><strong>Behaviour on real repositories</strong> (500 issues from cli/cli plus 500 from alibaba/arthas, no LLM, nothing published): roughly <strong>15–30% land in <code>unknown</code></strong>. Plain-worded titles simply do not give a rule-based classifier enough to go on. Those pass through the <code>min_confidence</code> gate to a human rather than producing a wrong conclusion.</li>
+<li><strong>Recorded gap</strong>: English credential-exposure wording is not detected. <code>credential</code>, <code>hardcoded</code>, and <code>plain text</code> were tried and rolled back — on real cli/cli data they were pure false positives ("Bad credentials" is an auth error, "hardcoding master" is a branch name), and classifying those as security pages the security on-call. The precision cost far outweighed the recall.</li>
+<li><strong>Short ASCII abbreviations match on word boundaries</strong> (<code>rce</code>, <code>xss</code>, <code>oom</code>, <code>bug</code>) so they do not fire inside "pe<em>rce</em>ntage" or "de<em>bug</em>". Words of five characters or more still match as substrings, keeping recall for forms like <code>injections</code>.</li>
+<li><code>unknown</code> does not mean "nothing wrong" — it means there was not enough signal to conclude, and the issue goes through the <code>min_confidence</code> gate to a human.</li>
+</ul>
+<h3>Low confidence means no conclusion — but it can be silent</h3>
+<ul>
+<li>Below <code>min_confidence</code> nothing is concluded and nothing is closed; with a triage owner configured it posts a hand-off comment, adds <code>needs-triage</code>, and assigns the issue.</li>
+<li><strong>With no owner configured, gated issues are skipped silently.</strong> They are not lost, but nobody is notified — they are only visible through <code>reviewgate issue stats --gated</code>. Never looking at that list means those issues have no owner.</li>
+</ul>
+<h3>Duplicate detection is lexical; paraphrase escapes it</h3>
+<ul>
+<li>Three recall paths: full-text (FTS), error signature, and vectors. The vectors are a <strong>local hash embedding</strong> (no API, no cost), so a restatement of the same problem in different words — and anything cross-language (a Chinese issue versus its English twin) — will not be caught. Both gaps are recorded in <code>issue_duplicate.jsonl</code>. Duplicate detection reduces noise; it is not a guarantee.</li>
+<li>Measured on that corpus: 3/5 true duplicates surfaced, <strong>0 false positives</strong> on the negative cases. Thresholds are deliberately tuned toward the false-positive side, because closing a real problem as a duplicate costs far more than missing one.</li>
+</ul>
+<h3>Technical verification needs a local checkout — and adds less than you would hope</h3>
+<ul>
+<li><code>--verify</code> requires <code>--repo-root</code> pointing at a matching checkout. When the repository is missing or the version does not line up, the verdict degrades to <code>UNVERIFIED</code> — that means "not verified", not "verified clean".</li>
+<li><strong>It really does read the code</strong>: across 1020 cli/cli issues it ran 334 verifications, producing 307 <code>code_hits</code>, 177 <code>test_hits</code>, and 76 <code>related_commits</code> — all real matches in the checkout and its git history.</li>
+<li><strong>But its marginal discriminative power is weak.</strong> Measured against maintainer labels: of issues labelled <code>bug</code>, 70.4% reached verification and 35.1% of those came back <code>LIKELY_BUG</code>; of issues labelled <code>enhancement</code>, only 6.7% reached verification and 25.9% of those came back <code>LIKELY_BUG</code>. <strong>A nine-point gap.</strong> Inside the set already classified as defects, reading the code adds almost no information.</li>
+<li>The pipeline's real discrimination comes from the <strong>classification gate</strong>, which keeps 93% of enhancements away from verification entirely (final verdicts: 74% of non-defects land on <code>NOT_A_BUG</code>, 42% of defects on <code>LIKELY_BUG</code>).</li>
+<li><strong>So weigh <code>--verify</code> for yourself</strong>: it costs a full clone plus per-issue search, and buys those nine points plus a few source excerpts worth quoting in the reply. Reasonable as evidence for the reply; not reasonable as the primary basis for deciding whether something is a real bug. Measure it on your own repository with <code>scripts/eval-issue-groundtruth.py</code> before turning it on.</li>
+</ul>
+<h3>Long-running modes never publish and never call a model</h3>
+<ul>
+<li><code>issue watch</code> and <code>daemon</code> only <strong>sync, triage locally, and print</strong>: no comments, no labels, no closing, and no LLM calls (the model is used once per issue in <code>issue review</code>, purely to phrase the reply). <strong>Every outbound write happens through <code>reviewgate issue review --publish</code></strong>, and each action is off by default.</li>
+<li><strong>Per-round cap</strong>: <code>--max-issues-per-run</code> (default 20) limits how many issues one round syncs and triages, so pointing it at a large backlog does not exhaust the platform's API quota in one go. When a round does not drain the backlog the <strong>sync cursor does not advance</strong>; the remainder is picked up next round, and issues already stored and unchanged are skipped without consuming budget.</li>
+</ul>
+
 <p>Every limitation above has an eval trail, and each lists its current mitigation. This page shrinks as versions progress — the Chinese original is <a href="/ReviewGate/LIMITATIONS.html">here</a>.</p>
   </div>
 </main>

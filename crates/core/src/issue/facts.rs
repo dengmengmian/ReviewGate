@@ -1,5 +1,6 @@
 //! 评论用「可核验事实包」：只从 decision / deep_dig 抽字面证据，不靠 LLM 发明机制。
 
+use super::explain::{clip, missing_en, missing_zh};
 use super::model::{IssueReviewDecision, IssueType, IssueVerdict, NormalizedIssue};
 use super::verify::{DeepDigBlock, TechnicalVerification};
 
@@ -1256,46 +1257,6 @@ fn is_doc_path(p: &str) -> bool {
     l.ends_with(".md") || l.contains("/docs/")
 }
 
-fn clip(s: &str, n: usize) -> String {
-    let t = s.trim();
-    if t.chars().count() <= n {
-        return t.to_string();
-    }
-    // 尽量在句末断开，别留「…, a…」这种半句话
-    let head: String = t.chars().take(n).collect();
-    let cut = head
-        .rfind(['.', '。', '!', '！', '?', '？', ';', '；'])
-        .filter(|i| *i >= head.len() / 2);
-    match cut {
-        Some(i) => head[..=i].trim_end().to_string(),
-        None => format!("{head}…"),
-    }
-}
-
-/// 英文侧的缺失字段说明。此前直接把内部字段名（`expected_behavior`）发给了用户。
-fn missing_en(f: &str) -> String {
-    match f {
-        "actual_behavior" => "what actually happens, with the full error".into(),
-        "expected_behavior" => "what you expected instead".into(),
-        "reproduction_steps" => "steps that reliably reproduce it".into(),
-        "error_or_log" => "the complete error output or log".into(),
-        "environment" => "your OS and the version you are running".into(),
-        "affected_scope" => "the affected versions or components".into(),
-        other => other.replace('_', " "),
-    }
-}
-
-fn missing_zh(f: &str) -> String {
-    match f {
-        "actual_behavior" => "实际现象与完整报错".into(),
-        "expected_behavior" => "期望的正确行为".into(),
-        "reproduction_steps" => "可稳定复现的步骤".into(),
-        "error_or_log" => "完整错误日志".into(),
-        "environment" => "系统、应用版本、模型名、是否代理".into(),
-        other => other.to_string(),
-    }
-}
-
 const WEAK_SYMBOLS: &[&str] = &[
     "thiserror",
     "Error",
@@ -1352,6 +1313,44 @@ pub fn use_fact_structure(decision: &IssueReviewDecision) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    /// `missing_zh` 在 explain.rs 和 facts.rs 各有一份拷贝，而且**已经分叉**：
+    /// explain 那份认识 `affected_scope`，facts 这份不认识，于是中文用户会收到
+    /// 「还缺 affected_scope」——内部字段名直接发出去了。这正是 facts.rs 顶上
+    /// 那句注释警告过的问题，只是换了个字段又犯一次。合并成一份实现。
+    #[test]
+    fn missing_field_wording_is_human_readable_for_every_known_field() {
+        // completeness.rs 会产出的全部字段
+        for f in [
+            "actual_behavior",
+            "expected_behavior",
+            "reproduction_steps",
+            "error_or_log",
+            "environment",
+            "affected_scope",
+        ] {
+            let zh = missing_zh(f);
+            let en = missing_en(f);
+            assert_ne!(zh, f, "中文措辞不能是内部字段名: {f}");
+            assert!(
+                !zh.contains('_'),
+                "中文措辞漏了 {f}，原样吐出了字段名: {zh}"
+            );
+            assert!(!en.contains('_'), "英文措辞漏了 {f}: {en}");
+        }
+    }
+
+    /// 线上回归（alibaba/arthas 第二轮全量 triage）：`clip` 曾在 explain.rs 和
+    /// facts.rs 各有一份逐字拷贝，字节切片的 panic 只修了前者，第二轮就崩在了后者
+    /// （#560 之后整批中止）。现在两处共用一个实现——这个用例守的是"别再复制回去"。
+    #[test]
+    fn clip_is_shared_and_handles_chinese_punctuation() {
+        let body = "启动时报错，无法 attach。请问如何排查？".repeat(20);
+        for n in 1..=200 {
+            let _ = clip(&body, n); // 不 panic 即通过
+        }
+        assert_eq!(clip("短句。", 50), "短句。");
+    }
     use super::*;
     use crate::issue::model::{CodeEvidence, DuplicateStatus, IssueType, IssueVerdict};
     use crate::issue::verify::{CodeHit, DeepDigBlock, InvestigationPlan, TechnicalVerification};

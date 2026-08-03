@@ -11,6 +11,14 @@ pub struct SafetyScores {
     pub reasons: Vec<String>,
 }
 
+/// 去掉文本里的 URL，留下正文散文部分（用于判断"除了链接还有没有内容"）。
+fn strip_urls(text: &str) -> String {
+    text.split_whitespace()
+        .filter(|w| !w.contains("http://") && !w.contains("https://"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// 对不可信 Issue 正文做规则打分。
 pub fn score_safety(title: &str, body: &str) -> SafetyScores {
     let text = format!("{title}\n{body}").to_ascii_lowercase();
@@ -58,10 +66,21 @@ pub fn score_safety(title: &str, body: &str) -> SafetyScores {
         s.advertisement_score = s.advertisement_score.max(0.85);
     }
 
-    // 标题与正文极短且带链接 → 疑似 spam
-    if title.len() < 8 && body.len() < 40 && url_count > 0 {
+    // 标题与正文极短且带链接 → 疑似 spam。按**字符**数算：中文一个字三个字节，
+    // 按字节比长度会把「看这里」这种当成长标题。
+    if title.chars().count() < 8 && body.chars().count() < 40 && url_count > 0 {
         s.spam_score = s.spam_score.max(0.7);
         s.reasons.push("short_with_url".into());
+    }
+
+    // 正文除了链接几乎没有内容 → 链接农场。正常 Issue 即使贴日志链接，也总要说清楚
+    // 发生了什么；通篇只有 URL 的没有任何可处理的信息。
+    if url_count >= 3 {
+        let prose: String = strip_urls(&text);
+        if prose.chars().filter(|c| !c.is_whitespace()).count() < 20 {
+            s.spam_score = s.spam_score.max(0.85);
+            s.reasons.push(format!("links_only={url_count}"));
+        }
     }
 
     let abuse = ["kill yourself", "doxx", "i will hack", "ddos this"];

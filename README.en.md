@@ -476,7 +476,7 @@ jobs:
 
 #### GitLab CI / AtomGit / other platforms
 
-`--comment` is not GitHub-only — it auto-detects the platform from the environment and posts the review summary to the corresponding PR/MR (inline suggestions remain GitHub-only):
+`--comment` is not GitHub-only — it auto-detects the platform from the environment and posts the review summary to the corresponding PR/MR. The summary comment is **updated in place** rather than appended on every push; inline comments work on GitHub and GitLab (AtomGit gets the summary only), and the same finding is never posted twice:
 
 - **GitLab CI**: just run `reviewgate review --comment --fail-on block` in a `merge_request` pipeline. It reads `CI_PROJECT_ID` / `CI_MERGE_REQUEST_IID` / `CI_API_V4_URL`; the token comes from `GITLAB_TOKEN` (or `REVIEWGATE_TOKEN`) and needs comment permission (a project/personal access token).
 - **AtomGit and any other platform**: configure explicitly —
@@ -570,7 +570,15 @@ reviewgate issue review 123 --repo owner/repo --verify --repo-root /path/to/repo
 reviewgate issue review 123 --repo owner/repo --publish
 ```
 
-Long-running: `reviewgate issue watch` polls for new issues; `reviewgate daemon --serve` runs the webhook receiver and the queue worker together.
+Long-running: `reviewgate issue watch` polls for new issues; `reviewgate daemon --serve` runs the webhook receiver and the queue worker together. Both only **sync, triage locally, and print — they never write anything back to the platform**; comments, labels, and closing only happen through `issue review --publish`.
+
+How many issues each round works through is capped by `--max-issues-per-run` (default 20); the rest are picked up next round, so pointing it at a repository with a large backlog won't burn the platform's API quota in one go:
+
+```bash
+reviewgate issue watch --repo owner/repo --interval 5m --max-issues-per-run 20
+```
+
+For a real deployment (webhook secret, token permissions, the full configuration table, routine checks and troubleshooting) see the [operations guide](docs/ISSUE_TRIAGE.md); for capability boundaries see [LIMITATIONS §11](docs/LIMITATIONS.md).
 
 ### What happens when it isn't sure
 

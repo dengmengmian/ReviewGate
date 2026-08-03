@@ -472,7 +472,7 @@ jobs:
 
 #### GitLab CI / AtomGit / 其它平台
 
-`--comment` 不只 GitHub——它按环境自动识别平台，把审查摘要发到对应 PR/MR（行内 suggestion 目前仍仅 GitHub）：
+`--comment` 不只 GitHub——它按环境自动识别平台，把审查摘要发到对应 PR/MR。摘要评论**就地更新同一条**，不会每次 push 追加；行内评论支持 GitHub 与 GitLab（AtomGit 只发摘要），且同一处发现不会重复发：
 
 - **GitLab CI**：在 `merge_request` 流水线里跑 `reviewgate review --comment --fail-on block` 即可。自动读 `CI_PROJECT_ID` / `CI_MERGE_REQUEST_IID` / `CI_API_V4_URL`；token 用 `GITLAB_TOKEN`（或 `REVIEWGATE_TOKEN`），需有评论权限（project/personal access token）。
 - **AtomGit 及任意平台**：显式指定——
@@ -566,7 +566,15 @@ reviewgate issue review 123 --repo owner/repo --verify --repo-root /path/to/repo
 reviewgate issue review 123 --repo owner/repo --publish
 ```
 
-长跑模式：`reviewgate issue watch` 轮询新单子；`reviewgate daemon --serve` 同时开 Webhook 接收和队列消费。
+长跑模式：`reviewgate issue watch` 轮询新单子；`reviewgate daemon --serve` 同时开 Webhook 接收和队列消费。两者**只同步 + 本地分诊 + 打印，不会往平台上写任何东西**——发评论/打标签/关单子只发生在 `issue review --publish`。
+
+每轮消化的条数由 `--max-issues-per-run` 限制（默认 20），剩下的下一轮继续，首次接一个存量很多的仓库不会一口气打满平台 API 配额：
+
+```bash
+reviewgate issue watch --repo owner/repo --interval 5m --max-issues-per-run 20
+```
+
+要真正部署（webhook secret、token 权限、配置全表、巡检与排查）看 [运维手册](docs/ISSUE_TRIAGE.md)；能力边界看 [LIMITATIONS 第 11 节](docs/LIMITATIONS.md)。
 
 ### 不确定的怎么办
 

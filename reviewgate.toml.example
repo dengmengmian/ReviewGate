@@ -86,6 +86,10 @@ model = "deepseek-v4-pro"    # 1M context
 #   reviewgate issue review 12 --forge atomgit --publish
 # [issue_review]
 # enabled = true
+# 最外层安全闸门，优先级高于命令行与下面所有 actions 开关：
+#   suggest（默认）= 只分析、只落库、只打印，绝不往平台写任何东西
+#   publish        = 放行写操作，具体发什么仍由 [issue_review.actions] 逐项决定
+# 新接入一个仓库时先留在 suggest，用 `reviewgate issue review <N>` 看几条判定合不合意。
 # mode = "suggest"
 # [issue_review.actions]
 # comment = true

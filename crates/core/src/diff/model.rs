@@ -117,7 +117,54 @@ pub struct Diff {
     pub files: Vec<FileDiff>,
 }
 
+/// 一个文件上可作为 PR 行内评论锚点的位置。
+///
+/// 只有落在 diff hunk 内、且在**新文件**上有行号的行才能挂行内评论——GitHub 拒绝
+/// diff 之外的行（422），GitLab 则解析不出 position。删除行没有新侧行号，故不收。
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FileAnchors {
+    /// 基线侧路径。重命名时与新路径不同——GitLab 的 position 必须两侧路径都给。
+    pub old_path: String,
+    /// 新文件行号 → 旧文件对应行号。上下文行两侧都有；新增行旧侧为 `None`。
+    pub lines: HashMap<u32, Option<u32>>,
+}
+
+/// 新路径 → 该文件的行内评论锚点。
+pub type DiffAnchors = HashMap<String, FileAnchors>;
+
 impl Diff {
+    /// 本次 diff 上所有可挂行内评论的锚点。
+    ///
+    /// 二进制文件与纯删除文件不产生锚点（没有可评论的新侧内容）。
+    pub fn comment_anchors(&self) -> DiffAnchors {
+        let mut out = DiffAnchors::new();
+        for f in &self.files {
+            if f.binary {
+                continue;
+            }
+            let Some(new_path) = f.new_path.as_deref() else {
+                continue;
+            };
+            let lines: HashMap<u32, Option<u32>> = f
+                .hunks
+                .iter()
+                .flat_map(|h| &h.lines)
+                .filter_map(|l| l.new_lineno.map(|n| (n, l.old_lineno)))
+                .collect();
+            if lines.is_empty() {
+                continue;
+            }
+            out.insert(
+                new_path.to_string(),
+                FileAnchors {
+                    old_path: f.old_path.as_deref().unwrap_or(new_path).to_string(),
+                    lines,
+                },
+            );
+        }
+        out
+    }
+
     /// 以新路径为 key 建索引，供工具按文件查 diff。
     pub fn by_new_path(&self) -> HashMap<&str, &FileDiff> {
         self.files
@@ -225,6 +272,69 @@ mod tests {
         let f = file_diff("x.rs", vec![hunk]);
         assert_eq!(f.added_lines(), 2);
         assert_eq!(f.deleted_lines(), 1);
+    }
+
+    #[test]
+    fn comment_anchors_only_keep_lines_that_exist_on_the_new_side() {
+        let hunk = Hunk {
+            old_start: 1,
+            old_count: 2,
+            new_start: 1,
+            new_count: 2,
+            section: String::new(),
+            lines: vec![
+                line(LineKind::Context, "ctx", Some(1), Some(1)),
+                line(LineKind::Added, "new", None, Some(2)),
+                line(LineKind::Deleted, "gone", Some(2), None),
+            ],
+        };
+        let diff = Diff {
+            files: vec![file_diff("a.rs", vec![hunk])],
+        };
+        let anchors = diff.comment_anchors();
+        let a = anchors.get("a.rs").expect("文件应有锚点");
+        assert_eq!(a.old_path, "a.rs");
+        assert_eq!(a.lines.get(&1), Some(&Some(1)), "上下文行两侧行号都要留");
+        assert_eq!(a.lines.get(&2), Some(&None), "新增行只有新侧行号");
+        assert_eq!(a.lines.len(), 2, "删除行没有新侧行号，不能作为锚点");
+    }
+
+    #[test]
+    fn comment_anchors_keep_the_base_side_path_of_a_rename() {
+        let diff = Diff {
+            files: vec![FileDiff {
+                old_path: Some("old.rs".into()),
+                new_path: Some("new.rs".into()),
+                status: FileStatus::Renamed,
+                binary: false,
+                hunks: vec![Hunk {
+                    old_start: 1,
+                    old_count: 1,
+                    new_start: 1,
+                    new_count: 1,
+                    section: String::new(),
+                    lines: vec![line(LineKind::Added, "x", None, Some(1))],
+                }],
+            }],
+        };
+        assert_eq!(diff.comment_anchors()["new.rs"].old_path, "old.rs");
+    }
+
+    #[test]
+    fn comment_anchors_skip_binary_and_deleted_files() {
+        let mut bin = file_diff("img.png", vec![]);
+        bin.binary = true;
+        let deleted = FileDiff {
+            old_path: Some("gone.rs".into()),
+            new_path: None,
+            status: FileStatus::Deleted,
+            binary: false,
+            hunks: vec![],
+        };
+        let diff = Diff {
+            files: vec![bin, deleted],
+        };
+        assert!(diff.comment_anchors().is_empty());
     }
 
     #[test]

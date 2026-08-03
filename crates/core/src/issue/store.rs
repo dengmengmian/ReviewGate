@@ -316,6 +316,26 @@ impl IssueStore {
         Ok(out)
     }
 
+    /// 还没 triage 过的 Issue 号，**旧的优先**，最多 `limit` 条。
+    ///
+    /// 长跑模式据此分批消化积压：一轮只处理一部分，剩下的留在库里，下一轮继续——
+    /// 不会因为一次同步进来几百条就一口气全跑掉。
+    pub fn untriaged_issues(&self, limit: usize) -> Result<Vec<u64>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT issue_number FROM issues
+             WHERE repo_id=?1 AND last_reviewed_at IS NULL
+             ORDER BY issue_number LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![self.repo_id, limit as i64], |r| {
+            Ok(r.get::<_, i64>(0)? as u64)
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
     /// FTS5 全文候选。
     pub fn fts_search(&self, query: &str, limit: usize) -> Result<Vec<DuplicateCandidate>> {
         let q = sanitize_fts_query(query);

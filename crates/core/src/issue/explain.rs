@@ -247,6 +247,32 @@ Rules:
 - English, each tip under ~20 words.
 "#;
 
+/// 解析润色返回的提示行。
+///
+/// 上限曾经是 80 字符——那是照着**模板**的长度定的（78/62/47），而自然语言句子
+/// 普遍 80–100 字符。实测模型返回
+/// 「Paste the full error (including stack trace) and note when it started happening often.」
+/// 共 86 字符，被这条过滤静默砍掉；全砍完就退回模板，等于每条 Issue 白花一次调用。
+fn parse_polished_tips(text: &str) -> Vec<String> {
+    /// 一条建议的合理长度上限。再长就不是「一句可执行的建议」而是段落了。
+    const MAX_TIP_CHARS: usize = 160;
+    text.lines()
+        .map(|l| {
+            l.trim()
+                .trim_start_matches(|c: char| {
+                    c.is_ascii_digit() || c == '.' || c == ')' || c == '、'
+                })
+                .trim()
+                .to_string()
+        })
+        .filter(|l| {
+            let n = l.chars().count();
+            (6..=MAX_TIP_CHARS).contains(&n)
+        })
+        .take(5)
+        .collect()
+}
+
 async fn polish_user_tips_llm(
     llm: &dyn LlmClient,
     lang: ReplyLang,
@@ -280,21 +306,21 @@ async fn polish_user_tips_llm(
         .complete(system, &[Message::user(user)], &[])
         .await
         .context("llm polish tips")?;
-    let tips: Vec<String> = resp
-        .text()
-        .lines()
-        .map(|l| {
-            l.trim()
-                .trim_start_matches(|c: char| {
-                    c.is_ascii_digit() || c == '.' || c == ')' || c == '、'
-                })
-                .trim()
-                .to_string()
-        })
-        .filter(|l| l.chars().count() >= 6 && l.chars().count() <= 80)
-        .take(5)
-        .collect();
+    let tips = parse_polished_tips(&resp.text());
+    if tips.is_empty() {
+        // 静默退回模板会让"花了钱、产出被丢掉"完全看不见——实测 106 次调用
+        // 全部因为长度上限被砍空，日志里一个字都没有。
+        eprintln!("issue tip polish: model returned nothing usable; keeping template tips");
+    }
     Ok(tips)
+}
+
+/// Issue 是不是信息单薄到值得追问。
+///
+/// 追问本身有代价：信息已经齐了还问，读起来就是「机器人没看内容」。
+/// 判据用现成的完整度结果，不另起一套。
+fn issue_is_thin(decision: &IssueReviewDecision) -> bool {
+    !decision.missing_fields.is_empty() || decision.completeness_score < 0.8
 }
 
 /// 无 LLM 时：按结论形态生成人话（默认跟 Issue 语言）。
@@ -462,20 +488,25 @@ fn narrative_en(
                 decision.primary_type,
                 decision.confidence,
             ));
-            md.push_str(match decision.primary_type {
-                IssueType::Documentation => {
-                    " Could you say which part you need most — configuration, deployment, or a specific scenario?\n"
-                }
-                IssueType::FeatureRequest => {
-                    " Please add the use case and the behaviour you expect so it can be evaluated.\n"
-                }
-                IssueType::Question | IssueType::Support | IssueType::Configuration => {
-                    " Check the README/config docs first; if you’re still stuck, share your config snippet (redacted) and the result you expect.\n"
-                }
-                _ => {
-                    " If you do think it’s a defect, add actual vs expected plus repro steps.\n"
-                }
-            });
+            // 只在**确实缺东西**时追问。cli/cli#293 实测：标题就写着使用场景，
+            // 机器人还是照本宣科要「使用场景和期望行为」——那只会显得没读 Issue。
+            // `missing_fields` / `completeness_score` 早就算好了，用它。
+            if issue_is_thin(decision) {
+                md.push_str(match decision.primary_type {
+                    IssueType::Documentation => {
+                        " Could you say which part you need most — configuration, deployment, or a specific scenario?\n"
+                    }
+                    IssueType::FeatureRequest => {
+                        " Please add the use case and the behaviour you expect so it can be evaluated.\n"
+                    }
+                    IssueType::Question | IssueType::Support | IssueType::Configuration => {
+                        " Check the README/config docs first; if you’re still stuck, share your config snippet (redacted) and the result you expect.\n"
+                    }
+                    _ => {
+                        " If you do think it’s a defect, add actual vs expected plus repro steps.\n"
+                    }
+                });
+            }
         }
         ReplyShape::SpamShort => {
             md.push_str(
@@ -798,20 +829,23 @@ fn narrative_not_a_bug(
         decision.primary_type,
         decision.confidence,
     ));
-    match decision.primary_type {
-        IssueType::FeatureRequest => {
-            md.push_str("方便的话补充一下使用场景和期望的行为，便于评估。\n");
-        }
-        IssueType::Question | IssueType::Support | IssueType::Configuration => {
-            md.push_str("可以先看 README / 配置说明；如果仍卡住，贴一下你的配置片段（记得打码）和期望结果。\n");
-        }
-        IssueType::Documentation => {
-            md.push_str(
-                "为了便于跟进，能否说明你最需要哪部分文档——例如配置、部署，还是某个具体使用场景？\n",
-            );
-        }
-        _ => {
-            md.push_str("如果你认为是缺陷，请补充实际表现与期望行为，以及复现步骤。\n");
+    // 与英文分支同一条判据：信息齐了就别再追问，否则读起来像没看内容。
+    if issue_is_thin(decision) {
+        match decision.primary_type {
+            IssueType::FeatureRequest => {
+                md.push_str("方便的话补充一下使用场景和期望的行为，便于评估。\n");
+            }
+            IssueType::Question | IssueType::Support | IssueType::Configuration => {
+                md.push_str("可以先看 README / 配置说明；如果仍卡住，贴一下你的配置片段（记得打码）和期望结果。\n");
+            }
+            IssueType::Documentation => {
+                md.push_str(
+                    "为了便于跟进，能否说明你最需要哪部分文档——例如配置、部署，还是某个具体使用场景？\n",
+                );
+            }
+            _ => {
+                md.push_str("如果你认为是缺陷，请补充实际表现与期望行为，以及复现步骤。\n");
+            }
         }
     }
     md
@@ -1369,7 +1403,11 @@ fn type_zh(t: IssueType) -> &'static str {
     }
 }
 
-fn missing_zh(f: &str) -> String {
+/// 缺失字段的中文措辞。
+///
+/// `pub(crate)`：facts.rs 曾经复制过一份，两份随后分叉——那边漏了 `affected_scope`，
+/// 中文用户收到的是「还缺 affected_scope」这种内部字段名。措辞只留一份实现。
+pub(crate) fn missing_zh(f: &str) -> String {
     match f {
         "actual_behavior" => "实际现象与完整报错".into(),
         "expected_behavior" => "期望的正确行为".into(),
@@ -1381,18 +1419,39 @@ fn missing_zh(f: &str) -> String {
     }
 }
 
-fn clip(s: &str, n: usize) -> String {
+/// 缺失字段的英文措辞。与 [`missing_zh`] 成对，必须覆盖同一组字段。
+pub(crate) fn missing_en(f: &str) -> String {
+    match f {
+        "actual_behavior" => "what actually happens, with the full error".into(),
+        "expected_behavior" => "what you expected instead".into(),
+        "reproduction_steps" => "steps that reliably reproduce it".into(),
+        "error_or_log" => "the complete error output or log".into(),
+        "environment" => "your OS and the version you are running".into(),
+        "affected_scope" => "the affected versions or components".into(),
+        other => other.replace('_', " "),
+    }
+}
+
+/// 按**字符数**截断并尽量断在句末。
+///
+/// `pub(crate)`：facts.rs 曾经有一份逐字复制的实现，字节切片的 panic 因此要修两遍——
+/// 第一次只修了这里，真实数据（alibaba/arthas）第二轮就崩在了另一份拷贝上。
+pub(crate) fn clip(s: &str, n: usize) -> String {
     let t = s.trim();
     if t.chars().count() <= n {
         return t.to_string();
     }
-    // 尽量在句末断开，别留「…, a…」这种半句话
+    // 尽量在句末断开，别留「…, a…」这种半句话。
+    // 注意：句末标点可能是多字节的（`。`占 3 字节），切点必须落在**该字符之后**，
+    // 不能用 `head[..=i]`——那会切进字符中间直接 panic（中文 Issue 必撞）。
     let head: String = t.chars().take(n).collect();
+    const MARKS: [char; 8] = ['.', '。', '!', '！', '?', '？', ';', '；'];
     let cut = head
-        .rfind(['.', '。', '!', '！', '?', '？', ';', '；'])
-        .filter(|i| *i >= head.len() / 2);
+        .char_indices()
+        .rev()
+        .find(|(i, c)| MARKS.contains(c) && *i >= head.len() / 2);
     match cut {
-        Some(i) => head[..=i].trim_end().to_string(),
+        Some((i, c)) => head[..i + c.len_utf8()].trim_end().to_string(),
         None => format!("{head}…"),
     }
 }
@@ -1400,6 +1459,81 @@ fn clip(s: &str, n: usize) -> String {
 /// 测试辅助：确保确定性说明不会泄漏内部 code。
 #[cfg(test)]
 mod tests {
+
+    /// 线上回归：润色返回的提示被 80 字符上限静默砍空，退回模板——
+    /// 400 条实测里 106 次调用零产出，日志无声。上限是照模板长度定的，
+    /// 而自然语言建议普遍 80–100 字符。
+    #[test]
+    fn polished_tips_are_not_dropped_for_being_a_normal_sentence() {
+        let real = "Paste the full error (including stack trace) and note when it started happening often.\n\
+                    Confirm your app version and try reproducing the issue on the latest release.";
+        let tips = parse_polished_tips(real);
+        assert_eq!(tips.len(), 2, "两条正常长度的建议都该留下: {tips:?}");
+        assert!(tips[0].chars().count() > 80, "第一条就是曾被砍掉的那种长度");
+
+        // 太短的噪声行和整段散文仍然要挡掉
+        let noisy = format!(
+            "ok\n1. {}\n{}",
+            "A useful and specific suggestion here.",
+            "x".repeat(400)
+        );
+        let t2 = parse_polished_tips(&noisy);
+        assert_eq!(t2.len(), 1, "只留下那条正常建议: {t2:?}");
+        assert!(t2[0].starts_with("A useful"), "序号前缀要被剥掉: {t2:?}");
+    }
+
+    /// 线上回归（cli/cli#293 真实输出）：标题写着
+    /// 「Add `install` and `uninstall` commands for `make`」——使用场景就在标题里，
+    /// 机器人却照样回「请补充使用场景和你期望的行为」。这句是**无条件**追加的，
+    /// 不看 `missing_fields`，也不看完整度。维护者看了只会觉得机器人没读 Issue。
+    #[test]
+    fn a_complete_feature_request_is_not_asked_to_supply_what_it_already_has() {
+        let mut d = dec();
+        d.primary_type = IssueType::FeatureRequest;
+        d.verdict = IssueVerdict::NotABug;
+        d.completeness_score = 1.0;
+        d.missing_fields = vec![]; // 什么都不缺
+        d.issue_title = "Add `install` and `uninstall` commands for `make`".into();
+        let n = NormalizedIssue {
+            title: d.issue_title.clone(),
+            symptom: "There is no way to install the built binary without copying it by hand."
+                .into(),
+            ..Default::default()
+        };
+        let out =
+            generate_user_comment_sync(&d, &n, "installing by hand is error prone", None, None);
+        assert!(
+            !out.contains("use case") && !out.contains("使用场景"),
+            "信息齐全时不该再要使用场景:\n{out}"
+        );
+
+        // 反面：正文很单薄、确实缺东西时，该问还是要问。
+        let mut thin = d.clone();
+        thin.completeness_score = 0.3;
+        thin.missing_fields = vec!["description".into()];
+        let out2 = generate_user_comment_sync(&thin, &n, "pls add", None, None);
+        assert!(
+            out2.contains("use case") || out2.contains("使用场景"),
+            "信息不全时应当追问:\n{out2}"
+        );
+    }
+
+    /// 线上回归（alibaba/arthas 全量 triage）：`rfind` 返回的是**匹配字符的起始字节**，
+    /// `head[..=i]` 于是切进了 '。' 的中间，直接 panic——中文 Issue 一撞上就整批崩。
+    #[test]
+    fn clip_does_not_split_a_multibyte_sentence_mark() {
+        // 让截断点正好落在中文句号上
+        let body = "启动时报错。".repeat(60);
+        for n in 1..=200 {
+            let out = clip(&body, n);
+            assert!(body.starts_with(out.trim_end_matches('…')) || out.len() <= body.len());
+        }
+        // 中英混排同样不能崩
+        let mixed = "arthas attach 失败。error: cannot open。请问怎么办？".repeat(10);
+        for n in 1..=120 {
+            let _ = clip(&mixed, n);
+        }
+    }
     use super::*;
     use crate::issue::model::{
         CodeEvidence, DuplicateStatus, IssueReviewDecision, IssueType, IssueVerdict,

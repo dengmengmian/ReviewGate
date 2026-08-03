@@ -824,6 +824,367 @@ fn render_finding(p: &Palette, f: &Finding, num: usize, t: Lang) -> String {
     s
 }
 
+// ───────────────────────── Issue 分诊 ─────────────────────────
+
+/// Issue 分诊的终端输出。与 `review` 共用横幅、分区与宽度，
+/// 让同一个工具的两条链路看起来是一件东西。
+///
+/// 面向人写，不是调试转储：内部枚举名（`LIKELY_BUG`）和字段名一律翻成人话，
+/// 判定链（`reasons`）默认折叠，`--verbose` 才展开。
+pub fn render_issue_review(
+    out: &reviewgate_core::issue::ReviewOutput,
+    verbose: bool,
+    published: bool,
+) -> String {
+    use reviewgate_core::issue::IssueVerdict;
+
+    let p = Palette::with_labels(reviewgate_core::config::SeverityLabels::default());
+    let d = &out.decision;
+    let plan = &out.planned;
+    let mut s = String::new();
+
+    // ── 头部：判定 + 一行关键计数
+    let (icon, verdict_name, code) = match d.verdict {
+        IssueVerdict::ConfirmedBug => ("✖", "确认缺陷", "1;31"),
+        IssueVerdict::LikelyBug => ("●", "疑似缺陷", "1;33"),
+        IssueVerdict::Regression => ("●", "疑似回归", "1;33"),
+        IssueVerdict::Duplicate => ("⧉", "疑似重复", "1;36"),
+        IssueVerdict::AlreadyFixed => ("✓", "可能已修复", "1;32"),
+        IssueVerdict::NeedsInfo => ("?", "信息不足", "1;33"),
+        IssueVerdict::NotABug => ("·", "非缺陷", "1;36"),
+        IssueVerdict::Spam | IssueVerdict::Advertisement => ("✖", "垃圾/广告", "1;31"),
+        IssueVerdict::Unverified => ("?", "判不准", "2"),
+    };
+    s.push_str(&titled_rule(&p, "ReviewGate · Issue"));
+    s.push('\n');
+    s.push_str(&format!(
+        "  {}  {}\n",
+        p.paint(code, &format!("{icon} {verdict_name}")),
+        p.dim(&format!(
+            "#{} · {} {:.0}% · 把握 {:.0}%",
+            d.issue_number,
+            issue_type_name(d.primary_type),
+            d.type_confidence * 100.0,
+            d.confidence * 100.0
+        ))
+    ));
+    let mut facts: Vec<String> = Vec::new();
+    if d.verification_ran {
+        facts.push(format!("代码命中 {}", d.code_hits.len()));
+        let dig = out
+            .technical
+            .as_ref()
+            .map(|t| t.deep_dig.len())
+            .unwrap_or(0);
+        if dig > 0 {
+            facts.push(format!("深挖 {dig}"));
+        }
+    }
+    if let Some(n) = d.duplicate_of {
+        facts.push(format!("关联 #{n}"));
+    }
+    if !d.missing_fields.is_empty() {
+        facts.push(format!("缺 {} 项信息", d.missing_fields.len()));
+    }
+    if !facts.is_empty() {
+        s.push_str(&format!("  {}\n", p.dim(&facts.join(" · "))));
+    }
+    s.push_str(&rule(&p));
+    s.push('\n');
+
+    // ── 证据：能点开核对的代码位置
+    // 只展示**真正对上报错文本**的锚点。检索命中动辄十几处，直接 take(3)
+    // 会把恰好含同名标识符的无关行也摆出来，反而拉低整条输出的可信度。
+    let sigs: Vec<&str> = out
+        .normalized
+        .error_signatures
+        .iter()
+        .map(|x| x.as_str())
+        .filter(|x| x.chars().count() >= 8)
+        .collect();
+    let anchors: Vec<&reviewgate_core::issue::CodeEvidence> = d
+        .code_hits
+        .iter()
+        .filter(|h| sigs.iter().any(|sig| h.snippet.contains(sig)))
+        .take(3)
+        .collect();
+    if !anchors.is_empty() {
+        s.push_str(&format!("\n{}\n\n", section(&p, "证据", "36")));
+        for h in anchors {
+            s.push_str(&format!(
+                "  {}\n",
+                p.bold(&format!("{}:{}", h.path, h.line))
+            ));
+            let snip = truncate_to_width(h.snippet.trim(), MSG_WIDTH - 6);
+            s.push_str(&format!("     {}\n", p.dim(&snip)));
+        }
+    } else if d.verification_ran && !d.code_hits.is_empty() {
+        s.push_str(&format!("\n{}\n\n", section(&p, "证据", "36")));
+        s.push_str(&format!(
+            "  {}\n",
+            p.dim(&format!(
+                "检索到 {} 处相关代码，但没有一处与报错文本对上",
+                d.code_hits.len()
+            ))
+        ));
+    }
+
+    // ── 计划动作：写操作一眼看全
+    s.push_str(&format!("\n{}\n\n", section(&p, "计划动作", "33")));
+    let comment_desc = if !plan.post_or_update_comment {
+        p.dim("不发言")
+    } else if plan.needs_human_notice {
+        "移交给人（不下结论）".to_string()
+    } else {
+        "发布 / 更新机器人评论".to_string()
+    };
+    s.push_str(&format!("  {}  {comment_desc}\n", p.dim("评论")));
+    if !plan.labels_to_add.is_empty() {
+        s.push_str(&format!(
+            "  {}  {}\n",
+            p.dim("标签"),
+            plan.labels_to_add.join(", ")
+        ));
+    }
+    if let Some(login) = &plan.assign_to {
+        s.push_str(&format!("  {}  @{login}\n", p.dim("指派")));
+    }
+    if plan.close {
+        s.push_str(&format!("  {}  {}\n", p.dim("关闭"), p.paint("1;31", "是")));
+    }
+    for r in &plan.reasons_blocked {
+        s.push_str(&format!(
+            "  {}  {}\n",
+            p.dim("拦下"),
+            p.dim(&blocked_reason_name(r))
+        ));
+    }
+
+    // ── 评论预览：原样要发出去的内容
+    if !d.suggested_comment.trim().is_empty() {
+        s.push_str(&format!("\n{}\n\n", section(&p, "评论预览", "32")));
+        let body = d
+            .suggested_comment
+            .lines()
+            .skip_while(|l| l.starts_with("<!-- reviewgate") || l.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+        for line in body.trim_end().lines() {
+            s.push_str(&format!("  {line}\n"));
+        }
+    }
+
+    if !published {
+        s.push_str(&format!(
+            "\n  {}\n",
+            p.dim("未发布——加 --publish 才会发出这条评论")
+        ));
+    }
+
+    if verbose && !d.reasons.is_empty() {
+        s.push_str(&format!("\n{}\n\n", section(&p, "判定依据", "2")));
+        for r in &d.reasons {
+            s.push_str(&format!("  {}\n", p.dim(r)));
+        }
+    }
+    s
+}
+
+fn issue_type_name(t: reviewgate_core::issue::IssueType) -> &'static str {
+    use reviewgate_core::issue::IssueType as T;
+    match t {
+        T::Bug => "缺陷",
+        T::FeatureRequest => "需求",
+        T::Question => "提问",
+        T::Documentation => "文档",
+        T::Configuration => "配置",
+        T::Support => "支持",
+        T::Security => "安全",
+        T::Performance => "性能",
+        T::Compatibility => "兼容性",
+        T::Spam => "垃圾信息",
+        T::Advertisement => "广告",
+        T::Abuse => "辱骂",
+        T::Unknown => "未定",
+    }
+}
+
+/// 把 `low_confidence:0.40<0.50` 这类内部原因翻成人话。
+fn blocked_reason_name(raw: &str) -> String {
+    if let Some(rest) = raw.strip_prefix("low_confidence:") {
+        return format!("把握不足（{rest}），未下结论");
+    }
+    match raw {
+        "comment_disabled" => "评论已在配置中关闭".into(),
+        "add_labels_disabled" => "打标签已在配置中关闭".into(),
+        "no_triage_owner" => "未配置处理人，静默跳过".into(),
+        "auto_action_not_allowed" => "证据不足以自动执行".into(),
+        "close_disabled_by_policy" => "关闭已在配置中关闭".into(),
+        other => other.to_string(),
+    }
+}
+
+/// Issue 分诊的 JSON 输出。与文本是同一份信息的两种呈现：文本上看得到的字段
+/// 这里都能取到，另外补上文本里折叠掉的判定链——机器不需要为了可读性省略。
+pub fn render_issue_review_json(
+    out: &reviewgate_core::issue::ReviewOutput,
+    published: bool,
+) -> anyhow::Result<String> {
+    use serde::Serialize;
+
+    #[derive(Serialize)]
+    struct Scored {
+        name: String,
+        confidence: f32,
+    }
+    #[derive(Serialize)]
+    struct Completeness {
+        score: f32,
+        missing: Vec<String>,
+    }
+    #[derive(Serialize)]
+    struct Safety {
+        spam: f32,
+        advertisement: f32,
+        abuse: f32,
+        prompt_injection: f32,
+    }
+    #[derive(Serialize)]
+    struct Duplicate {
+        /// 用枚举自身的 serde 规则（snake_case），不要 Debug 格式化。
+        status: reviewgate_core::issue::DuplicateStatus,
+        confidence: f32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        of: Option<u64>,
+        candidates: usize,
+    }
+    #[derive(Serialize)]
+    struct Anchor<'a> {
+        path: &'a str,
+        line: u32,
+        snippet: &'a str,
+    }
+    #[derive(Serialize)]
+    struct Verification<'a> {
+        ran: bool,
+        verdict: String,
+        confidence: f32,
+        code_hits: usize,
+        deep_dig: usize,
+        anchors: Vec<Anchor<'a>>,
+        paths: &'a [String],
+        fix_prs: &'a [String],
+    }
+    #[derive(Serialize)]
+    struct Planned<'a> {
+        comment: bool,
+        /// 这条评论是「交给人看」而非「给出结论」。
+        hands_off_to_human: bool,
+        labels: &'a [String],
+        close: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        close_reason: Option<&'a str>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        assign_to: Option<&'a str>,
+        /// 原始拦截原因（可编程判断），如 `low_confidence:0.40<0.50`。
+        blocked: &'a [String],
+    }
+    #[derive(Serialize)]
+    struct Envelope<'a> {
+        issue_number: u64,
+        r#type: Scored,
+        verdict: Scored,
+        completeness: Completeness,
+        safety: Safety,
+        duplicate: Duplicate,
+        verification: Verification<'a>,
+        planned: Planned<'a>,
+        /// 原样要发出去的评论正文（含 bot marker）。
+        comment: &'a str,
+        /// 本次运行是否真的发布了。false = 仅预览。
+        published: bool,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        misrouted_repos: Vec<&'a str>,
+        reasons: &'a [String],
+    }
+
+    let d = &out.decision;
+    let plan = &out.planned;
+    let sigs: Vec<&str> = out
+        .normalized
+        .error_signatures
+        .iter()
+        .map(|x| x.as_str())
+        .filter(|x| x.chars().count() >= 8)
+        .collect();
+    let env = Envelope {
+        issue_number: d.issue_number,
+        r#type: Scored {
+            name: d.primary_type.as_str().to_string(),
+            confidence: d.type_confidence,
+        },
+        verdict: Scored {
+            name: d.verdict.as_str().to_ascii_lowercase(),
+            confidence: d.confidence,
+        },
+        completeness: Completeness {
+            score: d.completeness_score,
+            missing: d.missing_fields.clone(),
+        },
+        safety: Safety {
+            spam: d.spam_score,
+            advertisement: d.advertisement_score,
+            abuse: d.abuse_score,
+            prompt_injection: d.prompt_injection_score,
+        },
+        duplicate: Duplicate {
+            status: d.duplicate_status,
+            confidence: d.duplicate_confidence,
+            of: d.duplicate_of,
+            candidates: d.duplicate_candidates.len(),
+        },
+        verification: Verification {
+            ran: d.verification_ran,
+            verdict: d.technical_verdict.as_str().to_ascii_lowercase(),
+            confidence: d.technical_confidence,
+            code_hits: d.code_hits.len(),
+            deep_dig: out
+                .technical
+                .as_ref()
+                .map(|t| t.deep_dig.len())
+                .unwrap_or(0),
+            // 与文本一致：只列真正对上报错文本的锚点
+            anchors: d
+                .code_hits
+                .iter()
+                .filter(|h| sigs.iter().any(|sig| h.snippet.contains(sig)))
+                .take(3)
+                .map(|h| Anchor {
+                    path: &h.path,
+                    line: h.line,
+                    snippet: h.snippet.trim(),
+                })
+                .collect(),
+            paths: &d.code_paths,
+            fix_prs: &d.fix_prs,
+        },
+        planned: Planned {
+            comment: plan.post_or_update_comment,
+            hands_off_to_human: plan.needs_human_notice,
+            labels: &plan.labels_to_add,
+            close: plan.close,
+            close_reason: plan.close_reason.as_deref(),
+            assign_to: plan.assign_to.as_deref(),
+            blocked: &plan.reasons_blocked,
+        },
+        comment: &d.suggested_comment,
+        published,
+        misrouted_repos: d.misrouted_repos.iter().map(|x| x.as_str()).collect(),
+        reasons: &d.reasons,
+    };
+    Ok(serde_json::to_string_pretty(&env)?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1374,5 +1735,144 @@ mod tests {
         assert_eq!(truncate_to_width("一二", 4), "一二");
         // 不会把多字节字符切成非法边界。
         assert_eq!(truncate_to_width("一", 1), "");
+    }
+
+    /// Issue 分诊的终端输出要和 `review` 一套视觉：同样的横幅、分区、宽度。
+    /// 这里只钉住结构与「不泄漏内部字段名」，配色留给 Palette 自己的测试。
+    #[test]
+    fn issue_review_render_has_the_same_shape_as_review() {
+        use reviewgate_core::issue::{
+            ActionPolicy, IssueReviewDecision, IssueType, IssueVerdict, NormalizedIssue,
+            PlannedActions, ReviewOutput,
+        };
+        let _ = ActionPolicy::default();
+        let decision = IssueReviewDecision {
+            issue_number: 1,
+            primary_type: IssueType::Bug,
+            type_confidence: 0.95,
+            verdict: IssueVerdict::LikelyBug,
+            confidence: 0.95,
+            verification_ran: true,
+            code_hits: vec![reviewgate_core::issue::CodeEvidence {
+                path: "osscluster.go".into(),
+                line: 39,
+                snippet: "errWatchCrosslot = errors.New(\"redis: Watch requires all keys\")".into(),
+            }],
+            suggested_comment: "你好，谢谢反馈。\n\n这是评论正文。".into(),
+            ..Default::default()
+        };
+        let planned = PlannedActions {
+            post_or_update_comment: true,
+            labels_to_add: vec!["bug".into()],
+            close: false,
+            close_reason: None,
+            reasons_blocked: vec![],
+            needs_human_notice: false,
+            assign_to: None,
+        };
+        let out = ReviewOutput {
+            decision,
+            // 有错误签名才会有精确锚点——没签名时证据区会明说「没对上」
+            normalized: NormalizedIssue {
+                error_signatures: vec!["redis: Watch requires all keys".into()],
+                ..Default::default()
+            },
+            content_hash: String::new(),
+            comments_hash: String::new(),
+            planned,
+            technical: None,
+        };
+        let s = render_issue_review(&out, false, false);
+
+        assert!(s.contains("━━"), "缺少横幅分隔线: {s}");
+        assert!(s.contains("#1"), "缺少 Issue 号: {s}");
+        assert!(s.contains("osscluster.go:39"), "证据要能点开核对: {s}");
+        assert!(s.contains("这是评论正文。"), "要有评论预览: {s}");
+        // 内部枚举名不该出现在给人看的输出里
+        assert!(!s.contains("LIKELY_BUG"), "内部裁决名泄漏: {s}");
+        assert!(!s.contains("post_or_update_comment"), "内部字段名泄漏: {s}");
+    }
+
+    /// 默认不打印 reasons 那一长串判定链，`--verbose` 才展开。
+    #[test]
+    fn issue_review_reasons_are_behind_verbose() {
+        use reviewgate_core::issue::{
+            IssueReviewDecision, NormalizedIssue, PlannedActions, ReviewOutput,
+        };
+        let decision = IssueReviewDecision {
+            issue_number: 7,
+            reasons: vec!["error_language".into(), "code_hits=18".into()],
+            suggested_comment: "正文".into(),
+            ..Default::default()
+        };
+        let out = ReviewOutput {
+            decision,
+            normalized: NormalizedIssue::default(),
+            content_hash: String::new(),
+            comments_hash: String::new(),
+            planned: PlannedActions {
+                post_or_update_comment: true,
+                labels_to_add: vec![],
+                close: false,
+                close_reason: None,
+                reasons_blocked: vec![],
+                needs_human_notice: false,
+                assign_to: None,
+            },
+            technical: None,
+        };
+        assert!(!render_issue_review(&out, false, false).contains("error_language"));
+        assert!(render_issue_review(&out, true, false).contains("error_language"));
+    }
+
+    /// JSON 与文本必须是同一份信息的两种呈现——文本上看得到的，JSON 里都要能取到，
+    /// 否则脚本化使用的人会以为「JSON 没有就是没发生」。
+    #[test]
+    fn issue_review_json_carries_what_the_text_shows() {
+        use reviewgate_core::issue::{
+            IssueReviewDecision, IssueType, IssueVerdict, NormalizedIssue, PlannedActions,
+            ReviewOutput,
+        };
+        let decision = IssueReviewDecision {
+            issue_number: 11,
+            primary_type: IssueType::Unknown,
+            type_confidence: 0.30,
+            verdict: IssueVerdict::Unverified,
+            confidence: 0.40,
+            reasons: vec!["no_strong_signal".into()],
+            suggested_comment: "你好，谢谢反馈。\n\n这条我判断不了。".into(),
+            ..Default::default()
+        };
+        let planned = PlannedActions {
+            post_or_update_comment: true,
+            labels_to_add: vec!["needs-triage".into()],
+            close: false,
+            close_reason: None,
+            reasons_blocked: vec!["low_confidence:0.40<0.50".into()],
+            needs_human_notice: true,
+            assign_to: Some("alice".into()),
+        };
+        let out = ReviewOutput {
+            decision,
+            normalized: NormalizedIssue::default(),
+            content_hash: String::new(),
+            comments_hash: String::new(),
+            planned,
+            technical: None,
+        };
+        let js = render_issue_review_json(&out, false).expect("json");
+        let v: serde_json::Value = serde_json::from_str(&js).expect("parseable");
+
+        assert_eq!(v["issue_number"], 11);
+        assert_eq!(v["verdict"]["name"], "unverified");
+        assert_eq!(v["type"]["name"], "unknown");
+        assert_eq!(v["planned"]["assign_to"], "alice");
+        assert_eq!(v["planned"]["hands_off_to_human"], true);
+        assert_eq!(v["published"], false);
+        // 文本里被 --verbose 折叠的判定链，JSON 始终带上（机器不需要折叠）
+        assert_eq!(v["reasons"][0], "no_strong_signal");
+        // 被拦下的原因要能编程判断，不能只有给人看的那句话
+        assert_eq!(v["planned"]["blocked"][0], "low_confidence:0.40<0.50");
+        assert!(v["comment"].as_str().unwrap().contains("判断不了"));
     }
 }

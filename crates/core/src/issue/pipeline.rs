@@ -1,7 +1,7 @@
 //! Issue triage 管线：normalize → safety → classify → completeness → duplicate → judge → comment。
 
 use super::action::{plan_actions, ActionPolicy, PlannedActions};
-use super::classify::classify_heuristic;
+use super::classify::{classify_heuristic, classify_with_llm, Classification};
 use super::completeness::check_completeness;
 use super::duplicate::find_duplicates;
 use super::embedding::{Embedder, LocalEmbedder};
@@ -72,10 +72,26 @@ pub fn triage_stored(
     cfg: &IssueReviewConfig,
     embedder: &dyn Embedder,
 ) -> Result<ReviewOutput> {
+    triage_stored_with_class(store, issue, comments, cfg, embedder, None)
+}
+
+/// 同上，但允许外层传入已经算好的分类结果。
+///
+/// 分类是唯一需要网络的一步（低置信时问模型），把它留在异步的调用方算完再传进来，
+/// 这条主管线就能保持同步、可离线、好测。`None` = 用纯规则。
+pub fn triage_stored_with_class(
+    store: &IssueStore,
+    issue: &StoredIssue,
+    comments: &[(u64, String, String)],
+    cfg: &IssueReviewConfig,
+    embedder: &dyn Embedder,
+    classification: Option<Classification>,
+) -> Result<ReviewOutput> {
     let body = &issue.body_raw;
     let normalized = normalize_issue(&issue.title, body);
     let safety = score_safety(&issue.title, body);
-    let classification = classify_heuristic(&issue.title, body, &safety);
+    let classification =
+        classification.unwrap_or_else(|| classify_heuristic(&issue.title, body, &safety));
     let completeness = check_completeness(classification.primary_type, &normalized);
     let duplicate = find_duplicates(
         store,
@@ -285,6 +301,8 @@ pub async fn sync_from_platform(
     let mut page = 1u32;
     let mut synced: Vec<u64> = Vec::new();
     let per_page = 50u32;
+    // 是否因为 max_issues 提前收手（而不是"平台已经没有更多了"）。
+    let mut capped = false;
     loop {
         let batch = platform
             .list_issues_page(page, per_page, since)
@@ -294,7 +312,21 @@ pub async fn sync_from_platform(
             break;
         }
         for raw in &batch {
+            // PR 在这里排除，而不是在适配器里——上面的翻页判据要看到平台返回的**真实页长**，
+            // 否则一页里 PR 一多就会被当成"没有下一页"而提前收手。
+            if raw.pull_request.is_some() {
+                continue;
+            }
+            // 已入库且平台侧没变过的跳过：不占本轮配额，也不再为它拉一次评论。
+            // 少了这一步，限量 + 游标不前进会让每轮都重拉同一批，积压永远消化不掉。
+            if store
+                .get_issue(raw.number)?
+                .is_some_and(|s| s.source_updated_at == raw.updated_at)
+            {
+                continue;
+            }
             if synced.len() >= max_issues {
+                capped = true;
                 break;
             }
             // 轻量：同步时拉评论写入 comments_hash；后续 review 再分析
@@ -304,9 +336,19 @@ pub async fn sync_from_platform(
             synced.push(raw.number);
         }
         if batch.len() < per_page as usize || synced.len() >= max_issues {
+            capped = capped || batch.len() >= per_page as usize;
             break;
         }
         page += 1;
+    }
+    // 还有没同步完的就**不能推进游标**：游标一旦跳到"现在"，没拉到的那些永远落在
+    // 游标之后，再也不会被拉回来。留在原处，下一轮继续从同一位置拉。
+    if capped {
+        eprintln!(
+            "  [issue] synced {} issue(s) (capped); leaving the sync cursor in place so the rest are picked up next round.",
+            synced.len()
+        );
+        return Ok(synced);
     }
     // GitHub Issues API `since` 要求 ISO8601（RFC3339 / UTC）
     let cursor = iso_now();
@@ -355,8 +397,24 @@ pub async fn review_issue_with_llm(
         .iter()
         .map(|c| (c.id, c.updated_at.clone(), c.body.clone()))
         .collect();
-    let mut out = triage_stored(store, &stored, &cmt_tuples, cfg, embedder)?;
-    // 有 LLM 时重写用户向正文；无则保留确定性人话
+    // 分类先行：规则没把握时问一次模型。它是整条链路的地基——
+    // primary_type 决定话术、裁决、要不要跑验证、@ 谁。
+    let class = classify_with_llm(
+        llm,
+        &stored.title,
+        &stored.body_raw,
+        &score_safety(&stored.title, &stored.body_raw),
+    )
+    .await;
+    let mut out =
+        triage_stored_with_class(store, &stored, &cmt_tuples, cfg, embedder, Some(class))?;
+    // 有 LLM 时重写用户向正文；无则保留确定性人话。
+    //
+    // **发不出去就不润色**：`suggest` 模式（默认）与 `watch` 长跑下这条评论根本不会
+    // 发布，为它调一次模型是纯浪费——实测每条 issue 因此多花约 40 秒和一次调用，
+    // 而产物没有任何人会看到。分类兜底不受影响，它在上面已经跑过了。
+    // 不按「会不会发布」来跳过润色：suggest 模式下这条评论正是要给人看的**最终产物**，
+    // 跳过就没法验证机器人到底会说什么。省调用是另一个问题，别拿可观测性换。
     if llm.is_some() {
         finalize_comment(&mut out, &stored.body_raw, cfg, llm).await;
         store.save_review(&out.decision, &out.content_hash, &out.comments_hash, None)?;
@@ -421,7 +479,9 @@ pub async fn publish_decision(
         let body = &out.decision.suggested_comment;
         let existing = platform.find_bot_comment(out.decision.issue_number).await?;
         if let Some(id) = existing {
-            platform.update_comment(&id, body).await?;
+            platform
+                .update_comment(out.decision.issue_number, &id, body)
+                .await?;
             comment_id = id;
             updated = true;
         } else {
@@ -649,7 +709,15 @@ mod tests {
         let hits = store.fts_search("access violation", 10).unwrap();
         assert!(!hits.is_empty(), "{hits:?}");
 
-        let cfg = IssueReviewConfig::default();
+        // 这条用例验的是发布链路（建评论 → 幂等更新），所以要显式开 publish 模式。
+        // 默认是 suggest（只分析不发言）——那条语义由 action.rs 的用例覆盖。
+        let cfg = IssueReviewConfig {
+            actions: crate::issue::ActionPolicy {
+                publish: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         let emb = LocalEmbedder;
         let out = review_issue(&store, &platform, 2, &cfg, &emb)
             .await
@@ -681,6 +749,145 @@ mod tests {
         assert!(!p2.created);
         assert_eq!(platform.comment_count(2), 1);
         assert!(!out.planned.close);
+    }
+
+    /// 回归：一轮只同步得下一部分时，游标不能跳到"现在"——否则没同步到的那些
+    /// 永远落在游标之后，再也不会被拉回来（静默丢单）。
+    #[tokio::test]
+    async fn sync_cursor_does_not_advance_when_the_batch_was_capped() {
+        let store = IssueStore::open_in_memory("acme/app").unwrap();
+        let platform = FixturePlatform::new();
+        for n in 1..=5 {
+            platform.seed_issue(raw(n, &format!("issue {n}"), "body"));
+        }
+        store.set_sync_cursor("2024-01-01T00:00:00Z").unwrap();
+
+        let synced = sync_from_platform(&store, &platform, 2, None, false)
+            .await
+            .unwrap();
+        assert_eq!(synced.len(), 2, "本轮只处理 2 条");
+        assert_eq!(
+            store.get_sync_cursor().unwrap().as_deref(),
+            Some("2024-01-01T00:00:00Z"),
+            "还有没同步的，游标必须原地不动"
+        );
+
+        // 全部同步得下时才前进。
+        let _ = sync_from_platform(&store, &platform, 100, None, false)
+            .await
+            .unwrap();
+        assert_ne!(
+            store.get_sync_cursor().unwrap().as_deref(),
+            Some("2024-01-01T00:00:00Z"),
+            "全部同步完，游标应前进"
+        );
+    }
+
+    /// 回归：游标不动 + 每轮限量，如果每轮都从头重拉同一批，积压永远消化不掉。
+    /// 已经入库且未变更的要跳过，配额留给还没同步过的。
+    #[tokio::test]
+    async fn capped_sync_makes_progress_across_rounds() {
+        let store = IssueStore::open_in_memory("acme/app").unwrap();
+        let platform = FixturePlatform::new();
+        for n in 1..=3 {
+            platform.seed_issue(raw(n, &format!("issue {n}"), "body"));
+        }
+
+        assert_eq!(
+            sync_from_platform(&store, &platform, 1, None, false)
+                .await
+                .unwrap(),
+            vec![1]
+        );
+        assert_eq!(
+            sync_from_platform(&store, &platform, 1, None, false)
+                .await
+                .unwrap(),
+            vec![2],
+            "第二轮必须往前走，而不是又拉一遍 #1"
+        );
+        assert_eq!(
+            sync_from_platform(&store, &platform, 1, None, false)
+                .await
+                .unwrap(),
+            vec![3]
+        );
+        assert_eq!(store.list_issue_numbers().unwrap(), vec![1, 2, 3]);
+    }
+
+    /// 回归（cli/cli 真机）：GitHub 的 `/issues` 接口把 PR 也算进来，适配器过滤掉 PR 后
+    /// 返回的页比 `per_page` 短，翻页判据把"这一页 PR 多"误读成"没有下一页"——
+    /// PR 活跃的仓库上 `issue init --max 10000` 只索引得到第一页，查重索引直接残废。
+    #[tokio::test]
+    async fn pagination_is_not_stopped_by_a_page_full_of_pull_requests() {
+        let store = IssueStore::open_in_memory("acme/app").unwrap();
+        let platform = FixturePlatform::new();
+        // 60 条一半是 PR：一页 50 条里只有 25 条真 Issue，凑够 30 条必须读到第二页。
+        for n in 1..=60u64 {
+            let mut r = raw(n, &format!("item {n}"), "body");
+            if n % 2 == 0 {
+                r.pull_request = Some(serde_json::json!({"url": "https://api/pulls/1"}));
+            }
+            platform.seed_issue(r);
+        }
+
+        let synced = sync_from_platform(&store, &platform, 30, None, false)
+            .await
+            .unwrap();
+        assert_eq!(synced.len(), 30, "PR 占位不该让同步提前收手");
+        assert!(
+            synced.iter().all(|n| n % 2 == 1),
+            "PR 不该进 Issue 索引：{synced:?}"
+        );
+    }
+
+    /// 平台侧内容变了的，即使已经入库也要重新同步——跳过只对"没变过的"成立。
+    #[tokio::test]
+    async fn changed_issues_are_resynced_even_when_already_stored() {
+        let store = IssueStore::open_in_memory("acme/app").unwrap();
+        let platform = FixturePlatform::new();
+        platform.seed_issue(raw(1, "issue 1", "body"));
+        assert_eq!(
+            sync_from_platform(&store, &platform, 10, None, false)
+                .await
+                .unwrap(),
+            vec![1]
+        );
+
+        let mut changed = raw(1, "issue 1 edited", "body edited");
+        changed.updated_at = "2024-06-01T00:00:00Z".into();
+        platform.seed_issue(changed);
+        assert_eq!(
+            sync_from_platform(&store, &platform, 10, None, false)
+                .await
+                .unwrap(),
+            vec![1],
+            "updated_at 变了就要重新入库"
+        );
+        assert_eq!(store.get_issue(1).unwrap().unwrap().title, "issue 1 edited");
+    }
+
+    /// 分批 triage 的前提：能从库里挑出还没审过的。
+    #[tokio::test]
+    async fn untriaged_issues_are_listed_oldest_first_and_capped() {
+        let store = IssueStore::open_in_memory("acme/app").unwrap();
+        let platform = FixturePlatform::new();
+        for n in 1..=4 {
+            platform.seed_issue(raw(n, &format!("issue {n}"), "body"));
+        }
+        sync_from_platform(&store, &platform, 100, None, false)
+            .await
+            .unwrap();
+        assert_eq!(store.untriaged_issues(10).unwrap(), vec![1, 2, 3, 4]);
+        assert_eq!(store.untriaged_issues(2).unwrap(), vec![1, 2]);
+
+        // 审过的不再出现，剩下的下一轮继续。
+        let cfg = IssueReviewConfig::default();
+        let emb = LocalEmbedder;
+        review_issue(&store, &platform, 1, &cfg, &emb)
+            .await
+            .unwrap();
+        assert_eq!(store.untriaged_issues(10).unwrap(), vec![2, 3, 4]);
     }
 
     #[tokio::test]
