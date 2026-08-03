@@ -72,6 +72,9 @@ fn tiny_budget_config() -> Config {
         providers,
         gate: GateConfig::default(), // fail_on_incomplete 默认 true
         business: BusinessConfig::default(),
+        issue_review: Default::default(),
+        exclude: Default::default(),
+        severity_labels: Vec::new(),
     }
 }
 

@@ -6,6 +6,42 @@ Changes are listed in Chinese first, then English.
 
 ## [Unreleased]
 
+### Added
+- 新增 **Issue 分诊**（`reviewgate issue …`）：帮维护者过一遍提上来的 Issue——分类（缺陷/需求/文档/提问/安全/广告，中英文都认）、查重（全文检索 + 错误签名 + 语义向量）、可选的代码验证（拉本地仓库把报错对到源码行、展开所在函数、找该文件的历史修复），最后写成一条按类型措辞的回复。安全报告不会被要求"贴日志、升级重试"，文档诉求不会被问"复现步骤"。支持 GitHub / GitLab / Gitee / AtomGit。
+  Added **issue triage** (`reviewgate issue …`): a first pass over incoming issues — classification (defect / request / docs / question / security / advertisement, in English and Chinese), duplicate detection (full-text, error signature, semantic vector), optional verification against a local checkout (matching the reported error to a source line, expanding the enclosing function, finding prior fixes to that file), and a reply worded per issue type. Vulnerability reports are never asked to "paste logs and retry on the latest version"; documentation requests are never asked for reproduction steps. Works with GitHub, GitLab, Gitee, and AtomGit.
+- Issue 分诊的**人工兜底**：结论没把握时不发结论、不关单子；配了处理人就改发一条移交评论、打 `needs-triage` 标签并指派给他。没配处理人时被拦下的单子也不会消失，`reviewgate issue stats --gated` 能列出有哪几条在等人接手。
+  **Human fallback** for issue triage: when confidence is low nothing is concluded and nothing is closed; with a triage owner configured it posts a hand-off comment, adds `needs-triage`, and assigns the issue. Gated issues are never lost — `reviewgate issue stats --gated` lists exactly which ones are waiting for a person.
+- Issue 分诊支持 **Webhook 与常驻模式**：`reviewgate serve` 收事件入队，`reviewgate issue watch` 轮询新单，`reviewgate daemon --serve` 两者一起跑。
+  **Webhook and long-running modes** for issue triage: `reviewgate serve` queues incoming events, `reviewgate issue watch` polls for new issues, and `reviewgate daemon --serve` runs both together.
+- Issue 分诊的写操作**默认全关**：打标签、指派、关闭都要显式开启；`close_spam` 可以只自动关广告，不必为此打开能关任意 Issue 的总开关。
+  Every **write action is off by default** in issue triage: labels, assignment, and closing must each be enabled; `close_spam` closes advertisements only, so you don't have to enable the switch that can close anything.
+- 新增**审查范围排除**：内置默认跳过 lock 文件、vendored 依赖、生成代码、压缩产物与二进制；可用仓库根 `.reviewgateignore`（gitignore 语法）或配置 `[exclude] patterns` 增删。被排除的文件会带原因出现在文本报告、JSON `excluded` 与 PR 评论里；全部文件被排除时明说"全被排除"，不会伪装成"没有改动"。
+  Added **review-scope exclusion**: lock files, vendored dependencies, generated code, bundles, and binaries are skipped by default; extend or override via a repo-root `.reviewgateignore` (gitignore syntax) or `[exclude] patterns`. Excluded files are reported with their reason in the text report, in JSON (`excluded`), and in the PR comment; if everything is excluded the report says so instead of claiming "no changes".
+- 新增 **`reviewgate findings list/show/resolve`**：每次审查把结果落进 `.reviewgate/cache/findings.json`，agent 可逐条读取、标记已处理，不必为下一条问题重跑整轮审查。输出始终带 `decision` 与 `incomplete`，空列表不会被误读成"没问题"。
+  Added **`reviewgate findings list/show/resolve`**: each review saves its results to `.reviewgate/cache/findings.json` so an agent can work through issues one by one instead of re-running the whole review. Output always carries `decision` and `incomplete`, so an empty list is never mistaken for "all clear".
+- `--comment` 本地可用：CI 变量解析不出上下文时，回退到已认证的 `gh` / `glab` 取仓库、PR/MR 号与 token，本地不必再单独配一份 token。CI 行为不变（环境变量始终优先）。
+  `--comment` now works locally: when CI variables don't resolve a context, it falls back to your authenticated `gh` / `glab` for repo, PR/MR number, and token. CI behaviour is unchanged (environment variables always win).
+  安全约束：只把 token 发给 `gh`/`glab` **确实登录过**的主机，且取 token 时按主机名精确指定，避免多主机登录下拿错 token 或被伪造远端诱导外发。
+  Security constraints: the token is only sent to hosts `gh`/`glab` is actually authenticated to, and it is looked up per hostname, so a crafted remote or a multi-host login cannot redirect it.
+- 新增**严重度标签自定义**（`[[severity_labels]]`）：改显示名与配色，并可写下本项目对每档的定义——定义会注入审查 prompt，直接影响模型怎么分级。
+  Added **custom severity labels** (`[[severity_labels]]`): change the display name and color, and define what each level means for your project — the definition is injected into the review prompt and steers how the model grades.
+- 新增 `--since-last-review`：只审上次审查之后新增的部分（新提交 + 未提交编辑）。找不到上次审查、上次没记基准、或基准提交已被 rebase/force-push 冲掉时**直接报错**，绝不悄悄退回全量或更小范围。
+  Added `--since-last-review`: review only what changed since the previous review (new commits + uncommitted edits). If there is no previous review, no recorded base, or the base commit is gone (rebase/force-push), it **errors out** instead of silently falling back to a different scope.
+- 新增 `--with-pr-discussion`：把 PR/MR 上已有的人类评审讨论作为上下文喂给审查，避免把别人提过的点当新发现重复报（目前支持 GitHub）。只做上下文注入，不会因此隐藏任何发现。
+  Added `--with-pr-discussion`: feeds the PR/MR's existing human review discussion into the review as context so already-raised points aren't re-reported (GitHub for now). Context injection only — no finding is ever hidden because of it.
+- 报告、JSON（`scope`）与 PR 评论现在都写明**本次审查覆盖的范围**（如 `main...HEAD`、`since last review (…)`）——增量审查的 PASS 不该被读成整个 PR 通过。
+  The report, JSON (`scope`), and PR comment now state **what range was reviewed** (e.g. `main...HEAD`, `since last review (…)`) — a PASS on an incremental review must not read as a PASS on the whole PR.
+- `reviewgate findings` 支持短序号：`findings show 3` / `findings resolve 3`，对话里引用比 12 位指纹方便（指纹仍可用，且跨运行稳定）。
+  `reviewgate findings` accepts short sequence numbers: `findings show 3` / `findings resolve 3` — easier to reference in conversation than a 12-char fingerprint (fingerprints still work and remain stable across runs).
+
+### Fixed
+- PR/MR 摘要评论此前散文部分写死中文，与终端报告跟随 `REVIEWGATE_OUTPUT_LANGUAGE` 的约定不一致；现已统一（维度名、severity、路径等技术标识保持英文）。
+  The PR/MR summary comment had its prose hardcoded in Chinese while the terminal report follows `REVIEWGATE_OUTPUT_LANGUAGE`; both now follow the same setting (dimension names, severities, and paths stay English).
+
+### Changed
+- `reviewgate upgrade` 支持指定版本（`reviewgate upgrade 0.8.0`）以回退到已知好版本；若二进制由 Homebrew / Cargo / mise / Nix 安装则不再直接覆盖，改为提示用对应包管理器升级（`--force` 可强制）。
+  `reviewgate upgrade` accepts a version (`reviewgate upgrade 0.8.0`) for rolling back to a known-good build, and no longer overwrites binaries installed by Homebrew / Cargo / mise / Nix — it points you at that package manager instead (`--force` overrides).
+
 ## [0.9.0] - 2026-07-30
 
 ### Added

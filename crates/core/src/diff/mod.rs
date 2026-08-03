@@ -3,10 +3,12 @@
 //! 支持三种范围模式（Workspace/Commit/Range），统一解析成 [`Diff`]。
 //! Workspace 模式额外把未跟踪文件合成为「全新增」diff。
 
+pub mod exclude;
 pub mod git;
 mod model;
 mod parse;
 
+pub use exclude::{ExcludeReason, ExcludedFile, Excluder};
 pub use model::{Diff, DiffMode, FileDiff, FileStatus, Hunk, Line, LineKind};
 
 use anyhow::Result;
@@ -23,14 +25,16 @@ pub async fn collect(mode: &DiffMode) -> Result<Diff> {
             let spec = format!("{from}...{to}");
             git::git(&["diff", CONTEXT, "-M", &spec]).await?
         }
+        // 两点式（非 `...`）：<sha> 到工作区，覆盖新提交 + 未提交编辑。
+        DiffMode::Since(sha) => git::git(&["diff", CONTEXT, "-M", sha.as_str()]).await?,
     };
 
     let mut diff = Diff {
         files: parse::parse_unified(&text),
     };
 
-    // Workspace 模式：补上未跟踪文件（合成全新增）。
-    if matches!(mode, DiffMode::Workspace) {
+    // 含工作区的模式：补上未跟踪文件（合成全新增）。
+    if matches!(mode, DiffMode::Workspace | DiffMode::Since(_)) {
         for path in git::untracked_files().await? {
             if let Some(fd) = synthesize_added(&path).await {
                 diff.files.push(fd);

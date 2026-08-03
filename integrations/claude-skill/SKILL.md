@@ -45,7 +45,15 @@ cp integrations/claude-skill/SKILL.md ~/.claude/skills/reviewgate/SKILL.md
    - **未审完检查（重要）**：顶层 `incomplete=true` 或 `warnings` 非空 → 有维度/单元因超时、上下文超限或请求失败**没审完**。此时**绝不能报告"无问题/通过"**，必须明确告知用户"审查不完整"，并建议重跑（如调大 `--timeout`）或人工补审。
 4. **汇报**：用简洁中文列出可信问题（`path:start_line` + 维度 + 一句话 + 建议），并说明闸口判定。
    退出码：`0`=放行 · `1`=被闸口拦截**或审查未完成** · `2`=工具自身出错（配置/网络/密钥）。`--fail-on block|warn|never` 调节闸口判定；只要 `incomplete=true` 即便 decision 是 warn/pass 也会非 0 退出（杜绝漏审放行）。
-5. **修复**（用户要求时）：优先套用 `suggestion_code`（可直接替换的代码；为空串则按 `suggestion` 的文字思路改），用 `existing_code` / `start_line` 定位，改完再次 `reviewgate review` 复核。
+5. **修复**（用户要求时）：优先套用 `suggestion_code`（可直接替换的代码；为空串则按 `suggestion` 的文字思路改），用 `existing_code` / `start_line` 定位。
+   逐条修复时**不要为了拿下一条问题重跑整轮审查**——每次 `review` 已把结果落盘，用会话命令增量消费：
+   ```bash
+   reviewgate findings list            # 本轮未处理的发现（JSON；带 decision / incomplete）
+   reviewgate findings show 3          # 单条详情（短序号，或指纹前缀）
+   reviewgate findings resolve 3 --note 已修
+   ```
+   `list` 的 `incomplete=true` 同样意味着"空列表 ≠ 没问题"。全部修完后再跑一次 `reviewgate review` 复核；
+   复核时若只想审新增的改动，可用 `reviewgate review --since-last-review`（报告里的 `scope` 会写明审的是哪一段）。
 
 ## 注意
 

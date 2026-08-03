@@ -530,3 +530,292 @@ fn cli_tool_code_search_finds_pattern() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// 写一个最小的发现会话文件（模拟 `reviewgate review` 的落盘产物）。
+fn seed_session(dir: &std::path::Path, id_code: &str) {
+    let cache = dir.join(".reviewgate").join("cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    let session = serde_json::json!({
+        "version": 2,
+        "run_id": "1700000000",
+        "created_at": "2023-11-14T22:13:20Z",
+        "decision": "block",
+        "files_changed": 1,
+        "incomplete": false,
+        "records": [{
+            "seq": 1,
+            "id": "abc123def456",
+            "status": "open",
+            "finding": {
+                "dimension": "security",
+                "confidence": 0.9,
+                "severity": "high",
+                "path": "src.rs",
+                "start_line": 1,
+                "end_line": 1,
+                "message": "SQL injection",
+                "existing_code": id_code,
+                "evidence": "",
+                "suggestion_code": "",
+                "filtered": false,
+                "agreed_dimensions": 1
+            }
+        }]
+    });
+    std::fs::write(
+        cache.join("findings.json"),
+        serde_json::to_string_pretty(&session).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn cli_findings_list_show_resolve_roundtrip() {
+    let dir = temp_dir("rg-findings");
+    run(&dir, "git init -q");
+    run(&dir, "git config user.email test@example.com");
+    run(&dir, "git config user.name Test");
+    std::fs::write(dir.join("src.rs"), "fn main() {}\n").unwrap();
+    run(&dir, "git add src.rs && git commit -q -m init");
+    seed_session(&dir, "let q = format!(\"{}\", id);");
+
+    // list：默认只给 open，且必须带上 incomplete/decision 供 agent 判断。
+    let out = bin()
+        .args(["findings", "list"])
+        .current_dir(&dir)
+        .output()
+        .expect("findings list");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "findings list failed: {stdout}");
+    assert!(stdout.contains("\"count\": 1"), "{stdout}");
+    assert!(stdout.contains("\"incomplete\": false"), "{stdout}");
+    assert!(stdout.contains("abc123def456"), "{stdout}");
+
+    // show：短序号可寻址（agent/人对话里好引用）。
+    let out = bin()
+        .args(["findings", "show", "1"])
+        .current_dir(&dir)
+        .output()
+        .expect("findings show");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "findings show failed: {stdout}");
+    assert!(stdout.contains("SQL injection"), "{stdout}");
+
+    // resolve：写回会话，之后 open 列表清空、resolved 列表有 1 条。
+    let out = bin()
+        .args(["findings", "resolve", "abc123", "--note", "fixed"])
+        .current_dir(&dir)
+        .output()
+        .expect("findings resolve");
+    assert!(
+        out.status.success(),
+        "findings resolve failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let out = bin()
+        .args(["findings", "list"])
+        .current_dir(&dir)
+        .output()
+        .expect("findings list after resolve");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("\"count\": 0"),
+        "resolve 后不应再列出：{stdout}"
+    );
+
+    let out = bin()
+        .args(["findings", "list", "--status", "resolved"])
+        .current_dir(&dir)
+        .output()
+        .expect("findings list resolved");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("\"count\": 1"), "{stdout}");
+    assert!(stdout.contains("fixed"), "备注应落盘：{stdout}");
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn cli_findings_without_session_fails_with_guidance() {
+    let dir = temp_dir("rg-findings-empty");
+    run(&dir, "git init -q");
+    run(&dir, "git config user.email test@example.com");
+    run(&dir, "git config user.name Test");
+    std::fs::write(dir.join("src.rs"), "fn main() {}\n").unwrap();
+    run(&dir, "git add src.rs && git commit -q -m init");
+
+    let out = bin()
+        .args(["findings", "list"])
+        .current_dir(&dir)
+        .output()
+        .expect("findings list");
+    assert!(!out.status.success(), "没有会话时不能伪装成空结果");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("reviewgate review"),
+        "错误应指出下一步：{stderr}"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn cli_since_last_review_refuses_without_a_previous_review() {
+    let dir = temp_dir("rg-since-none");
+    run(&dir, "git init -q");
+    run(&dir, "git config user.email test@example.com");
+    run(&dir, "git config user.name Test");
+    std::fs::write(dir.join("a.rs"), "fn main() {}\n").unwrap();
+    run(&dir, "git add a.rs && git commit -q -m init");
+
+    let out = bin()
+        .args(["review", "--since-last-review"])
+        .current_dir(&dir)
+        .output()
+        .expect("review --since-last-review");
+    assert!(!out.status.success(), "没有上次审查时必须报错而非全量重审");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("previous review"),
+        "错误要说明缺的是什么：{stderr}"
+    );
+}
+
+#[test]
+fn cli_since_last_review_rejects_conflicting_range_flags() {
+    let dir = temp_dir("rg-since-conflict");
+    run(&dir, "git init -q");
+    run(&dir, "git config user.email test@example.com");
+    run(&dir, "git config user.name Test");
+    std::fs::write(dir.join("a.rs"), "fn main() {}\n").unwrap();
+    run(&dir, "git add a.rs && git commit -q -m init");
+
+    let out = bin()
+        .args(["review", "--since-last-review", "--commit", "HEAD"])
+        .current_dir(&dir)
+        .output()
+        .expect("review with conflicting flags");
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("cannot be combined"), "{stderr}");
+}
+
+#[test]
+fn cli_since_last_review_rejects_unreachable_base_commit() {
+    let dir = temp_dir("rg-since-gone");
+    run(&dir, "git init -q");
+    run(&dir, "git config user.email test@example.com");
+    run(&dir, "git config user.name Test");
+    std::fs::write(dir.join("a.rs"), "fn main() {}\n").unwrap();
+    run(&dir, "git add a.rs && git commit -q -m init");
+
+    // 会话里的基准 sha 在本仓库不存在（模拟 rebase / force-push）。
+    let cache = dir.join(".reviewgate").join("cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    let session = serde_json::json!({
+        "version": 2,
+        "run_id": "1700000000",
+        "created_at": "2023-11-14T22:13:20Z",
+        "decision": "pass",
+        "head_sha": "0123456789abcdef0123456789abcdef01234567",
+        "files_changed": 1,
+        "incomplete": false,
+        "records": []
+    });
+    std::fs::write(
+        cache.join("findings.json"),
+        serde_json::to_string_pretty(&session).unwrap(),
+    )
+    .unwrap();
+
+    let out = bin()
+        .args(["review", "--since-last-review"])
+        .current_dir(&dir)
+        .output()
+        .expect("review --since-last-review");
+    assert!(
+        !out.status.success(),
+        "基准不可达时必须报错，不能悄悄改范围"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("no longer in this repository"), "{stderr}");
+}
+
+#[test]
+fn cli_estimate_only_does_not_move_the_incremental_baseline() {
+    // --estimate-only 不调用 LLM、什么都没审。若它覆盖了会话里的基准 commit，
+    // 下一次 --since-last-review 就会从新基准开始，把从未审过的改动整段跳过。
+    let dir = temp_dir("rg-estimate-baseline");
+    run(&dir, "git init -q");
+    run(&dir, "git config user.email test@example.com");
+    run(&dir, "git config user.name Test");
+    std::fs::write(dir.join("a.rs"), "fn a() {}\n").unwrap();
+    run(&dir, "git add a.rs && git commit -q -m c1");
+
+    // 播一个会话，基准 = 第一个 commit。
+    let cache = dir.join(".reviewgate").join("cache");
+    std::fs::create_dir_all(&cache).unwrap();
+    std::fs::write(cache.join(".gitignore"), "*\n").unwrap();
+    let base = String::from_utf8(
+        Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap()
+    .trim()
+    .to_string();
+    let session = serde_json::json!({
+        "version": 2, "run_id": "1", "created_at": "2023-11-14T22:13:20Z",
+        "decision": "pass", "head_sha": base, "files_changed": 1,
+        "incomplete": false, "records": []
+    });
+    std::fs::write(
+        cache.join("findings.json"),
+        serde_json::to_string_pretty(&session).unwrap(),
+    )
+    .unwrap();
+
+    // 之后再提交一次，然后只做估算。
+    std::fs::write(dir.join("a.rs"), "fn a() {}\nfn b() {}\n").unwrap();
+    run(&dir, "git commit -q -am c2");
+
+    let config = dir.join("reviewgate.toml");
+    std::fs::write(
+        &config,
+        "provider = \"p\"\n[providers.p]\nprotocol = \"openai\"\nbase_url = \"http://127.0.0.1:1\"\napi_key = \"sk-test-not-used\"\nmodel = \"m\"\n",
+    )
+    .unwrap();
+
+    let out = bin()
+        .args([
+            "review",
+            "--estimate-only",
+            "--format",
+            "json",
+            "--no-metrics",
+        ])
+        .current_dir(&dir)
+        .env("REVIEWGATE_CONFIG", &config)
+        .output()
+        .expect("estimate-only review");
+    assert!(
+        out.status.success(),
+        "estimate-only should succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let after: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(cache.join("findings.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        after["head_sha"].as_str(),
+        Some(base.as_str()),
+        "估算没有审任何东西，不得推进增量基准"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}
