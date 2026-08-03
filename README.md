@@ -642,6 +642,7 @@ ReviewGate 核心链路已可用于真实 PR 和 CI。团队接入时建议先�
 |---|---|
 | 已可用 | CLI、Claude Code Skill、GitHub Action、业务规则、意图评审、大 PR 降级处理 |
 | 新增 | Issue 分诊：分类 / 查重 / 代码验证 / 回复 / 标签 / 指派 / 关闭广告，写操作默认全关 |
+| 新增 | 审查范围排除（省 token、降噪，被排除文件必在报告中列出）、`reviewgate findings` 逐条消费、`--since-last-review` 增量范围、`--with-pr-discussion` 复用 PR 讨论、严重度标签自定义 |
 | 默认边界 | 审查链路只读；`--fix` 需要逐条确认；未审完不会静默 PASS |
 | 仍需配合 | 不能替代测试和人工 review；细微多步计算、强运行时语义仍建议靠测试覆盖 |
 | 质量保障 | CI 覆盖 fmt、clippy `-D warnings`、测试，运行于 Ubuntu 和 Windows |

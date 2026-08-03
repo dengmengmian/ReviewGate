@@ -643,6 +643,7 @@ ReviewGate's core path is ready for real PRs and CI. For shared repositories, st
 |---|---|
 | Ready to use | CLI, Claude Code Skill, GitHub Action, business rules, intent review, and large-PR degradation |
 | New | Issue triage: classify / dedupe / verify against code / reply / label / assign / close ads — every write is off by default |
+| New | Review-scope exclusion (saves tokens and noise; excluded files are always listed), `reviewgate findings` for working through issues one by one, `--since-last-review` incremental scope, `--with-pr-discussion`, custom severity labels |
 | Default boundary | Review is read-only; `--fix` requires per-finding confirmation; incomplete reviews never silently PASS |
 | Still needs support | Does not replace tests or human review; subtle multi-step runtime behavior still needs test coverage |
 | Quality checks | CI covers fmt, clippy with `-D warnings`, tests, Ubuntu, and Windows |

@@ -4,7 +4,7 @@
 每条变更先中文、后英文。
 Changes are listed in Chinese first, then English.
 
-## [Unreleased]
+## [0.10.0] - 2026-08-03
 
 ### Added
 - 新增 **Issue 分诊**（`reviewgate issue …`）：帮维护者过一遍提上来的 Issue——分类（缺陷/需求/文档/提问/安全/广告，中英文都认）、查重（全文检索 + 错误签名 + 语义向量）、可选的代码验证（拉本地仓库把报错对到源码行、展开所在函数、找该文件的历史修复），最后写成一条按类型措辞的回复。安全报告不会被要求"贴日志、升级重试"，文档诉求不会被问"复现步骤"。支持 GitHub / GitLab / Gitee / AtomGit。
@@ -35,6 +35,8 @@ Changes are listed in Chinese first, then English.
   `reviewgate findings` accepts short sequence numbers: `findings show 3` / `findings resolve 3` — easier to reference in conversation than a 12-char fingerprint (fingerprints still work and remain stable across runs).
 
 ### Fixed
+- **`reviewgate daemon --serve` 不再用写死的默认 webhook secret 启动**：此前没配 `--webhook-secret` / `REVIEWGATE_WEBHOOK_SECRET` 时会回退到源码里公开的常量，等于签名校验作废，任何人都能伪造事件驱动 Issue 的评论/标签/关闭/指派。现在与 `reviewgate serve` 一致：缺 secret 直接报错退出。
+  **`reviewgate daemon --serve` no longer starts with a hardcoded default webhook secret**: without `--webhook-secret` / `REVIEWGATE_WEBHOOK_SECRET` it used to fall back to a constant published in the source, which voided signature verification — anyone could forge events and drive issue comments/labels/closes/assignments. It now matches `reviewgate serve` and exits with an error instead.
 - PR/MR 摘要评论此前散文部分写死中文，与终端报告跟随 `REVIEWGATE_OUTPUT_LANGUAGE` 的约定不一致；现已统一（维度名、severity、路径等技术标识保持英文）。
   The PR/MR summary comment had its prose hardcoded in Chinese while the terminal report follows `REVIEWGATE_OUTPUT_LANGUAGE`; both now follow the same setting (dimension names, severities, and paths stay English).
 

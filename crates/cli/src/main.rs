@@ -2210,11 +2210,18 @@ async fn issue_daemon(args: &DaemonArgs) -> anyhow::Result<()> {
     let queue = EventQueue::open(&queue_path)?;
 
     if args.serve {
+        // 与 `reviewgate serve` 保持同一契约：缺 secret 就报错退出。
+        // 回退到源码里写死的常量等于把 webhook 签名校验作废——任何读过源码的人
+        // 都能伪造事件，驱动 Issue 的评论/打标签/关闭/指派。
         let secret = args
             .webhook_secret
             .clone()
             .or_else(|| std::env::var("REVIEWGATE_WEBHOOK_SECRET").ok())
-            .unwrap_or_else(|| "dev-insecure-secret".into());
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "--serve needs a webhook secret: pass --webhook-secret or set REVIEWGATE_WEBHOOK_SECRET"
+                )
+            })?;
         let scfg = ServeConfig {
             listen: args.listen.clone(),
             webhook_secret: secret,

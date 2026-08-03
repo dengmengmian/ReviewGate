@@ -819,3 +819,40 @@ fn cli_estimate_only_does_not_move_the_incremental_baseline() {
 
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn cli_daemon_serve_refuses_the_publicly_known_default_secret() {
+    // `serve` 在缺 secret 时是报错退出的；`daemon --serve` 起的是同一个 webhook 服务，
+    // 不能悄悄回退到源码里公开的常量——那等于把签名校验作废，任何人都能伪造 webhook。
+    let dir = temp_dir("rg-daemon-secret");
+    run(&dir, "git init -q");
+    run(&dir, "git config user.email test@example.com");
+    run(&dir, "git config user.name Test");
+    std::fs::write(dir.join("a.rs"), "fn main() {}\n").unwrap();
+    run(&dir, "git add a.rs && git commit -q -m init");
+
+    let out = bin()
+        .args([
+            "daemon",
+            "--serve",
+            "--fixture",
+            "--repo",
+            "acme/demo",
+            "--max-iterations",
+            "1",
+        ])
+        .current_dir(&dir)
+        .env_remove("REVIEWGATE_WEBHOOK_SECRET")
+        .output()
+        .expect("run daemon --serve");
+
+    assert!(
+        !out.status.success(),
+        "缺 webhook secret 时必须失败退出，而不是用公开常量启动服务"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("webhook-secret") || stderr.contains("REVIEWGATE_WEBHOOK_SECRET"),
+        "错误要指出该配什么：{stderr}"
+    );
+}
