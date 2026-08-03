@@ -94,8 +94,7 @@ jobs:
 
           # deploy key 只用于这一次 clone/push,写到 runner 私有目录后立刻收紧权限。
           mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
-          printf '%s
-' "$TAP_SSH_KEY" > "$HOME/.ssh/tap_deploy_key"
+          printf '%s\n' "$TAP_SSH_KEY" > "$HOME/.ssh/tap_deploy_key"
           chmod 600 "$HOME/.ssh/tap_deploy_key"
           ssh-keyscan -t ed25519 github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
           export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/tap_deploy_key -o IdentitiesOnly=yes"
