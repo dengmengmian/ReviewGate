@@ -669,9 +669,18 @@ fn cli_since_last_review_refuses_without_a_previous_review() {
     std::fs::write(dir.join("a.rs"), "fn main() {}\n").unwrap();
     run(&dir, "git add a.rs && git commit -q -m init");
 
+    // 测试必须自带配置：否则在没有 ~/.reviewgate/config.toml 的干净机器上，
+    // 程序会先因「找不到配置」退出，根本走不到这里要验的分支。
+    let config = dir.join("reviewgate.toml");
+    std::fs::write(
+        &config,
+        "provider = \"p\"\n[providers.p]\nprotocol = \"openai\"\nbase_url = \"http://127.0.0.1:1\"\napi_key = \"sk-test-not-used\"\nmodel = \"m\"\n",
+    )
+    .unwrap();
     let out = bin()
         .args(["review", "--since-last-review"])
         .current_dir(&dir)
+        .env("REVIEWGATE_CONFIG", &config)
         .output()
         .expect("review --since-last-review");
     assert!(!out.status.success(), "没有上次审查时必须报错而非全量重审");
@@ -691,9 +700,18 @@ fn cli_since_last_review_rejects_conflicting_range_flags() {
     std::fs::write(dir.join("a.rs"), "fn main() {}\n").unwrap();
     run(&dir, "git add a.rs && git commit -q -m init");
 
+    // 测试必须自带配置：否则在没有 ~/.reviewgate/config.toml 的干净机器上，
+    // 程序会先因「找不到配置」退出，根本走不到这里要验的分支。
+    let config = dir.join("reviewgate.toml");
+    std::fs::write(
+        &config,
+        "provider = \"p\"\n[providers.p]\nprotocol = \"openai\"\nbase_url = \"http://127.0.0.1:1\"\napi_key = \"sk-test-not-used\"\nmodel = \"m\"\n",
+    )
+    .unwrap();
     let out = bin()
         .args(["review", "--since-last-review", "--commit", "HEAD"])
         .current_dir(&dir)
+        .env("REVIEWGATE_CONFIG", &config)
         .output()
         .expect("review with conflicting flags");
     assert!(!out.status.success());
@@ -729,9 +747,18 @@ fn cli_since_last_review_rejects_unreachable_base_commit() {
     )
     .unwrap();
 
+    // 测试必须自带配置：否则在没有 ~/.reviewgate/config.toml 的干净机器上，
+    // 程序会先因「找不到配置」退出，根本走不到这里要验的分支。
+    let config = dir.join("reviewgate.toml");
+    std::fs::write(
+        &config,
+        "provider = \"p\"\n[providers.p]\nprotocol = \"openai\"\nbase_url = \"http://127.0.0.1:1\"\napi_key = \"sk-test-not-used\"\nmodel = \"m\"\n",
+    )
+    .unwrap();
     let out = bin()
         .args(["review", "--since-last-review"])
         .current_dir(&dir)
+        .env("REVIEWGATE_CONFIG", &config)
         .output()
         .expect("review --since-last-review");
     assert!(
