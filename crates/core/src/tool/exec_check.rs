@@ -13,7 +13,11 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::time::Duration;
 
-const EXEC_TIMEOUT: Duration = Duration::from_secs(6);
+/// 片段执行超时。这段预算要覆盖**解释器冷启动 + 跑完片段**，不只是片段本身。
+/// 原值 6s 在负载高的机器上不够：Windows CI（2 核）并行跑几百个测试时，光 python
+/// 启动就吃掉大半，两个 exec_check 测试因此偶发超时——真实用户在慢机器上同样会被误杀。
+/// 20s 仍能及时掐掉死循环，又给冷启动留出余量。
+const EXEC_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_OUT: usize = 8 * 1024;
 
 pub struct RunCheck;
@@ -39,7 +43,7 @@ impl Tool for RunCheck {
             description: "(Requires --exec-verify.) Run a self-contained snippet in a weakly isolated temporary directory to verify logic. \
 Rewrite the suspected off-by-one or boundary-sensitive algorithm as a minimal runnable snippet, feed boundary inputs such as weekend, month end, 0, negative values, or boundary carries, \
 and print actual outputs with console.log/print. Compare with expected semantics and report only confirmed bugs. \
-Only javascript/python are supported; 6s timeout; this is not an OS-level sandbox and should be used only in trusted or isolated environments."
+Only javascript/python are supported; 20s timeout; this is not an OS-level sandbox and should be used only in trusted or isolated environments."
                 .into(),
             input_schema: json!({
                 "type": "object",
