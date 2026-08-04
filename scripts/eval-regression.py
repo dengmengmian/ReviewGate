@@ -92,6 +92,15 @@ def cmd_snapshot(args):
         encoding="utf-8",
     )
     print(f"基线已写入 {BASELINE.relative_to(ROOT)}\n{fmt(m)}")
+    # incomplete 越多，进指标的样本越少，基线越不可信。实测这些「失败」多半是评测
+    # 超时设太紧（300s 时 59% 失败，实际只需 150~400s），不是真跑不完——先把
+    # REVIEWGATE_EVAL_TIMEOUT 调大重跑，再拿它当基线，否则后续对比全在噪声上做文章。
+    if m["incomplete_rate"] > 0.2:
+        print(
+            f"\n⚠ incomplete 率 {m['incomplete_rate']*100:.0f}%——只有 {m['prs_scored']} 个 PR 进了指标，"
+            f"基线可信度低。\n"
+            f"  建议先用更大的超时重跑（REVIEWGATE_EVAL_TIMEOUT，默认已提到 900）再冻结基线。"
+        )
     return 0
 
 
