@@ -67,7 +67,15 @@ Changes are listed in Chinese first, then English.
 - GitHub 的行内评论**一次性提交为一条 review**，不再逐条发送——一次审查只产生一封通知，不是十几封。
   Inline comments on GitHub are now **submitted as one review** instead of one request per finding — a review sends a single notification rather than a dozen.
 
-## [0.10.0] - 2026-08-03
+## [0.10.0] - 2026-08-03 — 未发布 / Not released
+
+> 这个版本号没有对外产物：当时发布流程的 workflow 文件是无效 YAML，tag 推上去也不会运行，
+> 所以 GitHub Release、crates.io、Homebrew 上都没有 0.10.0。问题已在 0.11.0 修复，
+> 本节内容随 0.11.0 一同发布，无需单独升级。
+>
+> This version has no published artifacts: the release workflow was invalid YAML at the time and
+> never ran, so 0.10.0 never appeared on GitHub Releases, crates.io, or Homebrew. The bug was fixed in
+> 0.11.0, and everything listed here shipped with it — nothing extra to upgrade to.
 
 ### Added
 - 新增 **Issue 分诊**（`reviewgate issue …`）：帮维护者过一遍提上来的 Issue——分类（缺陷/需求/文档/提问/安全/广告，中英文都认）、查重（全文检索 + 错误签名 + 语义向量）、可选的代码验证（拉本地仓库把报错对到源码行、展开所在函数、找该文件的历史修复），最后写成一条按类型措辞的回复。安全报告不会被要求"贴日志、升级重试"，文档诉求不会被问"复现步骤"。支持 GitHub / GitLab / Gitee / AtomGit。
