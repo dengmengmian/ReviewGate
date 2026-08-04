@@ -33,7 +33,16 @@ EVAL_DIR = ROOT / "docs" / "evals"
 WORK_DIR = Path(os.environ.get("TMPDIR", "/tmp")) / "reviewgate-aacr-official"
 RG_BIN = ROOT / "target" / "release" / "reviewgate"
 CONFIG = ROOT / "reviewgate.toml"
-TIMEOUT = int(os.environ.get("REVIEWGATE_EVAL_TIMEOUT", "300"))
+# 300s 会让 59% 的 PR 变成 incomplete，而 incomplete 被当成「零发现」记进 recall 分母，
+# 把 F1 从 0.155 压到 0.089——评测自己造出来的假退步。实测三个 6~9 文件的 PR 分别要
+# 371s / 375s / 324s，只差一点点就够；给到 900s 后它们全部完成、共报出 14 条发现。
+TIMEOUT = int(os.environ.get("REVIEWGATE_EVAL_TIMEOUT", "900"))
+
+# 上游 alibaba/aacr-bench 在 f855ad8（2026-07-30，"remove claude-code-demo and
+# evaluator_runner"）删掉了本脚本依赖的 evaluator_runner API。082b1bc 是改版前最后一个
+# 提交，已验证旧 API 在其上可正常导入。
+PRE_REFACTOR_COMMIT = "082b1bc"
+PRE_REFACTOR_NOTE = "f855ad8（2026-07-30）移除了 evaluator_runner"
 
 
 def load_judge_env_from_toml():
@@ -172,8 +181,24 @@ def main():
     args = ap.parse_args()
 
     aacr = os.environ.get("AACR_REPO")
-    if not aacr or not (Path(aacr) / "evaluator_runner").is_dir():
-        sys.exit("请设置 AACR_REPO 指向官方 aacr-bench 仓库（含 evaluator_runner/）")
+    if not aacr:
+        sys.exit("请设置 AACR_REPO 指向官方 aacr-bench 仓库")
+    if not (Path(aacr) / "evaluator_runner").is_dir():
+        # 上游 2026-08-03 (PR #6 add-eval-flow) 重构了评测流程：evaluator_runner/ 改成
+        # evaluation/，get_evaluator_ans_from_json 与 EvaluatorConfig 都已移除，评测入口
+        # 变成批量 async 的 evaluation.evaluate()。本脚本仍按旧 API 编写。
+        # 报准确的原因，否则只会让人以为是自己路径设错了。
+        if (Path(aacr) / "evaluation").is_dir():
+            sys.exit(
+                "检测到**新版** aacr-bench（有 evaluation/、无 evaluator_runner/）。\n"
+                f"上游在 {PRE_REFACTOR_NOTE}，本脚本按旧版 API 编写，尚未适配。\n"
+                "立即可用的做法（已验证旧 API 在该提交可正常导入）：\n"
+                f"  git -C {aacr} checkout -f {PRE_REFACTOR_COMMIT}\n"
+                "长期做法是适配新 API：把 RG 结果写成 codex 格式\n"
+                "  （review_output[].{description,file,start_line,end_line}）放进 results_dir，\n"
+                "  再调 evaluation.evaluate(instances, results_dir, 'codex', out)"
+            )
+        sys.exit(f"AACR_REPO 下既无 evaluator_runner/ 也无 evaluation/，路径可能不对：{aacr}")
     sys.path.insert(0, aacr)
     load_judge_env_from_toml()
     if not os.environ.get("LLM_API_KEY"):

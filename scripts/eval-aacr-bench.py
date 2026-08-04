@@ -28,7 +28,8 @@ RESULTS_DIR = EVAL_DIR / "aacr-bench-results"
 WORK_DIR = Path(os.environ.get("TMPDIR", "/tmp")) / "reviewgate-aacr-bench"
 RG_BIN = ROOT / "target" / "release" / "reviewgate"
 CONFIG = ROOT / "reviewgate.toml"
-TIMEOUT = int(os.environ.get("REVIEWGATE_EVAL_TIMEOUT", "300"))
+# 与 eval-aacr-official.py 同源：300s 下 59% 的 PR 跑不完，超时被当成「没发现」。
+TIMEOUT = int(os.environ.get("REVIEWGATE_EVAL_TIMEOUT", "900"))
 LINE_THRESHOLD = int(os.environ.get("AACR_LINE_THRESHOLD", "3"))
 
 
