@@ -6,6 +6,8 @@ Changes are listed in Chinese first, then English.
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-08-04
+
 ### Fixed
 - 代码片段执行（`run_check` 工具）的超时从 6 秒放宽到 20 秒。这段预算要覆盖**解释器冷启动加执行**，不只是代码本身；在核心数少或负载高的机器上，光启动 python / node 就可能吃掉大半，导致本来能跑完的片段被判超时。20 秒仍然能及时掐掉死循环。
   The snippet execution timeout (`run_check` tool) was raised from 6 to 20 seconds. That budget has to cover **interpreter cold start plus execution**, not just the snippet: on machines with few cores or under load, merely starting python / node can consume most of it, so snippets that would have finished were killed as timeouts. Twenty seconds still terminates runaway loops promptly.
