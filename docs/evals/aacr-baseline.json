@@ -1,0 +1,1138 @@
+{
+  "metrics": {
+    "prs_total": 187,
+    "prs_scored": 76,
+    "incomplete": 111,
+    "incomplete_rate": 0.5935828877005348,
+    "gt_defects": 397,
+    "reported": 106,
+    "matched": 39,
+    "precision": 0.36792452830188677,
+    "recall": 0.0982367758186398,
+    "f1": 0.15506958250497016
+  },
+  "prs": {
+    "CherryHQ_cherry-studio__pr5540": {
+      "expected": 19,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "CherryHQ_cherry-studio__pr5637": {
+      "expected": 23,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "ClickHouse_ClickHouse__pr72920": {
+      "expected": 5,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "ClickHouse_ClickHouse__pr73546": {
+      "expected": 10,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "ClickHouse_ClickHouse__pr74715": {
+      "expected": 4,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "ClickHouse_ClickHouse__pr75218": {
+      "expected": 4,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "ClickHouse_ClickHouse__pr75474": {
+      "expected": 18,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "ClickHouse_ClickHouse__pr80345": {
+      "expected": 11,
+      "generated": 5,
+      "matched": 3,
+      "incomplete": false
+    },
+    "ClickHouse_ClickHouse__pr80391": {
+      "expected": 7,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "ClickHouse_ClickHouse__pr80597": {
+      "expected": 5,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "ClickHouse_ClickHouse__pr82441": {
+      "expected": 13,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "FreeCAD_FreeCAD__pr18688": {
+      "expected": 6,
+      "generated": 2,
+      "matched": 1,
+      "incomplete": false
+    },
+    "FreeCAD_FreeCAD__pr19411": {
+      "expected": 19,
+      "generated": 4,
+      "matched": 3,
+      "incomplete": true
+    },
+    "FreeCAD_FreeCAD__pr19426": {
+      "expected": 23,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "FreeCAD_FreeCAD__pr19977": {
+      "expected": 5,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "FreeCAD_FreeCAD__pr20156": {
+      "expected": 16,
+      "generated": 1,
+      "matched": 1,
+      "incomplete": false
+    },
+    "FreeCAD_FreeCAD__pr20336": {
+      "expected": 8,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "FreeCAD_FreeCAD__pr20612": {
+      "expected": 3,
+      "generated": 2,
+      "matched": 1,
+      "incomplete": false
+    },
+    "FreeCAD_FreeCAD__pr20825": {
+      "expected": 32,
+      "generated": 2,
+      "matched": 1,
+      "incomplete": true
+    },
+    "FreeCAD_FreeCAD__pr21257": {
+      "expected": 19,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "FreeCAD_FreeCAD__pr22235": {
+      "expected": 6,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "FreeCAD_FreeCAD__pr22744": {
+      "expected": 3,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "PowerShell_PowerShell__pr24910": {
+      "expected": 5,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "PowerShell_PowerShell__pr25780": {
+      "expected": 4,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "alibaba_spring-ai-alibaba__pr869": {
+      "expected": 4,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "alibaba_spring-ai-alibaba__pr903": {
+      "expected": 10,
+      "generated": 3,
+      "matched": 1,
+      "incomplete": true
+    },
+    "appwrite_appwrite__pr9999": {
+      "expected": 18,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "astral-sh_uv__pr11088": {
+      "expected": 6,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "astral-sh_uv__pr12941": {
+      "expected": 1,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "bitcoin_bitcoin__pr31405": {
+      "expected": 1,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "bitcoin_bitcoin__pr31886": {
+      "expected": 4,
+      "generated": 1,
+      "matched": 1,
+      "incomplete": false
+    },
+    "bitcoin_bitcoin__pr32425": {
+      "expected": 4,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "bluewave-labs_Checkmate__pr1897": {
+      "expected": 9,
+      "generated": 8,
+      "matched": 2,
+      "incomplete": false
+    },
+    "bluewave-labs_Checkmate__pr2883": {
+      "expected": 30,
+      "generated": 5,
+      "matched": 1,
+      "incomplete": true
+    },
+    "browser-use_browser-use__pr1482": {
+      "expected": 2,
+      "generated": 3,
+      "matched": 0,
+      "incomplete": true
+    },
+    "browser-use_browser-use__pr3172": {
+      "expected": 2,
+      "generated": 2,
+      "matched": 1,
+      "incomplete": true
+    },
+    "browser-use_browser-use__pr857": {
+      "expected": 2,
+      "generated": 2,
+      "matched": 1,
+      "incomplete": true
+    },
+    "cline_cline__pr1808": {
+      "expected": 3,
+      "generated": 3,
+      "matched": 0,
+      "incomplete": false
+    },
+    "cline_cline__pr2347": {
+      "expected": 9,
+      "generated": 5,
+      "matched": 2,
+      "incomplete": true
+    },
+    "cline_cline__pr4676": {
+      "expected": 15,
+      "generated": 3,
+      "matched": 0,
+      "incomplete": false
+    },
+    "cline_cline__pr4786": {
+      "expected": 7,
+      "generated": 2,
+      "matched": 1,
+      "incomplete": false
+    },
+    "cline_cline__pr5177": {
+      "expected": 2,
+      "generated": 1,
+      "matched": 1,
+      "incomplete": false
+    },
+    "cline_cline__pr5524": {
+      "expected": 9,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "cline_cline__pr5955": {
+      "expected": 8,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "comfyanonymous_ComfyUI__pr6033": {
+      "expected": 7,
+      "generated": 2,
+      "matched": 2,
+      "incomplete": false
+    },
+    "comfyanonymous_ComfyUI__pr6542": {
+      "expected": 2,
+      "generated": 1,
+      "matched": 1,
+      "incomplete": false
+    },
+    "comfyanonymous_ComfyUI__pr7952": {
+      "expected": 5,
+      "generated": 5,
+      "matched": 2,
+      "incomplete": true
+    },
+    "comfyanonymous_ComfyUI__pr8446": {
+      "expected": 18,
+      "generated": 3,
+      "matched": 1,
+      "incomplete": true
+    },
+    "comfyanonymous_ComfyUI__pr9560": {
+      "expected": 6,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "dbeaver_dbeaver__pr36789": {
+      "expected": 11,
+      "generated": 4,
+      "matched": 3,
+      "incomplete": true
+    },
+    "dbeaver_dbeaver__pr37564": {
+      "expected": 4,
+      "generated": 3,
+      "matched": 1,
+      "incomplete": false
+    },
+    "dbeaver_dbeaver__pr38239": {
+      "expected": 4,
+      "generated": 2,
+      "matched": 1,
+      "incomplete": false
+    },
+    "dbeaver_dbeaver__pr38915": {
+      "expected": 5,
+      "generated": 2,
+      "matched": 1,
+      "incomplete": false
+    },
+    "dotnet_aspnetcore__pr59322": {
+      "expected": 5,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "dotnet_aspnetcore__pr61006": {
+      "expected": 6,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "dotnet_aspnetcore__pr62734": {
+      "expected": 4,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "dotnet_aspnetcore__pr62936": {
+      "expected": 5,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": false
+    },
+    "elastic_elasticsearch__pr118183": {
+      "expected": 5,
+      "generated": 7,
+      "matched": 0,
+      "incomplete": false
+    },
+    "elastic_elasticsearch__pr118626": {
+      "expected": 7,
+      "generated": 2,
+      "matched": 0,
+      "incomplete": true
+    },
+    "elastic_elasticsearch__pr118895": {
+      "expected": 5,
+      "generated": 2,
+      "matched": 1,
+      "incomplete": false
+    },
+    "elastic_elasticsearch__pr118998": {
+      "expected": 1,
+      "generated": 6,
+      "matched": 0,
+      "incomplete": true
+    },
+    "elastic_elasticsearch__pr119759": {
+      "expected": 4,
+      "generated": 4,
+      "matched": 3,
+      "incomplete": false
+    },
+    "elastic_elasticsearch__pr120546": {
+      "expected": 3,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "elastic_elasticsearch__pr123744": {
+      "expected": 4,
+      "generated": 1,
+      "matched": 1,
+      "incomplete": false
+    },
+    "elastic_elasticsearch__pr124403": {
+      "expected": 8,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "elastic_elasticsearch__pr125732": {
+      "expected": 5,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "elastic_elasticsearch__pr126376": {
+      "expected": 8,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "elastic_elasticsearch__pr127697": {
+      "expected": 6,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "elastic_elasticsearch__pr132077": {
+      "expected": 9,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "elastic_elasticsearch__pr133365": {
+      "expected": 10,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "elastic_elasticsearch__pr133945": {
+      "expected": 4,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "electron_electron__pr45671": {
+      "expected": 7,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "electron_electron__pr46660": {
+      "expected": 2,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": false
+    },
+    "electron_electron__pr46982": {
+      "expected": 5,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "electron_electron__pr47361": {
+      "expected": 6,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "facebook_react__pr32499": {
+      "expected": 16,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "facebook_react__pr33059": {
+      "expected": 1,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": false
+    },
+    "filamentphp_filament__pr15181": {
+      "expected": 4,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "filamentphp_filament__pr15217": {
+      "expected": 3,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "filamentphp_filament__pr15267": {
+      "expected": 2,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "filamentphp_filament__pr15756": {
+      "expected": 1,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "gofr-dev_gofr__pr1325": {
+      "expected": 2,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "gofr-dev_gofr__pr1355": {
+      "expected": 6,
+      "generated": 1,
+      "matched": 1,
+      "incomplete": true
+    },
+    "gofr-dev_gofr__pr1395": {
+      "expected": 8,
+      "generated": 4,
+      "matched": 0,
+      "incomplete": true
+    },
+    "gofr-dev_gofr__pr1617": {
+      "expected": 5,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "gofr-dev_gofr__pr1681": {
+      "expected": 5,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": false
+    },
+    "gofr-dev_gofr__pr1696": {
+      "expected": 4,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "google-gemini_gemini-cli__pr4163": {
+      "expected": 3,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "google-gemini_gemini-cli__pr4828": {
+      "expected": 24,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "google-gemini_gemini-cli__pr5793": {
+      "expected": 3,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "google-gemini_gemini-cli__pr5819": {
+      "expected": 14,
+      "generated": 2,
+      "matched": 1,
+      "incomplete": true
+    },
+    "google-gemini_gemini-cli__pr8154": {
+      "expected": 13,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "google-gemini_gemini-cli__pr8797": {
+      "expected": 5,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "google-gemini_gemini-cli__pr9177": {
+      "expected": 7,
+      "generated": 2,
+      "matched": 1,
+      "incomplete": false
+    },
+    "immich-app_immich__pr14777": {
+      "expected": 16,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "immich-app_immich__pr14874": {
+      "expected": 5,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "immich-app_immich__pr16893": {
+      "expected": 19,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "immich-app_immich__pr17124": {
+      "expected": 2,
+      "generated": 2,
+      "matched": 0,
+      "incomplete": true
+    },
+    "immich-app_immich__pr17535": {
+      "expected": 28,
+      "generated": 1,
+      "matched": 1,
+      "incomplete": true
+    },
+    "immich-app_immich__pr17879": {
+      "expected": 9,
+      "generated": 3,
+      "matched": 1,
+      "incomplete": false
+    },
+    "immich-app_immich__pr18043": {
+      "expected": 6,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "infiniflow_ragflow__pr5065": {
+      "expected": 5,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": false
+    },
+    "infiniflow_ragflow__pr6553": {
+      "expected": 6,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": false
+    },
+    "infiniflow_ragflow__pr6691": {
+      "expected": 6,
+      "generated": 1,
+      "matched": 1,
+      "incomplete": true
+    },
+    "infiniflow_ragflow__pr7151": {
+      "expected": 10,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "juspay_hyperswitch__pr7353": {
+      "expected": 8,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "juspay_hyperswitch__pr8063": {
+      "expected": 2,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": false
+    },
+    "juspay_hyperswitch__pr9130": {
+      "expected": 6,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": false
+    },
+    "kestra-io_kestra__pr6844": {
+      "expected": 3,
+      "generated": 4,
+      "matched": 1,
+      "incomplete": false
+    },
+    "kestra-io_kestra__pr7191": {
+      "expected": 8,
+      "generated": 7,
+      "matched": 3,
+      "incomplete": true
+    },
+    "kestra-io_kestra__pr7381": {
+      "expected": 12,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "keycloak_keycloak__pr38723": {
+      "expected": 10,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": false
+    },
+    "keycloak_keycloak__pr40283": {
+      "expected": 17,
+      "generated": 2,
+      "matched": 1,
+      "incomplete": true
+    },
+    "langflow-ai_langflow__pr5388": {
+      "expected": 3,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "langflow-ai_langflow__pr5896": {
+      "expected": 4,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "langflow-ai_langflow__pr6044": {
+      "expected": 9,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "langflow-ai_langflow__pr6652": {
+      "expected": 6,
+      "generated": 2,
+      "matched": 2,
+      "incomplete": true
+    },
+    "laravel_framework__pr54226": {
+      "expected": 2,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "laravel_framework__pr56591": {
+      "expected": 1,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "libsdl-org_SDL__pr12718": {
+      "expected": 8,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": false
+    },
+    "libsdl-org_SDL__pr12964": {
+      "expected": 7,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "linera-io_linera-protocol__pr3075": {
+      "expected": 4,
+      "generated": 1,
+      "matched": 1,
+      "incomplete": true
+    },
+    "linera-io_linera-protocol__pr3151": {
+      "expected": 1,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": false
+    },
+    "linera-io_linera-protocol__pr4639": {
+      "expected": 6,
+      "generated": 1,
+      "matched": 1,
+      "incomplete": false
+    },
+    "lvgl_lvgl__pr7602": {
+      "expected": 2,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "lvgl_lvgl__pr8129": {
+      "expected": 5,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "lvgl_lvgl__pr8164": {
+      "expected": 5,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "lvgl_lvgl__pr8689": {
+      "expected": 33,
+      "generated": 6,
+      "matched": 2,
+      "incomplete": false
+    },
+    "microsoft_PowerToys__pr40814": {
+      "expected": 3,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "microsoft_semantic-kernel__pr11361": {
+      "expected": 3,
+      "generated": 2,
+      "matched": 1,
+      "incomplete": false
+    },
+    "microsoft_typescript-go__pr1000": {
+      "expected": 1,
+      "generated": 1,
+      "matched": 1,
+      "incomplete": false
+    },
+    "microsoft_typescript-go__pr1354": {
+      "expected": 2,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "microsoft_typescript-go__pr1446": {
+      "expected": 13,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "microsoft_typescript-go__pr691": {
+      "expected": 3,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "microsoft_typescript-go__pr698": {
+      "expected": 6,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "microsoft_typescript-go__pr831": {
+      "expected": 15,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "mpv-player_mpv__pr15828": {
+      "expected": 8,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "mpv-player_mpv__pr16061": {
+      "expected": 4,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "mpv-player_mpv__pr16090": {
+      "expected": 12,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "mpv-player_mpv__pr16164": {
+      "expected": 7,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "mrdoob_three.js__pr30750": {
+      "expected": 4,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "mrdoob_three.js__pr31402": {
+      "expected": 10,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "mudler_LocalAI__pr4577": {
+      "expected": 21,
+      "generated": 3,
+      "matched": 2,
+      "incomplete": false
+    },
+    "n8n-io_n8n__pr13323": {
+      "expected": 13,
+      "generated": 1,
+      "matched": 1,
+      "incomplete": false
+    },
+    "n8n-io_n8n__pr15057": {
+      "expected": 12,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": false
+    },
+    "n8n-io_n8n__pr15362": {
+      "expected": 2,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "n8n-io_n8n__pr20188": {
+      "expected": 6,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "n8n-io_n8n__pr20210": {
+      "expected": 21,
+      "generated": 2,
+      "matched": 0,
+      "incomplete": true
+    },
+    "n8n-io_n8n__pr20344": {
+      "expected": 2,
+      "generated": 6,
+      "matched": 0,
+      "incomplete": false
+    },
+    "nextcloud_server__pr52846": {
+      "expected": 2,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "nodejs_node__pr56185": {
+      "expected": 4,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "nodejs_node__pr57691": {
+      "expected": 2,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "ollama_ollama__pr10135": {
+      "expected": 3,
+      "generated": 2,
+      "matched": 0,
+      "incomplete": false
+    },
+    "ollama_ollama__pr12185": {
+      "expected": 12,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "ollama_ollama__pr8938": {
+      "expected": 2,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": false
+    },
+    "ollama_ollama__pr9379": {
+      "expected": 5,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "ollama_ollama__pr9654": {
+      "expected": 3,
+      "generated": 1,
+      "matched": 0,
+      "incomplete": true
+    },
+    "ollama_ollama__pr9746": {
+      "expected": 20,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "openai_codex__pr3212": {
+      "expected": 7,
+      "generated": 3,
+      "matched": 0,
+      "incomplete": false
+    },
+    "opencv_opencv__pr26815": {
+      "expected": 4,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "opencv_opencv__pr27284": {
+      "expected": 14,
+      "generated": 2,
+      "matched": 0,
+      "incomplete": true
+    },
+    "opencv_opencv__pr27297": {
+      "expected": 1,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "ppy_osu__pr31232": {
+      "expected": 2,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "ppy_osu__pr33423": {
+      "expected": 8,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "sveltejs_svelte__pr15250": {
+      "expected": 14,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "sveltejs_svelte__pr16232": {
+      "expected": 5,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "symfony_symfony__pr60342": {
+      "expected": 4,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "symfony_symfony__pr60956": {
+      "expected": 1,
+      "generated": 1,
+      "matched": 1,
+      "incomplete": false
+    },
+    "symfony_symfony__pr61601": {
+      "expected": 3,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "timescale_timescaledb__pr7632": {
+      "expected": 2,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "timescale_timescaledb__pr7915": {
+      "expected": 6,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "timescale_timescaledb__pr7935": {
+      "expected": 5,
+      "generated": 2,
+      "matched": 2,
+      "incomplete": false
+    },
+    "timescale_timescaledb__pr8138": {
+      "expected": 11,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "unionlabs_union__pr3414": {
+      "expected": 18,
+      "generated": 5,
+      "matched": 3,
+      "incomplete": true
+    },
+    "valkey-io_valkey__pr1485": {
+      "expected": 8,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "valkey-io_valkey__pr1651": {
+      "expected": 2,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "valkey-io_valkey__pr1889": {
+      "expected": 2,
+      "generated": 1,
+      "matched": 1,
+      "incomplete": false
+    },
+    "valkey-io_valkey__pr2059": {
+      "expected": 11,
+      "generated": 2,
+      "matched": 1,
+      "incomplete": true
+    },
+    "valkey-io_valkey__pr2141": {
+      "expected": 1,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "vllm-project_vllm__pr12608": {
+      "expected": 6,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "vllm-project_vllm__pr15998": {
+      "expected": 2,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "vllm-project_vllm__pr17425": {
+      "expected": 8,
+      "generated": 2,
+      "matched": 1,
+      "incomplete": false
+    },
+    "vllm-project_vllm__pr19756": {
+      "expected": 4,
+      "generated": 1,
+      "matched": 1,
+      "incomplete": false
+    },
+    "vllm-project_vllm__pr24425": {
+      "expected": 1,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": false
+    },
+    "wavetermdev_waveterm__pr1755": {
+      "expected": 19,
+      "generated": 1,
+      "matched": 1,
+      "incomplete": true
+    },
+    "wavetermdev_waveterm__pr1793": {
+      "expected": 5,
+      "generated": 0,
+      "matched": 0,
+      "incomplete": true
+    },
+    "wavetermdev_waveterm__pr1998": {
+      "expected": 14,
+      "generated": 2,
+      "matched": 1,
+      "incomplete": true
+    }
+  }
+}
