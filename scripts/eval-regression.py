@@ -120,6 +120,19 @@ def cmd_compare(args):
     print("\n当前:")
     print(fmt(cm))
 
+    # 样本集变了就不能直接比大小：修好几个 incomplete，它们的 GT 会进入 recall 分母，
+    # 若这些 PR 命中率低于均值，recall 反而下降——那不是退步，是样本代表性变了。
+    # 实测就撞见过：修好 2 个 PR、多命中 1 条，recall 却掉了 0.0002。
+    sample_changed = (
+        bm["prs_scored"] != cm["prs_scored"] or bm["gt_defects"] != cm["gt_defects"]
+    )
+    if sample_changed:
+        print(
+            f"\n⚠ 样本集已变化（计入指标的 PR {bm['prs_scored']}→{cm['prs_scored']}，"
+            f"GT 缺陷 {bm['gt_defects']}→{cm['gt_defects']}）。\n"
+            "  分母不同，P/R/F1 不可直接比大小——请看下面的逐 PR 命中变化判断真实增减。"
+        )
+
     print("\n差异:")
     rows = [
         ("precision", bm["precision"], cm["precision"], "高好"),
@@ -132,8 +145,12 @@ def cmd_compare(args):
         d = c - b
         good = (d >= 0) if better == "高好" else (d <= 0)
         mark = "  " if abs(d) < 1e-9 else ("↑" if d > 0 else "↓")
-        flag = "" if good or abs(d) < 1e-9 else "   ← 退步"
-        if not good and abs(d) > 1e-9:
+        # 样本集变了时，P/R/F1 的升降不可比，不标退步也不据此失败；
+        # incomplete 率的分母是总 PR 数，不受影响，照常判定。
+        comparable = not sample_changed or name == "incomplete 率"
+        real_regression = (not good) and abs(d) > 1e-9 and comparable
+        flag = "   ← 退步" if real_regression else ("   (口径已变，不可比)" if not comparable and not good and abs(d) > 1e-9 else "")
+        if real_regression:
             worse = True
         print(f"  {name:14s} {b:.4f} → {c:.4f}  {mark}{d:+.4f}{flag}")
 
