@@ -27,7 +27,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: scripts/check-docs.sh
       # 无效的 workflow YAML 不会让 CI 变红——GitHub 只是不运行那个文件。
-      # release.yml 就这样坏了一个多月，发布流程从未执行。这一步让它在 PR 阶段就红。
+      # release.yml 就这样坏过两天，0.10.0 因此从未发布出去。这一步让它在 PR 阶段就红。
       - name: Workflow check
         if: matrix.os == 'ubuntu-latest'
         run: scripts/check-workflows.sh
