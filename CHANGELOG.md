@@ -6,6 +6,8 @@ Changes are listed in Chinese first, then English.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-06
+
 ### Changed
 - `reviewgate security` 的审查轮数不再由固定采样决定，改为**跑到挖不出新问题为止**。以前固定跑 2 遍：小改动白付一倍钱，大改动两遍远远不够。现在一轮一轮跑，连续 2 轮没有新发现就收手；仍然挖得到东西就继续，直到 6 轮上限。**撞到上限说明可能还没审完，判定会标为未完整，绝不会显示成 PASS。** 两个旋钮：`--stop-after-no-new`（默认 2）、`--max-rounds`（默认 6）。
   `reviewgate security` no longer fixes how many review passes it makes; it now **keeps going until it stops finding anything new**. The old behaviour was two passes flat: wasteful on small changes, far too few on large ones. It now runs round by round and stops after 2 consecutive rounds with no new findings, continuing while it is still surfacing issues, up to a cap of 6 rounds. **Hitting that cap means coverage may be partial, so the result is marked incomplete and can never show as PASS.** Two knobs: `--stop-after-no-new` (default 2) and `--max-rounds` (default 6).

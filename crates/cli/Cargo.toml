@@ -17,7 +17,7 @@ path = "src/main.rs"
 
 [dependencies]
 # version 供 crates.io 发布解析;本地构建仍走 path
-reviewgate-core = { path = "../core", version = "0.11.1" }
+reviewgate-core = { path = "../core", version = "0.12.0" }
 tokio.workspace = true
 clap.workspace = true
 anyhow.workspace = true
