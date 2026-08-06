@@ -140,7 +140,7 @@ reviewgate llm test
 
 > 默认审查缺陷四维（security / perf / logic / ai_smell）。style/business/intent 为 opt-in——闸口聚焦高危，不用风格噪声淹没真问题。
 
-**安全深审**（`reviewgate security`）：只跑 security，但更深——sink 清单 + 强制追源、默认 samples≥2、确定性密钥预检、未审完绝不 PASS。日常合并用 `review`；发版 / 鉴权支付相关改动 / 不放心时用 `security`。
+**安全深审**（`reviewgate security`）：只跑 security，但更深——sink 清单 + 强制追源、**跑到挖不出新问题为止**（连续 2 轮无新发现才停，上限 6 轮）、确定性密钥预检、未审完绝不 PASS。日常合并用 `review`；发版 / 鉴权支付相关改动 / 不放心时用 `security`。
 
 然后：
 
@@ -253,7 +253,7 @@ reviewgate review --from main --to HEAD # 审查当前分支相对 main 的改�
 reviewgate review --intent spec.md      # 检查实现是否符合需求/设计
 reviewgate review --format json         # 输出机器可读 JSON
 reviewgate review --fail-on block       # BLOCK 时退出码 1，适合 CI
-reviewgate security                     # 安全深审（仅 security · 更高采样 · 密钥预检）
+reviewgate security                     # 安全深审（仅 security · 饱和式召回 · 密钥预检）
 reviewgate security --from main --to HEAD
 ```
 

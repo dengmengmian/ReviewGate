@@ -339,9 +339,15 @@ fn cli_security_help_describes_deep_review() {
         stdout.contains("--commit") && stdout.contains("--from") && stdout.contains("--to"),
         "security help should accept range flags: {stdout}"
     );
+    // 饱和式 discovery 的两个旋钮取代了固定 --samples：轮数由「还挖不挖得到新东西」决定。
     assert!(
-        stdout.contains("--samples"),
-        "security help should expose samples: {stdout}"
+        stdout.contains("--stop-after-no-new") && stdout.contains("--max-rounds"),
+        "security help should expose the saturation knobs: {stdout}"
+    );
+    // 连描述文本里的 "samples" 也不该留：轮数已由饱和策略决定，任何采样措辞都是误导。
+    assert!(
+        !lower.contains("samples"),
+        "security no longer samples; neither the flag nor the wording should survive: {stdout}"
     );
 }
 

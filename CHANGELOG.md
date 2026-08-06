@@ -6,6 +6,19 @@ Changes are listed in Chinese first, then English.
 
 ## [Unreleased]
 
+### Changed
+- `reviewgate security` 的审查轮数不再由固定采样决定，改为**跑到挖不出新问题为止**。以前固定跑 2 遍：小改动白付一倍钱，大改动两遍远远不够。现在一轮一轮跑，连续 2 轮没有新发现就收手；仍然挖得到东西就继续，直到 6 轮上限。**撞到上限说明可能还没审完，判定会标为未完整，绝不会显示成 PASS。** 两个旋钮：`--stop-after-no-new`（默认 2）、`--max-rounds`（默认 6）。
+  `reviewgate security` no longer fixes how many review passes it makes; it now **keeps going until it stops finding anything new**. The old behaviour was two passes flat: wasteful on small changes, far too few on large ones. It now runs round by round and stops after 2 consecutive rounds with no new findings, continuing while it is still surfacing issues, up to a cap of 6 rounds. **Hitting that cap means coverage may be partial, so the result is marked incomplete and can never show as PASS.** Two knobs: `--stop-after-no-new` (default 2) and `--max-rounds` (default 6).
+- `reviewgate security` 不再接受 `--samples`。轮数已由上面的饱和策略决定，这个参数没有意义了；继续接受它却悄悄忽略，等于让人以为调了采样其实没调，所以改成直接报错。`reviewgate review` 的 `--samples` 不变。
+  `reviewgate security` no longer accepts `--samples`. Round count is now decided by the saturation strategy above, so the flag has no meaning; silently accepting and ignoring it would let people believe they had changed sampling when they had not, so it now fails loudly instead. `--samples` on `reviewgate review` is unchanged.
+
+- `reviewgate security` 的 `--timeout` 现在是**整轮循环共享的总预算**，不再是每轮各给一份。饱和改成串行多轮后，若每轮各拿一份完整超时，`--timeout 200` 最坏会跑到 20 分钟，与设定严重不符。预算耗尽会停在轮次边界并标为未完整——不会假装审完。注意这约束的是轮次之间：单个卡死的模型请求仍然打不断，那是既有限制。
+  `--timeout` on `reviewgate security` is now a **total budget shared by the whole loop**, not one allowance per round. With saturation running rounds serially, giving each round the full timeout meant `--timeout 200` could run for twenty minutes. When the budget runs out the scan stops at a round boundary and is marked incomplete — it never pretends to have finished. Note this bounds the gaps between rounds: a single stalled model request still cannot be interrupted, which is a pre-existing limitation.
+
+### Fixed
+- `reviewgate security` 的跑前成本估算此前按固定 2 次采样计算，而实际最多会跑 6 轮——**估算最多可能低到实际的三分之一**，`--max-cost` 因此会放行本该拦下的运行。现在按轮数上界估算。
+  The pre-run cost estimate for `reviewgate security` was computed from a fixed 2 samples while the run could take up to 6 rounds — **the estimate could be a third of the real cost**, so `--max-cost` would let through runs it should have stopped. It is now estimated from the round cap.
+
 ## [0.11.1] - 2026-08-04
 
 ### Fixed

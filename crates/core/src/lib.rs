@@ -20,6 +20,7 @@ pub mod model;
 pub mod progress;
 pub mod relocate;
 pub mod review;
+pub mod security;
 pub mod tool;
 
 /// Crate version, surfaced via `reviewgate --version`.

@@ -140,7 +140,7 @@ ReviewGate runs multiple agents in parallel, each focused on a review dimension:
 
 > By default review runs the four defect dimensions (security / perf / logic / ai_smell). style/business/intent are opt-in — the gate stays focused on high-risk issues instead of drowning them in style noise.
 
-**Security deep review** (`reviewgate security`): security-only but deeper — sink inventory + mandatory taint/caller tracing, default samples≥2, deterministic secret precheck, incomplete never PASS. Use `review` for everyday merges; use `security` for releases, auth/payment changes, or when humans barely read the diff.
+**Security deep review** (`reviewgate security`): security-only but deeper — sink inventory + mandatory taint/caller tracing, **keeps reviewing until it stops finding anything new** (stops after 2 consecutive rounds with no new findings, capped at 6), deterministic secret precheck, incomplete never PASS. Use `review` for everyday merges; use `security` for releases, auth/payment changes, or when humans barely read the diff.
 
 Then it applies:
 
@@ -254,7 +254,7 @@ reviewgate review --from main --to HEAD # review this branch against main
 reviewgate review --intent spec.md      # check implementation against requirements/design
 reviewgate review --format json         # machine-readable output
 reviewgate review --fail-on block       # exit 1 on BLOCK, useful for CI
-reviewgate security                     # security deep review (security-only · higher samples · secret precheck)
+reviewgate security                     # security deep review (security-only · saturating recall · secret precheck)
 reviewgate security --from main --to HEAD
 ```
 

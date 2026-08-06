@@ -44,7 +44,11 @@ PAIRS=(
 # 400s 下 clap 四维并发实测 379s，余量只剩 5%，代理慢一点就会再次假 WARN，故给到 600s。
 # 产品默认是不限时（review --timeout 0），这里设上限只为防止一个仓库卡死拖垮整批。
 REVIEW_TIMEOUT="${REVIEW_TIMEOUT:-600}"
-SECURITY_TIMEOUT="${SECURITY_TIMEOUT:-200}"
+# security 从「并行跑 2 次固定采样」改成「串行饱和多轮」后，--timeout 是整轮循环共享的
+# 总预算（见 crates/core/src/security/discovery.rs）。200s 是按旧的并行两采样定的，
+# 对最多 6 轮的串行循环远远不够——会把预算耗尽当成结论，制造一批假 incomplete，
+# 正是 docs/evals 里踩过的「超时把失败伪装成没发现」。与 review 拉齐到 600s。
+SECURITY_TIMEOUT="${SECURITY_TIMEOUT:-600}"
 
 run_one() {
   local REPO="$1" PR="$2"

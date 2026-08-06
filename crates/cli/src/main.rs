@@ -29,7 +29,7 @@ enum Command {
     Demo(DemoArgs),
     /// Review the current git diff
     Review(ReviewArgs),
-    /// Security deep review: sink-driven security-only pass with higher samples and secret precheck
+    /// Security deep review: sink-driven security-only pass with saturating recall and secret precheck
     Security(SecurityArgs),
     /// LLM connectivity self-check
     Llm {
@@ -642,9 +642,12 @@ struct SecurityArgs {
     /// Per-dimension wall-clock timeout (seconds, 0=unlimited)
     #[arg(long, default_value = "0")]
     timeout: u64,
-    /// Samples for the security dimension (default 2 for deep profile). >1 unions results for stable recall.
+    /// Stop discovery after this many consecutive rounds with no new findings
     #[arg(long, default_value = "2")]
-    samples: usize,
+    stop_after_no_new: usize,
+    /// Hard cap on discovery rounds; hitting it marks the review incomplete
+    #[arg(long, default_value = "6")]
+    max_rounds: usize,
     /// Judge concurrency limit
     #[arg(long, default_value = "4")]
     judge_concurrency: usize,
@@ -831,6 +834,7 @@ async fn cmd_demo(args: &DemoArgs) -> anyhow::Result<i32> {
     let code = present_and_exit(
         &cfg,
         opts,
+        Line::Review,
         ReviewRunArgs {
             estimate_only: false,
             format: OutputFormat::Text,
@@ -1276,12 +1280,24 @@ struct ReviewRunArgs {
     verbose: bool,
 }
 
+/// 走哪条编排管线。两条线共用进度渲染、输出、退出码语义，但阶段序列不同：
+/// review 是固定采样的多维闸口，security 是饱和式召回的安全深审。
+enum Line {
+    Review,
+    Security {
+        stop_after_no_new: usize,
+        max_rounds: usize,
+    },
+}
+
 async fn present_and_exit(
     cfg: &reviewgate_core::config::Config,
     opts: reviewgate_core::review::ReviewOptions,
+    line: Line,
     run: ReviewRunArgs,
 ) -> anyhow::Result<i32> {
     use reviewgate_core::review::run_review;
+    use reviewgate_core::security::{run_security, SecurityOptions};
 
     let live = std::io::stderr().is_terminal() && run.format != OutputFormat::Json && !run.verbose;
     let progress = live.then(|| std::sync::Arc::new(reviewgate_core::progress::Progress::new()));
@@ -1313,8 +1329,21 @@ async fn present_and_exit(
         })
     });
 
+    // 退出码语义要用到，但 opts 可能被 move 进 SecurityOptions，故先取出。
+    let deep = opts.profile.is_deep();
     let started = std::time::Instant::now();
-    let outcome = run_review(cfg, &opts).await?;
+    let outcome = match line {
+        Line::Review => run_review(cfg, &opts).await?,
+        Line::Security {
+            stop_after_no_new,
+            max_rounds,
+        } => {
+            let mut so = SecurityOptions::new(opts);
+            so.stop_after_no_new = stop_after_no_new;
+            so.max_rounds = max_rounds;
+            run_security(cfg, &so).await?
+        }
+    };
 
     if let Some(h) = render {
         h.abort();
@@ -1374,8 +1403,7 @@ async fn present_and_exit(
     }
 
     // Deep profile / critical-path incomplete always treat incomplete as non-PASS for exit semantics.
-    let fail_incomplete =
-        cfg.gate.fail_on_incomplete || opts.profile.is_deep() || outcome.critical_incomplete;
+    let fail_incomplete = cfg.gate.fail_on_incomplete || deep || outcome.critical_incomplete;
     let incomplete_for_exit = outcome.incomplete || outcome.critical_incomplete;
     Ok(exit_code(
         outcome.decision,
@@ -1485,6 +1513,7 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
         let code = present_and_exit(
             &cfg,
             opts,
+            Line::Review,
             ReviewRunArgs {
                 estimate_only: true,
                 format: args.format,
@@ -1504,6 +1533,7 @@ async fn review(args: &ReviewArgs) -> anyhow::Result<i32> {
     present_and_exit(
         &cfg,
         opts,
+        Line::Review,
         ReviewRunArgs {
             estimate_only: false,
             format: args.format,
@@ -1527,7 +1557,6 @@ async fn security(args: &SecurityArgs) -> anyhow::Result<i32> {
     validate_security_args(args)?;
     let cfg = Config::load()?;
     let mode = resolve_mode(&args.commit, &args.from, &args.to)?;
-    let samples = args.samples.max(1);
 
     let etty = std::io::stderr().is_terminal();
     let dim = |s: &str| {
@@ -1537,16 +1566,15 @@ async fn security(args: &SecurityArgs) -> anyhow::Result<i32> {
             s.to_string()
         }
     };
-    let samples_note = if samples > 1 {
-        format!(" · samples={samples}")
-    } else {
-        String::new()
-    };
     eprintln!(
         "ReviewGate {} security {} {}",
         dim("deep review"),
         dim("· sink inventory + secret precheck"),
-        dim(&format!("· {samples} agents{samples_note}")),
+        dim(&format!(
+            "· saturating discovery (stop after {} idle rounds, max {})",
+            args.stop_after_no_new.max(1),
+            args.max_rounds.max(1)
+        )),
     );
 
     let mut opts = ReviewOptions::security_deep(mode);
@@ -1557,7 +1585,6 @@ async fn security(args: &SecurityArgs) -> anyhow::Result<i32> {
     if args.timeout > 0 {
         opts.timeout = Some(std::time::Duration::from_secs(args.timeout));
     }
-    opts.samples = samples;
     opts.judge_concurrency = args.judge_concurrency.max(1);
     opts.fanout_concurrency = args.fanout_concurrency.max(1);
     opts.incremental = args.incremental;
@@ -1565,6 +1592,10 @@ async fn security(args: &SecurityArgs) -> anyhow::Result<i32> {
     present_and_exit(
         &cfg,
         opts,
+        Line::Security {
+            stop_after_no_new: args.stop_after_no_new,
+            max_rounds: args.max_rounds,
+        },
         ReviewRunArgs {
             estimate_only: false,
             format: args.format,

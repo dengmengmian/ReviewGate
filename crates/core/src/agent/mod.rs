@@ -132,6 +132,20 @@ impl AgentStats {
             .collect::<Vec<_>>()
             .join(", ")
     }
+
+    /// 累加另一份统计。多轮 fan-out（饱和式 discovery）要把每轮用量汇总成一次运行的总量，
+    /// 否则报告里的调用数和 token 只会显示最后一轮。
+    pub fn merge(&mut self, o: &AgentStats) {
+        self.llm_requests += o.llm_requests;
+        self.tool_calls += o.tool_calls;
+        self.findings_reported += o.findings_reported;
+        self.task_done_calls += o.task_done_calls;
+        self.loop_guarded += o.loop_guarded;
+        self.usage.add(&o.usage);
+        for (name, count) in &o.tool_counts {
+            *self.tool_counts.entry(name.clone()).or_default() += count;
+        }
+    }
 }
 
 /// Agent 运行结果 + 统计。
@@ -187,6 +201,56 @@ pub fn assistant_text(content: &[ContentBlock]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merge_sums_every_counter_and_tool_map() {
+        let mut a = AgentStats {
+            llm_requests: 2,
+            tool_calls: 3,
+            findings_reported: 1,
+            task_done_calls: 1,
+            loop_guarded: 4,
+            ..Default::default()
+        };
+        a.tool_counts.insert("read_file".into(), 2);
+        a.usage.input_tokens = 100;
+
+        let mut b = AgentStats {
+            llm_requests: 5,
+            tool_calls: 7,
+            findings_reported: 2,
+            task_done_calls: 1,
+            loop_guarded: 1,
+            ..Default::default()
+        };
+        b.tool_counts.insert("read_file".into(), 3);
+        b.tool_counts.insert("code_search".into(), 1);
+        b.usage.input_tokens = 50;
+
+        a.merge(&b);
+
+        assert_eq!(a.llm_requests, 7);
+        assert_eq!(a.tool_calls, 10);
+        assert_eq!(a.findings_reported, 3);
+        assert_eq!(a.task_done_calls, 2);
+        assert_eq!(a.loop_guarded, 5);
+        assert_eq!(a.usage.input_tokens, 150);
+        // 同名工具累加，新工具并入。
+        assert_eq!(a.tool_counts.get("read_file"), Some(&5));
+        assert_eq!(a.tool_counts.get("code_search"), Some(&1));
+    }
+
+    #[test]
+    fn merge_with_default_is_identity() {
+        let mut a = AgentStats {
+            llm_requests: 3,
+            ..Default::default()
+        };
+        a.tool_counts.insert("read_file".into(), 1);
+        a.merge(&AgentStats::default());
+        assert_eq!(a.llm_requests, 3);
+        assert_eq!(a.tool_counts.get("read_file"), Some(&1));
+    }
 
     #[test]
     fn exit_reason_incomplete_and_str_matrix() {

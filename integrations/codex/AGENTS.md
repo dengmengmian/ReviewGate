@@ -17,7 +17,7 @@ reviewgate review --format json --timeout 300
 ```
 - 默认审工作区相对 HEAD 的改动（含未跟踪文件），跑默认缺陷四维（security/perf/logic/ai_smell）；`--dimensions style` 显式开启 style，配了 `[business].rules` 则加 business，传 `--intent` 则做意图评审。
 - 审某个 commit / 范围：`--commit <sha>` 或 `--from <base> --to <head>`；只看部分维度：`--dimensions security,logic`；更快但误报略多：`--no-judge`。
-- **安全深审**：`reviewgate security`（仅 security、更深 checklist + 密钥预检 + 更高 samples）；日常闸口仍用 `review`。
+- **安全深审**：`reviewgate security`（仅 security、更深 checklist + 密钥预检 + 饱和式召回：跑到挖不出新问题为止）；日常闸口仍用 `review`。
 
 ### 解读 JSON
 顶层是一个信封 `{ decision, incomplete, files_changed, summary, warnings[], findings[], usage }`——`decision` 为 `pass|warn|block`，问题都在 `findings[]` 里。每条 finding 含：

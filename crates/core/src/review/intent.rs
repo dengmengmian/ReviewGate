@@ -13,7 +13,7 @@ use crate::tool::{ToolContext, ToolRegistry};
 use std::sync::Arc;
 use std::time::Duration;
 
-pub(super) struct IntentReview {
+pub(crate) struct IntentReview {
     pub findings: Vec<Finding>,
     pub incomplete: bool,
 }
