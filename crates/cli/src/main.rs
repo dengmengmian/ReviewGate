@@ -613,7 +613,7 @@ struct ReviewArgs {
     /// Run profile: `gate` (default, precision) or `audit` (wider: samples≥2, includes style).
     #[arg(long, default_value = "gate")]
     profile: String,
-    /// Abort before LLM if estimated USD cost exceeds this (requires price_per_mtok_* in provider config).
+    /// Abort before LLM if estimated USD exceeds this. Refuses to start when the provider has no price_per_mtok_* (the budget would be unchecked).
     #[arg(long)]
     max_cost: Option<f64>,
     /// Abort before LLM if estimated input tokens exceed this upper bound.

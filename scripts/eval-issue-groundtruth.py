@@ -122,7 +122,62 @@ def main(db):
         )
 
 
+def self_test():
+    """无 token、无仓库：造一个最小库，钉死对齐口径。"""
+    import os
+    import tempfile
+
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    try:
+        con = sqlite3.connect(path)
+        con.executescript(
+            """
+            CREATE TABLE issues (
+                issue_number INTEGER PRIMARY KEY,
+                labels_json TEXT
+            );
+            CREATE TABLE issue_reviews (
+                decision_json TEXT
+            );
+            """
+        )
+        rows = [
+            (1, ["bug"], {"issue_number": 1, "primary_type": "bug", "verdict": "NEED_INFO"}),
+            (2, ["enhancement"], {"issue_number": 2, "primary_type": "feature_request", "verdict": "NEED_INFO"}),
+            (3, ["docs"], {"issue_number": 3, "primary_type": "documentation", "verdict": "NEED_INFO"}),
+            (4, ["bug"], {"issue_number": 4, "primary_type": "feature_request", "verdict": "NEED_INFO"}),
+        ]
+        for n, labels, dec in rows:
+            con.execute("insert into issues(issue_number, labels_json) values (?, ?)", (n, json.dumps(labels)))
+            con.execute("insert into issue_reviews(decision_json) values (?)", (json.dumps(dec),))
+        con.commit()
+        con.close()
+
+        labels, dec = load(path)
+        aligned = [
+            (n, t, dec[n])
+            for n, ls in labels.items()
+            if (t := truth(ls)) and n in dec
+        ]
+        assert len(aligned) == 4, aligned
+        conf = collections.Counter((t, d.get("primary_type")) for _, t, d in aligned)
+        assert conf[("bug", "bug")] == 1
+        assert conf[("bug", "feature_request")] == 1
+        assert conf[("feature_request", "feature_request")] == 1
+        assert conf[("documentation", "documentation")] == 1
+        print("self-test ok: 4 aligned, bug recall 50%, docs/feature exact")
+    finally:
+        os.remove(path)
+
+
 if __name__ == "__main__":
+    if len(sys.argv) == 2 and sys.argv[1] in ("--self-test", "-h", "--help"):
+        if sys.argv[1] == "--self-test":
+            self_test()
+        else:
+            sys.stdout.write(__doc__)
+        raise SystemExit(0)
     if len(sys.argv) != 2:
         sys.exit(__doc__)
     main(sys.argv[1])

@@ -1,4 +1,4 @@
-//! Deterministic secret / hardcoded-credential precheck (deep security profile).
+//! Deterministic secret / hardcoded-credential precheck (standard + deep).
 //!
 //! Pure scan over **added** diff lines — no LLM. Hits become high-severity
 //! security findings. Designed for vibe-coding gates where secrets must not

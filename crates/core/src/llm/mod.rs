@@ -13,6 +13,7 @@ use crate::config::{Protocol, ProviderConfig};
 use crate::model::{LlmResponse, Message, ToolDef};
 use anyhow::Result;
 use async_trait::async_trait;
+use std::time::Instant;
 
 /// 统一的 LLM 客户端接口。Agent 循环只依赖这个 trait。
 #[async_trait]
@@ -24,6 +25,17 @@ pub trait LlmClient: Send + Sync {
         messages: &[Message],
         tools: &[ToolDef],
     ) -> Result<LlmResponse>;
+
+    /// 同 [`complete`]，HTTP 重试不得越过 `deadline`。默认忽略截止、走 [`complete`]。
+    async fn complete_until(
+        &self,
+        system: &str,
+        messages: &[Message],
+        tools: &[ToolDef],
+        _deadline: Option<Instant>,
+    ) -> Result<LlmResponse> {
+        self.complete(system, messages, tools).await
+    }
 
     /// 当前模型名（用于日志）。
     fn model(&self) -> &str;

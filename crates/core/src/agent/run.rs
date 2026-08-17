@@ -15,7 +15,7 @@ use crate::tool::{ToolContext, ToolRegistry};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// 墙钟软着陆阈值：预算耗到该比例即切入收口轮，把剩余时间留给上报而不是继续探索。
 /// 修复的失败模式：慢 provider 上探索烧满整个 timeout，一条都没上报就被硬超时标 incomplete。
@@ -152,10 +152,11 @@ pub async fn run_agent_with_stats(
         }
         stats.llm_requests += 1;
         let remaining = cfg.timeout.and_then(|t| t.checked_sub(start.elapsed()));
+        let deadline = remaining.map(|r| Instant::now() + r);
         let resp = if let Some(remaining) = remaining {
             match tokio::time::timeout(
                 remaining,
-                client.complete(&cfg.system_prompt, &messages, round_tools),
+                client.complete_until(&cfg.system_prompt, &messages, round_tools, deadline),
             )
             .await
             {
@@ -174,7 +175,7 @@ pub async fn run_agent_with_stats(
             }
         } else {
             client
-                .complete(&cfg.system_prompt, &messages, round_tools)
+                .complete_until(&cfg.system_prompt, &messages, round_tools, None)
                 .await
         };
         let resp = match resp {

@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::time::Instant;
 
 pub struct OpenAiClient {
     http: reqwest::Client,
@@ -103,6 +104,16 @@ impl LlmClient for OpenAiClient {
         messages: &[Message],
         tools: &[ToolDef],
     ) -> Result<LlmResponse> {
+        self.complete_until(system, messages, tools, None).await
+    }
+
+    async fn complete_until(
+        &self,
+        system: &str,
+        messages: &[Message],
+        tools: &[ToolDef],
+        deadline: Option<Instant>,
+    ) -> Result<LlmResponse> {
         let mut body = json!({
             "model": self.model,
             "messages": self.to_wire_messages(system, messages),
@@ -126,8 +137,22 @@ impl LlmClient for OpenAiClient {
         }
 
         let headers = [("Authorization", format!("Bearer {}", self.api_key))];
-        let text =
-            super::http::post_json_with_retry(&self.http, &self.endpoint, &headers, &body).await?;
+        let text = match deadline {
+            None => {
+                super::http::post_json_with_retry(&self.http, &self.endpoint, &headers, &body)
+                    .await?
+            }
+            Some(_) => {
+                super::http::post_json_with_retry_until(
+                    &self.http,
+                    &self.endpoint,
+                    &headers,
+                    &body,
+                    deadline,
+                )
+                .await?
+            }
+        };
 
         let parsed: ChatResponse = serde_json::from_str(&text)
             .with_context(|| format!("failed to parse LLM response: {text}"))?;

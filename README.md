@@ -140,7 +140,7 @@ reviewgate llm test
 
 > 默认审查缺陷四维（security / perf / logic / ai_smell）。style/business/intent 为 opt-in——闸口聚焦高危，不用风格噪声淹没真问题。
 
-**安全深审**（`reviewgate security`）：只跑 security，但更深——sink 清单 + 强制追源、**跑到挖不出新问题为止**（连续 2 轮无新发现才停，上限 6 轮）、确定性密钥预检、未审完绝不 PASS。日常合并用 `review`；发版 / 鉴权支付相关改动 / 不放心时用 `security`。
+**安全深审**（`reviewgate security`）：只跑 security，但更深——sink 清单 + 强制追源、**跑到挖不出新问题为止**（连续 2 轮无新发现才停，上限 6 轮）、未审完绝不 PASS。确定性密钥预检在普通 `review` 里也会跑（不依赖模型）。日常合并用 `review`；发版 / 鉴权支付相关改动 / 不放心时用 `security`。
 
 然后：
 
@@ -264,7 +264,7 @@ reviewgate security --from main --to HEAD
 reviewgate review --profile gate         # 默认：严闸口（精度优先）
 reviewgate review --profile audit        # 更宽：samples≥2，默认含 style
 reviewgate review --estimate-only        # 只估成本/unit 计划，不调模型
-reviewgate review --max-cost 0.5         # 估费超限则开跑前拒绝（需 price_per_mtok_*）
+reviewgate review --max-cost 0.5         # 估费超限则拒绝；没配 price_per_mtok_* 也拒绝（否则预算是假的）
 reviewgate review --max-input-tokens 2e5 # 估输入 token 上界
 reviewgate review --dimensions security,logic
 reviewgate review --no-judge             # 更快，误报略多

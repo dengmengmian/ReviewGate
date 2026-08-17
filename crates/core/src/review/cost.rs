@@ -150,11 +150,19 @@ pub fn estimate_from_units(
 }
 
 /// 是否超过预算：`max_cost_usd` 或 `max_input_tokens`（任一超限即 true）。
+///
+/// 设了 `--max-cost` 但估算没有 USD（没配 `price_per_mtok_*`）时必须拒绝——
+/// 否则这个开关是假的，会静默放行。
 pub fn exceeds_budget(
     est: &CostEstimate,
     max_cost_usd: Option<f64>,
     max_input_tokens: Option<u64>,
 ) -> Option<&'static str> {
+    if max_cost_usd.is_some() && est.est_cost_usd.is_none() {
+        return Some(
+            "--max-cost was set but provider has no price_per_mtok_*; USD budget cannot be checked",
+        );
+    }
     if let Some(max) = max_cost_usd {
         if let Some(usd) = est.est_cost_usd {
             if usd > max {
@@ -275,5 +283,28 @@ mod tests {
         assert!(exceeds_budget(&est, Some(1.0), None).is_some());
         assert!(exceeds_budget(&est, None, Some(10_000)).is_some());
         assert!(exceeds_budget(&est, Some(2.0), Some(100_000)).is_none());
+    }
+
+    #[test]
+    fn exceeds_budget_refuses_usd_cap_when_prices_missing() {
+        // --max-cost 没有单价就不能换算 USD；放行等于预算开关是假的。
+        let est = CostEstimate {
+            units: 1,
+            reviewable_units: 1,
+            dimensions: 1,
+            samples: 1,
+            fanout_agents: 1,
+            est_input_tokens: 50_000,
+            est_output_tokens: 1000,
+            est_cost_usd: None,
+            summary: String::new(),
+        };
+        let why = exceeds_budget(&est, Some(0.5), None).expect("must refuse");
+        assert!(
+            why.contains("price_per_mtok") || why.contains("--max-cost"),
+            "refusal must name the missing prices or the flag, got: {why}"
+        );
+        // 没设 USD 上限时，缺单价不是错误。
+        assert!(exceeds_budget(&est, None, None).is_none());
     }
 }

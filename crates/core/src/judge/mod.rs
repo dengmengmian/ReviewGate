@@ -12,11 +12,70 @@ use crate::tool::{ToolContext, ToolRegistry};
 use futures::stream::{self, StreamExt};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 /// Judge 轮次上限。默认期望首轮（带证据）即裁决；仅边界情形才用工具升级核实，
 /// 故上限设小以截断长尾。
 const MAX_ROUNDS: usize = 4;
 const DEFAULT_CONCURRENCY: usize = 4;
+
+/// 确定性证伪：被引代码里有会改结论的控制条件，叙述却完全没提。
+///
+/// 金标准 gin#4709：叙述是「TempDir 可写所以写入必成功、测试必挂」，
+/// 同一段代码却有 `mode = 0o644` / `Chmod`。推理链错了，不是真问题。
+pub fn causal_gap_refutes(f: &Finding) -> bool {
+    if !code_has_file_mode_control(&f.existing_code) {
+        return false;
+    }
+    let story = format!("{}\n{}", f.message, f.evidence);
+    if story_mentions_file_mode(&story) {
+        return false;
+    }
+    story_claims_unconditional_write_success(&story)
+}
+
+fn code_has_file_mode_control(code: &str) -> bool {
+    let c = code.to_ascii_lowercase();
+    c.contains("chmod")
+        || c.contains("filemode")
+        || c.contains("0o644")
+        || c.contains("0o755")
+        || c.contains("0o444")
+        || c.contains("0o000")
+}
+
+fn story_mentions_file_mode(story: &str) -> bool {
+    let s = story.to_ascii_lowercase();
+    s.contains("chmod")
+        || s.contains("filemode")
+        || s.contains("0o644")
+        || s.contains("0o755")
+        || s.contains("0o444")
+        || s.contains("0o000")
+        || s.contains("no x")
+        || s.contains("execute bit")
+        || s.contains("mode=")
+        || s.contains("mode =")
+}
+
+fn story_claims_unconditional_write_success(story: &str) -> bool {
+    let s = story.to_ascii_lowercase();
+    let success = s.contains("将成功")
+        || s.contains("都会成功")
+        || s.contains("will succeed")
+        || s.contains("必然失败")
+        || s.contains("必挂")
+        || s.contains("must fail")
+        || s.contains("will fail")
+        || s.contains("一定失败");
+    let writeish = s.contains("tempdir")
+        || s.contains("可写")
+        || s.contains("writable")
+        || s.contains("mkdirall")
+        || s.contains("saveuploadedfile")
+        || s.contains("create");
+    success && writeish
+}
 
 /// 硬排除：明显应丢弃的发现（无需 LLM）。
 pub fn hard_excluded(f: &Finding) -> bool {
@@ -58,6 +117,10 @@ pub struct JudgeStats {
     pub kept: usize,
     pub refuted: usize,
     pub failed_open: usize,
+    /// 因 `--timeout` 预算耗尽而未完成证伪的条数（计入 fail-open）。
+    pub timed_out: usize,
+    /// 确定性因果缺口证伪（未调 LLM）。
+    pub causal_gap: usize,
     pub llm_requests: usize,
     pub tool_calls: usize,
     pub tool_counts: BTreeMap<String, usize>,
@@ -115,6 +178,21 @@ pub async fn judge_all_with_stats_limited(
     verbose: bool,
     max_concurrency: usize,
 ) -> (Vec<Finding>, JudgeStats) {
+    judge_all_with_deadline(client, reg, ctx, findings, verbose, max_concurrency, None).await
+}
+
+/// 同 [`judge_all_with_stats_limited`]，并遵守整次审查剩下的墙钟预算。
+///
+/// `timeout = Some(0)` 或预算已耗尽：不再调 LLM，fail-open 并记 `timed_out`。
+pub async fn judge_all_with_deadline(
+    client: &dyn LlmClient,
+    reg: &ToolRegistry,
+    ctx: &ToolContext,
+    findings: Vec<Finding>,
+    verbose: bool,
+    max_concurrency: usize,
+    timeout: Option<Duration>,
+) -> (Vec<Finding>, JudgeStats) {
     let original_count = findings.len();
     // 先过硬排除。
     let candidates: Vec<Finding> = findings.into_iter().filter(|f| !hard_excluded(f)).collect();
@@ -124,16 +202,56 @@ pub async fn judge_all_with_stats_limited(
         ..JudgeStats::default()
     };
 
+    let mut to_judge = Vec::new();
+    for f in candidates {
+        if causal_gap_refutes(&f) {
+            stats.refuted += 1;
+            stats.causal_gap += 1;
+            if verbose {
+                eprintln!(
+                    "  [judge] causal-gap refute {} (file-mode control unmentioned in story)",
+                    f.path
+                );
+            }
+        } else {
+            to_judge.push(f);
+        }
+    }
+
     if verbose {
         eprintln!(
-            "  [judge] 开始证伪：候选 {} 条，硬排除 {} 条",
-            stats.candidates, stats.hard_excluded
+            "  [judge] 开始证伪：候选 {} 条，硬排除 {} 条，因果缺口 {} 条",
+            stats.candidates, stats.hard_excluded, stats.causal_gap
         );
     }
 
+    let budget_start = Instant::now();
     let verdicts: Vec<(Finding, JudgeOne)> =
-        stream::iter(candidates.into_iter().map(|f| async move {
-            let one = judge_one_with_stats(client, reg, ctx, &f).await;
+        stream::iter(to_judge.into_iter().map(|f| async move {
+            let remaining = timeout.map(|t| t.saturating_sub(budget_start.elapsed()));
+            if remaining.is_some_and(|r| r.is_zero()) {
+                return (
+                    f,
+                    JudgeOne {
+                        verdict: None,
+                        stats: JudgeStats::default(),
+                        timed_out: true,
+                    },
+                );
+            }
+            let work = judge_one_with_stats(client, reg, ctx, &f);
+            let one = if let Some(r) = remaining {
+                match tokio::time::timeout(r, work).await {
+                    Ok(one) => one,
+                    Err(_) => JudgeOne {
+                        verdict: None,
+                        stats: JudgeStats::default(),
+                        timed_out: true,
+                    },
+                }
+            } else {
+                work.await
+            };
             (f, one)
         }))
         .buffer_unordered(max_concurrency.max(1))
@@ -146,6 +264,9 @@ pub async fn judge_all_with_stats_limited(
         stats.usage.add(&one.stats.usage);
         for (name, count) in one.stats.tool_counts {
             *stats.tool_counts.entry(name).or_default() += count;
+        }
+        if one.timed_out {
+            stats.timed_out += 1;
         }
 
         let verdict = one.verdict;
@@ -163,7 +284,7 @@ pub async fn judge_all_with_stats_limited(
                 stats.refuted += 1;
             }
             None => {
-                // Judge 失败：保守保留，但下调置信度。
+                // Judge 失败 / 超时：保守保留，但下调置信度。
                 f.confidence = (f.confidence * 0.8).min(0.79);
                 stats.failed_open += 1;
                 kept.push(f);
@@ -172,10 +293,11 @@ pub async fn judge_all_with_stats_limited(
     }
     if verbose {
         eprintln!(
-            "  [judge] 完成：保留 {} 条，证伪 {} 条，失败保留 {} 条；LLM {} 次 · 工具 {} 次（{}）；{}",
+            "  [judge] 完成：保留 {} 条，证伪 {} 条，失败保留 {} 条，超时 {} 条；LLM {} 次 · 工具 {} 次（{}）；{}",
             stats.kept + stats.failed_open,
             stats.refuted,
             stats.failed_open,
+            stats.timed_out,
             stats.llm_requests,
             stats.tool_calls,
             stats.tool_summary(),
@@ -188,6 +310,7 @@ pub async fn judge_all_with_stats_limited(
 struct JudgeOne {
     verdict: Option<Verdict>,
     stats: JudgeStats,
+    timed_out: bool,
 }
 
 /// 对单条 finding 证伪。
@@ -211,6 +334,7 @@ async fn judge_one_with_stats(
                 return JudgeOne {
                     verdict: None,
                     stats,
+                    timed_out: false,
                 };
             }
         };
@@ -223,6 +347,7 @@ async fn judge_one_with_stats(
                 return JudgeOne {
                     verdict: None,
                     stats,
+                    timed_out: false,
                 };
             }
             messages.push(Message::user(
@@ -238,6 +363,7 @@ async fn judge_one_with_stats(
                 return JudgeOne {
                     verdict: parse_verdict(&tu.input),
                     stats,
+                    timed_out: false,
                 };
             }
             let (content, is_error) = match reg.dispatch(&tu.name, &tu.input, ctx).await {
@@ -255,6 +381,7 @@ async fn judge_one_with_stats(
     JudgeOne {
         verdict: None,
         stats,
+        timed_out: false,
     }
 }
 
@@ -659,5 +786,103 @@ mod tests {
         assert_eq!(kept.len(), 6);
         assert_eq!(stats.llm_requests, 6);
         assert!(client.max_seen.load(Ordering::SeqCst) <= 2);
+    }
+
+    fn gin4709_false_block() -> Finding {
+        // 2026-08-04 实跑金标准：叙述是「TempDir 可写 → 写入必成功 → 测试必挂」，
+        // 被引代码里却有 mode=0o644 / Chmod，叙述完全没提。
+        Finding {
+            dimension: Dimension::Logic,
+            confidence: 0.98,
+            severity: Severity::High,
+            path: "context_test.go".into(),
+            start_line: 258,
+            end_line: 275,
+            message: "AI 机械式重构导致测试语义丢失：改用 t.TempDir() 后目录干净且可写，\
+SaveUploadedFile 将成功执行，但测试仍断言 require.Error，导致该测试必然失败。"
+                .into(),
+            existing_code: r#"
+var mode fs.FileMode = 0o644
+dst := filepath.Join(t.TempDir(), "test", "permission_test")
+require.Error(t, c.SaveUploadedFile(f, dst, mode))
+// SaveUploadedFile: os.MkdirAll(dir, mode); os.Chmod(dir, mode)
+"#
+            .into(),
+            evidence: String::new(),
+            suggestion: None,
+            suggestion_code: String::new(),
+            reachability: crate::model::Reachability::default(),
+            filtered: false,
+            agreed_dimensions: 1,
+            criterion: None,
+            intent_status: None,
+        }
+    }
+
+    #[test]
+    fn causal_gap_refutes_gin4709_and_spares_explained_mode() {
+        assert!(
+            causal_gap_refutes(&gin4709_false_block()),
+            "gin#4709 gold must be a deterministic causal-gap refute"
+        );
+        let mut explained = gin4709_false_block();
+        explained
+            .message
+            .push_str(" 但同一段代码用 mode=0o644 并 Chmod，无 x 位，非 root 下写入仍会失败。");
+        assert!(
+            !causal_gap_refutes(&explained),
+            "if the story already names the mode control, do not auto-refute"
+        );
+        assert!(
+            !causal_gap_refutes(&finding(Dimension::Security, "app.js", 0.9)),
+            "ordinary findings without a mode control must not be refuted"
+        );
+    }
+
+    #[tokio::test]
+    async fn gin4709_is_dropped_even_when_llm_says_real() {
+        let client = VerdictMock {
+            verdict: Some((true, 0.99)),
+        };
+        let reg = ToolRegistry::new();
+        let (kept, stats) =
+            judge_all_with_stats(&client, &reg, &ctx(), vec![gin4709_false_block()], false).await;
+        assert!(
+            kept.is_empty(),
+            "causal-gap must override a confident LLM real=true: {kept:#?}"
+        );
+        assert!(
+            stats.causal_gap >= 1 && stats.refuted >= 1,
+            "stats must record the deterministic refute: {stats:?}"
+        );
+        assert_eq!(
+            stats.llm_requests, 0,
+            "do not spend an LLM call on a causal gap"
+        );
+    }
+
+    #[tokio::test]
+    async fn judge_timeout_fail_opens_and_counts() {
+        let client = SlowCountingJudge {
+            current: AtomicUsize::new(0),
+            max_seen: AtomicUsize::new(0),
+        };
+        let reg = ToolRegistry::new();
+        let (kept, stats) = judge_all_with_deadline(
+            &client,
+            &reg,
+            &ctx(),
+            vec![finding(Dimension::Logic, "src/a.rs", 0.9)],
+            false,
+            1,
+            Some(std::time::Duration::from_millis(5)),
+        )
+        .await;
+        assert_eq!(kept.len(), 1);
+        assert!(kept[0].confidence <= 0.79);
+        assert!(
+            stats.timed_out >= 1,
+            "timeout must be counted, got {stats:?}"
+        );
     }
 }

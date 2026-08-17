@@ -50,7 +50,7 @@ use crate::config::{Config, GateConfig, DEFAULT_MAX_INPUT_TOKENS};
 use crate::diff::{self, Diff, DiffMode, ExcludedFile, Excluder};
 use crate::gate::{apply_gate, apply_incomplete_policy, GateDecision};
 use crate::index::{CachingIndex, PersistentIndex, RepoIndex};
-use crate::judge::{judge_all_with_stats_limited, JudgeStats};
+use crate::judge::{judge_all_with_deadline, JudgeStats};
 use crate::llm::{build_client, estimate_tokens, LlmClient};
 use crate::model::{Dimension, Finding, Usage};
 use crate::relocate::relocate_all;
@@ -69,9 +69,8 @@ pub enum ReviewProfile {
     /// Default multi-dimension gate: standard security checklist, samples=1.
     #[default]
     Standard,
-    /// Security deep review: security-only, sink-driven focus, deterministic
-    /// secret precheck, incomplete never PASS. Round count comes from the
-    /// saturating discovery loop in [`crate::security`], not from sampling.
+    /// Security deep review: security-only, sink-driven focus, saturating
+    /// recall, incomplete never PASS. Secret precheck also runs on Standard.
     Deep,
 }
 
@@ -122,7 +121,7 @@ pub struct ReviewOptions {
     pub profile: ReviewProfile,
     /// 运行姿态 gate/audit（影响默认采样等；与 Deep 正交）。
     pub run_profile: RunProfile,
-    /// 跑前成本上限（USD）。需配置 price_per_mtok_* 才生效。
+    /// 跑前成本上限（USD）。没配 price_per_mtok_* 时拒绝开跑，而不是跳过检查。
     pub max_cost_usd: Option<f64>,
     /// 跑前估算输入 token 上限；超过则拒绝开跑。
     pub max_est_input_tokens: Option<u64>,
@@ -177,7 +176,7 @@ impl ReviewOptions {
     /// Security-only deep review defaults used by `reviewgate security`.
     ///
     /// - dimensions = `[Security]` only
-    /// - profile = Deep (sink-driven focus, secret precheck, fail-incomplete hard)
+    /// - profile = Deep (sink-driven focus, fail-incomplete hard)
     ///
     /// 不设 `samples`：security 线的轮数由饱和式 discovery 决定
     /// （见 [`crate::security`]），固定采样在那条线上没有意义。

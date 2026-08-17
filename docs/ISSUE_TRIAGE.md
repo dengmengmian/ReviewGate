@@ -186,15 +186,33 @@ reviewgate issue inspect 123            # 单条的存档判定
 
 ## 在自己的仓库上评测一次
 
-接入前想知道它在**你的** Issue 分布上表现如何，跑：
+接入前想知道它在**你的** Issue 分布上表现如何。两套门禁分开跑——无模型时不要把
+documentation 召回当硬指标（规则「自信地错」时 LLM 兜底根本不会开火）。
 
 ```bash
 cargo build --release
+
+# 无 LLM（默认）：同步 + 本地分诊，绝不发布
 scripts/eval-issue-triage.sh owner/repo 500 /path/to/checkout
+python3 scripts/eval-issue-groundtruth.py .eval-issue/owner_repo/issues.db
+
+# 改规则后必须强制复审，否则 due 集会 skip，数字是旧的
+scripts/eval-issue-triage.sh owner/repo 500 -- --force-retriage --no-sync
+
+# 有 LLM：同一库再跑一遍，才谈 documentation 召回
+scripts/eval-issue-triage.sh owner/repo 500 -- --llm --force-retriage --no-sync
+python3 scripts/eval-issue-groundtruth.py .eval-issue/owner_repo/issues.db
 ```
 
-它会同步 500 条真实 Issue、在本地跑一遍分诊、打印类型与裁决分布。**全程 `watch`，
-不会发出任何评论。** 结果落在 `.eval-issue/`（已 gitignore）。
+`scripts/eval-issue-triage.sh --help` 不需要 token。脚本**拒绝 `--publish`**。
+结果落在 `.eval-issue/`（已 gitignore）。
+
+| 闸 | 命令 | 止损 |
+| --- | --- | --- |
+| 语料回归 | `cargo test -p reviewgate-core --test issue_classify_corpus` | 非 `known_gap` 不得新红 |
+| 无 LLM 类型 | `eval-issue-triage.sh`（不加 `--llm`）+ `eval-issue-groundtruth.py` | **不**把 docs 召回当硬门；security 精确不降 |
+| 有 LLM 召回 | 同上加 `--llm --force-retriage` | docs 召回相对同集基线 ≥ +10pp；security 精确仍不降 |
+| 冒烟 | `eval-issue-triage.sh` / `eval-issue-groundtruth.py --self-test` | 无 panic；`--self-test` 不需要仓库 |
 
 看什么：
 

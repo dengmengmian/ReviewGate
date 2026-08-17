@@ -5,7 +5,7 @@
 
 use anyhow::{Context, Result};
 use std::sync::OnceLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const MAX_ATTEMPTS: u64 = 3;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(180);
@@ -39,11 +39,29 @@ pub async fn post_json_with_retry(
     headers: &[(&str, String)],
     body: &serde_json::Value,
 ) -> Result<String> {
+    post_json_with_retry_until(http, endpoint, headers, body, None).await
+}
+
+/// 同 [`post_json_with_retry`]，但重试/退避不得越过 `deadline`。
+/// `--timeout` 要把整次审查当预算时，HTTP 层必须看见剩余时间，否则 180s×3 + 退避会把墙钟吃光。
+pub async fn post_json_with_retry_until(
+    http: &reqwest::Client,
+    endpoint: &str,
+    headers: &[(&str, String)],
+    body: &serde_json::Value,
+    deadline: Option<Instant>,
+) -> Result<String> {
     let mut last_err: Option<anyhow::Error> = None;
     for attempt in 0..MAX_ATTEMPTS {
+        if deadline_exceeded(deadline) {
+            return Err(deadline_err(last_err));
+        }
         let mut req = http.post(endpoint).json(body);
         for (k, v) in headers {
             req = req.header(*k, v);
+        }
+        if let Some(rem) = remaining(deadline) {
+            req = req.timeout(rem.min(REQUEST_TIMEOUT));
         }
         // Retry-After（若服务端给了）覆盖默认退避——读 body 会消费 resp，故先取出。
         let mut retry_after: Option<Duration> = None;
@@ -74,10 +92,31 @@ pub async fn post_json_with_retry(
         }
         if attempt + 1 < MAX_ATTEMPTS {
             let wait = retry_after.unwrap_or_else(|| backoff_with_jitter(attempt));
+            match remaining(deadline) {
+                Some(rem) if rem.is_zero() || wait >= rem => {
+                    return Err(deadline_err(last_err));
+                }
+                _ => {}
+            }
             tokio::time::sleep(wait).await;
         }
     }
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("LLM request failed")))
+}
+
+fn deadline_exceeded(deadline: Option<Instant>) -> bool {
+    remaining(deadline).is_some_and(|r| r.is_zero())
+}
+
+fn remaining(deadline: Option<Instant>) -> Option<Duration> {
+    deadline.map(|dl| dl.saturating_duration_since(Instant::now()))
+}
+
+fn deadline_err(last_err: Option<anyhow::Error>) -> anyhow::Error {
+    match last_err {
+        Some(e) => anyhow::anyhow!("LLM request deadline exceeded: {e}"),
+        None => anyhow::anyhow!("LLM request deadline exceeded"),
+    }
 }
 
 /// 可重试的状态码：5xx（服务端故障）+ 429（限流）+ 408（请求超时）。
@@ -301,5 +340,34 @@ mod tests {
             .unwrap();
         assert_eq!(out, "ok");
         h.abort();
+    }
+
+    #[tokio::test]
+    async fn post_json_deadline_skips_retry_backoff() {
+        // 一直 503：无截止会睡 2s+4s 再放弃。有截止时必须在预算内失败，不能把 --timeout 吃掉。
+        let q = Arc::new(Mutex::new(vec![
+            (503, r#"{"error":"overload"}"#),
+            (503, r#"{"error":"overload"}"#),
+            (503, r#"{"error":"overload"}"#),
+        ]));
+        let (url, h) = mock_server(q).await;
+        let client = reqwest::Client::new();
+        let deadline = std::time::Instant::now() + Duration::from_millis(80);
+        let t0 = std::time::Instant::now();
+        let err = post_json_with_retry_until(&client, &url, &[], &json!({}), Some(deadline))
+            .await
+            .unwrap_err()
+            .to_string();
+        let elapsed = t0.elapsed();
+        h.abort();
+        assert!(
+            elapsed < Duration::from_millis(800),
+            "deadline must abort before default retry sleep; elapsed {elapsed:?}"
+        );
+        assert!(
+            err.to_ascii_lowercase().contains("deadline")
+                || err.to_ascii_lowercase().contains("timeout"),
+            "error should mention the budget: {err}"
+        );
     }
 }

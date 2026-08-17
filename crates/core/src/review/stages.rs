@@ -29,7 +29,7 @@ pub(crate) struct RunCtx<'a> {
     pub new_ref: Option<String>,
     pub started: std::time::Instant,
     pub dims: Vec<Dimension>,
-    /// deep security profile：注入 sink-inventory focus + 确定性密钥前置扫描。
+    /// deep security profile：注入 sink-inventory focus（密钥预检标准/deep 都跑）。
     pub deep: bool,
     pub budget: usize,
     pub unit_plan: UnitPlanSummary,
@@ -162,23 +162,19 @@ pub(crate) async fn discover_and_intent(c: &mut RunCtx<'_>, client: &dyn LlmClie
     c.intent_outcome = intent_outcome;
 }
 
-/// 确定性密钥前置扫描（deep profile，无 LLM）。
+/// 确定性密钥前置扫描（标准 review 与 deep 都跑，无 LLM）。
 ///
 /// 结果先存进 `secret_hits` 暂不并入：要等 judge 之后才合流，否则证伪阶段会把
 /// 「构造上就不安全」的硬编码密钥当误报杀掉（实测 judge 曾抹掉 `sk_live_` 命中）。
 pub(crate) fn secrets(c: &mut RunCtx<'_>) {
-    c.secret_hits = if c.deep {
-        let hits = secrets::scan_diff(&c.diff);
-        if c.opts.verbose && !hits.is_empty() {
-            eprintln!(
-                "  [secrets] {} deterministic secret finding(s) (post-judge merge)",
-                hits.len()
-            );
-        }
-        hits
-    } else {
-        Vec::new()
-    };
+    let hits = secrets::scan_diff(&c.diff);
+    if c.opts.verbose && !hits.is_empty() {
+        eprintln!(
+            "  [secrets] {} deterministic secret finding(s) (post-judge merge)",
+            hits.len()
+        );
+    }
+    c.secret_hits = hits;
 }
 
 /// 未审完提示 + Agent 阶段用量摘要。
@@ -255,17 +251,31 @@ pub(crate) async fn judge(c: &mut RunCtx<'_>, client: &dyn LlmClient) {
     let opts = c.opts;
     // 证伪 Judge（可关）。
     if opts.judge && !c.findings.is_empty() {
-        let judged = judge_all_with_stats_limited(
+        // Judge 吃的是整次审查剩下的墙钟，不是再给一份完整 --timeout。
+        let remaining = opts.timeout.map(|t| t.saturating_sub(c.started.elapsed()));
+        let judged = judge_all_with_deadline(
             client,
             &c.reg,
             &c.tool_ctx,
             std::mem::take(&mut c.findings),
             opts.verbose,
             opts.judge_concurrency,
+            remaining,
         )
         .await;
         c.findings = judged.0;
         c.judge_stats = judged.1;
+        if c.judge_stats.timed_out > 0 {
+            c.incomplete = true;
+            c.warnings.push(
+                ReviewWarning::new(
+                    "judge",
+                    "timed_out",
+                    "counter-evidence judge hit the --timeout budget; remaining findings were kept conservatively and this review is incomplete",
+                )
+                .with_advice("Raise --timeout (0 = unlimited) and re-run"),
+            );
+        }
     } else if opts.verbose && !opts.judge {
         eprintln!("  [judge] skipped (--no-judge)");
     }

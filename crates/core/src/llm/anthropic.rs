@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::time::Instant;
 
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 const MAX_TOKENS: u32 = 8192;
@@ -41,6 +42,16 @@ impl LlmClient for AnthropicClient {
         system: &str,
         messages: &[Message],
         tools: &[ToolDef],
+    ) -> Result<LlmResponse> {
+        self.complete_until(system, messages, tools, None).await
+    }
+
+    async fn complete_until(
+        &self,
+        system: &str,
+        messages: &[Message],
+        tools: &[ToolDef],
+        deadline: Option<Instant>,
     ) -> Result<LlmResponse> {
         let mut wire_messages = to_wire_messages(messages);
         mark_shared_cache_breakpoint(&mut wire_messages);
@@ -83,8 +94,22 @@ impl LlmClient for AnthropicClient {
             ("x-api-key", self.api_key.clone()),
             ("anthropic-version", ANTHROPIC_VERSION.to_string()),
         ];
-        let text =
-            super::http::post_json_with_retry(&self.http, &self.endpoint, &headers, &body).await?;
+        let text = match deadline {
+            None => {
+                super::http::post_json_with_retry(&self.http, &self.endpoint, &headers, &body)
+                    .await?
+            }
+            Some(_) => {
+                super::http::post_json_with_retry_until(
+                    &self.http,
+                    &self.endpoint,
+                    &headers,
+                    &body,
+                    deadline,
+                )
+                .await?
+            }
+        };
 
         let parsed: MessagesResponse = serde_json::from_str(&text)
             .with_context(|| format!("failed to parse LLM response: {text}"))?;

@@ -9,8 +9,18 @@ Changes are listed in Chinese first, then English.
 ### Added
 - Issue 分诊长跑可发布：`watch` / `daemon --publish`，必须同时 `[issue_review] mode = "publish"`。GitHub 新增 Issue Action（默认不写、`--no-llm`）。due 集按用户正文/用户评论哈希复审；评论翻页 + `BotCommentLookup`；webhook 常量时间验签、1MiB/413。
   Long-running Issue triage can publish: `watch` / `daemon --publish` requires `mode = "publish"`. New GitHub Issue Action (observe-only and `--no-llm` by default). Re-triage uses user content/comment hashes; comment pagination + `BotCommentLookup`; constant-time webhook auth and a 1MiB body cap.
+- Issue 评测脚本可自检：`eval-issue-triage.sh --help`（`--force-retriage` / `--llm` / `--no-sync`，拒绝 `--publish`）；`eval-issue-groundtruth.py --self-test` 不需要仓库或 token。
+  Issue eval scripts are runnable without a live repo: `eval-issue-triage.sh --help` (`--force-retriage` / `--llm` / `--no-sync`, refuses `--publish`); `eval-issue-groundtruth.py --self-test` needs no checkout or token.
 
 ### Fixed
+- `--max-cost` 在没配 `price_per_mtok_*` 时不再静默放行：跑前直接拒绝，并说明缺单价。
+  `--max-cost` no longer silently proceeds when the provider has no `price_per_mtok_*`; the run is refused and the missing prices are named.
+- 标准 `review` 也会跑确定性密钥预检（不再只在 `reviewgate security` / deep profile 里跑）。硬编码密钥不依赖模型方差。
+  Standard `review` now runs the deterministic secret precheck (not only `reviewgate security` / deep). Hardcoded keys no longer depend on model variance.
+- `--timeout` 现在是整次审查的真预算：HTTP 重试/退避看见截止时间；Judge 吃剩余墙钟，超时 fail-open 并标 incomplete，不再在 Agent 跑完后无限证伪。
+  `--timeout` is now a real review-wide budget: HTTP retries honour the deadline; the judge uses leftover wall-clock time, fail-opens on timeout, and marks the review incomplete instead of judging forever after the agents finish.
+- Judge 对 gin#4709 类误 BLOCK 做确定性因果缺口证伪：叙述声称「TempDir 可写所以写入必成功」，被引代码里却有未提及的 `mode` / `Chmod` 时直接丢掉，不把预算花在 LLM 上。
+  The judge deterministically refutes gin#4709-class false BLOCKs: if the story says a write must succeed because TempDir is writable, but the cited code has an unmentioned `mode` / `Chmod` control, the finding is dropped without an LLM call.
 - Issue 分诊若干「写了配置、代码没读」的开关现在生效：`[issue_review] enabled`、`sync.overlap`、`sync.max_history_issues`、`actions.update_existing_comment`、分类近平局的 `LLM_FALLBACK_MARGIN`。`mode=suggest` 下 `--publish` 直接拒绝，不再打印假的 `published` 或把审计记成已执行。Gitee/AtomGit 不再在适配器里滤掉 PR（否则翻页会提前停）；拉评论失败不再变成空列表。
   Several Issue-triage settings that were documented but never read now actually work: `[issue_review] enabled`, `sync.overlap`, `sync.max_history_issues`, `actions.update_existing_comment`, and the near-tie `LLM_FALLBACK_MARGIN`. `--publish` in `mode=suggest` is refused instead of printing a fake `published` / recording `executed=true`. Gitee/AtomGit no longer filter pull requests in the adapter (that stopped pagination early); a failed comment fetch is no longer treated as “no comments”.
 

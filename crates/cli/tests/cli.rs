@@ -854,6 +854,57 @@ fn cli_estimate_only_does_not_move_the_incremental_baseline() {
 }
 
 #[test]
+fn cli_max_cost_without_prices_refuses_before_llm() {
+    // --max-cost 声称拦 USD，但没配单价时估算里没有美元数，旧逻辑会静默放行。
+    let dir = temp_dir("rg-max-cost-no-price");
+    run(&dir, "git init -q");
+    run(&dir, "git config user.email test@example.com");
+    run(&dir, "git config user.name Test");
+    std::fs::write(dir.join("a.rs"), "fn a() {}\n").unwrap();
+    run(&dir, "git add a.rs && git commit -q -m c1");
+    std::fs::write(dir.join("a.rs"), "fn a() {}\nfn b() {}\n").unwrap();
+
+    let config = dir.join("reviewgate.toml");
+    std::fs::write(
+        &config,
+        "provider = \"p\"\n[providers.p]\nprotocol = \"openai\"\nbase_url = \"http://127.0.0.1:1\"\napi_key = \"sk-test-not-used\"\nmodel = \"m\"\n",
+    )
+    .unwrap();
+
+    let out = bin()
+        .args([
+            "review",
+            "--estimate-only",
+            "--max-cost",
+            "0.5",
+            "--format",
+            "json",
+            "--no-metrics",
+        ])
+        .current_dir(&dir)
+        .env("REVIEWGATE_CONFIG", &config)
+        .output()
+        .expect("max-cost without prices");
+    assert!(
+        !out.status.success(),
+        "must refuse --max-cost when provider has no price_per_mtok_*: stdout={} stderr={}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let err = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stderr),
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(
+        err.contains("price_per_mtok") || err.contains("max-cost"),
+        "error must explain the missing prices: {err}"
+    );
+
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
 fn cli_daemon_serve_refuses_the_publicly_known_default_secret() {
     // `serve` 在缺 secret 时是报错退出的；`daemon --serve` 起的是同一个 webhook 服务，
     // 不能悄悄回退到源码里公开的常量——那等于把签名校验作废，任何人都能伪造 webhook。

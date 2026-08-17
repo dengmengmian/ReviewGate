@@ -140,7 +140,7 @@ ReviewGate runs multiple agents in parallel, each focused on a review dimension:
 
 > By default review runs the four defect dimensions (security / perf / logic / ai_smell). style/business/intent are opt-in — the gate stays focused on high-risk issues instead of drowning them in style noise.
 
-**Security deep review** (`reviewgate security`): security-only but deeper — sink inventory + mandatory taint/caller tracing, **keeps reviewing until it stops finding anything new** (stops after 2 consecutive rounds with no new findings, capped at 6), deterministic secret precheck, incomplete never PASS. Use `review` for everyday merges; use `security` for releases, auth/payment changes, or when humans barely read the diff.
+**Security deep review** (`reviewgate security`): security-only but deeper — sink inventory + mandatory taint/caller tracing, **keeps reviewing until it stops finding anything new** (stops after 2 consecutive rounds with no new findings, capped at 6), incomplete never PASS. The deterministic secret precheck also runs on ordinary `review` (no model involved). Use `review` for everyday merges; use `security` for releases, auth/payment changes, or when humans barely read the diff.
 
 Then it applies:
 
@@ -265,7 +265,7 @@ reviewgate security --from main --to HEAD
 reviewgate review --profile gate         # default: strict gate (precision first)
 reviewgate review --profile audit        # wider: samples≥2, style on by default
 reviewgate review --estimate-only        # cost/unit plan only; no LLM calls
-reviewgate review --max-cost 0.5         # abort before run if estimate exceeds (needs price_per_mtok_*)
+reviewgate review --max-cost 0.5         # abort if estimate exceeds; also abort if price_per_mtok_* is unset
 reviewgate review --max-input-tokens 2e5 # estimated input-token ceiling
 reviewgate review --dimensions security,logic
 reviewgate review --no-judge
