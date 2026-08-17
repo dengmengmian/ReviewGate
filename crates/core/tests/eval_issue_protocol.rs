@@ -88,3 +88,27 @@ fn eval_issue_triage_refuses_publish() {
         "must say why publish is refused: {err}"
     );
 }
+
+#[test]
+#[cfg(unix)]
+fn eval_issue_triage_empty_flags_do_not_crash_under_nounset() {
+    // macOS bash 3.2 + set -u：空 "${arr[@]}" 曾让默认路径（无 --llm/--force）直接退出。
+    let script = repo_root().join("scripts/eval-issue-triage.sh");
+    let out = Command::new("bash")
+        .arg(&script)
+        .args(["_selftest/nounset", "1", "--no-sync"])
+        .env("REVIEWGATE_BIN", "/usr/bin/true")
+        .env("GITHUB_TOKEN", "x")
+        .output()
+        .expect("bash eval-issue-triage.sh --no-sync");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !err.contains("unbound variable"),
+        "empty optional flags must not trip set -u: {err}"
+    );
+    assert!(
+        out.status.success(),
+        "mock BIN=true should finish: stdout={} stderr={err}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+}

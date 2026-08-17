@@ -111,15 +111,20 @@ mkdir -p "$OUT"
 [ -n "$GITHUB_TOKEN" ] || { echo "需要 GITHUB_TOKEN 或已登录的 gh" >&2; exit 1; }
 export GITHUB_TOKEN
 
-WATCH_EXTRA=()
+# 参数放进同一个非空数组：macOS bash 3.2 + set -u 下，空数组 "${arr[@]}" 会直接炸。
+WATCH_CMD=(issue watch --repo "$REPO" --data-dir "$OUT"
+  --max-iterations 1 --interval 1s --max-issues-per-run "$MAX")
 if [[ $FORCE -eq 1 ]]; then
-  WATCH_EXTRA+=(--force-retriage)
+  WATCH_CMD+=(--force-retriage)
 fi
 if [[ $LLM -eq 1 ]]; then
-  WATCH_EXTRA+=(--llm)
+  WATCH_CMD+=(--llm)
 fi
 if [[ $NOSYNC -eq 1 ]]; then
-  WATCH_EXTRA+=(--no-sync)
+  WATCH_CMD+=(--no-sync)
+fi
+if [[ -n "$REPO_ROOT" ]]; then
+  WATCH_CMD+=(--verify --repo-root "$REPO_ROOT")
 fi
 
 if [[ $NOSYNC -eq 0 ]]; then
@@ -130,14 +135,10 @@ else
 fi
 
 echo "== 2/3 本地分诊（不发布）=="
-VERIFY=()
-[ -n "$REPO_ROOT" ] && VERIFY=(--verify --repo-root "$REPO_ROOT")
-"$BIN" issue watch --repo "$REPO" --data-dir "$OUT" \
-  --max-iterations 1 --interval 1s --max-issues-per-run "$MAX" \
-  "${WATCH_EXTRA[@]}" "${VERIFY[@]}" \
-  2>&1 | tee "$OUT/triage.log"
+"$BIN" "${WATCH_CMD[@]}" 2>&1 | tee "$OUT/triage.log"
 
 echo "== 3/3 分布 =="
+# grep 0 命中会 exit 1；pipefail 下不能让空结果把整次评测判失败。
 grep -oE '→ [A-Z_]+ \([0-9]+%\) type=[a-z_]+ dup=[a-z_]+' "$OUT/triage.log" |
   awk '{v[$2]++; for(i=1;i<=NF;i++) if($i ~ /^type=/) t[$i]++; n++}
        END {
@@ -145,7 +146,7 @@ grep -oE '→ [A-Z_]+ \([0-9]+%\) type=[a-z_]+ dup=[a-z_]+' "$OUT/triage.log" |
          for (k in v) printf "  %-22s %5d  %5.1f%%\n", k, v[k], 100*v[k]/n
          printf "\n类型:\n"
          for (k in t) printf "  %-22s %5d  %5.1f%%\n", k, t[k], 100*t[k]/n
-       }' | sort -k2 -nr -t' '
+       }' | sort -k2 -nr -t' ' || true
 
 # panic 是硬失败：中文 Issue 曾经在摘要截断处崩掉整批。
 if grep -qi panicked "$OUT/triage.log"; then
