@@ -91,6 +91,34 @@ pub struct PlannedActions {
     /// 指派才能让这条 Issue 在列表里按「谁负责」筛出来。
     #[serde(default)]
     pub assign_to: Option<String>,
+    /// 复审时改同一条 bot 评论。关了就每次新建一条。
+    #[serde(default = "default_true_bool")]
+    pub update_existing_comment: bool,
+}
+
+impl Default for PlannedActions {
+    fn default() -> Self {
+        Self {
+            post_or_update_comment: false,
+            labels_to_add: Vec::new(),
+            close: false,
+            close_reason: None,
+            reasons_blocked: Vec::new(),
+            needs_human_notice: false,
+            assign_to: None,
+            update_existing_comment: true,
+        }
+    }
+}
+
+impl PlannedActions {
+    /// 是否规划了任何会改平台状态的动作。
+    pub fn has_writes(&self) -> bool {
+        self.post_or_update_comment
+            || !self.labels_to_add.is_empty()
+            || self.close
+            || self.assign_to.is_some()
+    }
 }
 
 /// 根据策略与决策规划可执行动作。
@@ -115,6 +143,7 @@ pub fn plan_actions(
             reasons_blocked: vec!["suggest_mode:writes_disabled".into()],
             needs_human_notice: false,
             assign_to: None,
+            update_existing_comment: policy.update_existing_comment,
         };
     }
     // 结论没把握就别对外说话：低置信度只留打标签，人来接手。
@@ -192,6 +221,7 @@ pub fn plan_actions(
         } else {
             None
         },
+        update_existing_comment: policy.update_existing_comment,
     }
 }
 
@@ -548,5 +578,32 @@ mod tests {
         );
         assert!(!plan.close);
         assert!(plan.labels_to_add.contains(&"needs-info".into()));
+    }
+
+    /// 复审改同一条评论是可关的：关了就必须体现在 planned 里，publish 才能看见。
+    #[test]
+    fn update_existing_comment_flag_reaches_planned_actions() {
+        let on = publishing();
+        assert!(
+            plan_actions(
+                &on,
+                &dec(IssueVerdict::NeedsInfo, false, false, vec![]),
+                None
+            )
+            .update_existing_comment
+        );
+        let off = ActionPolicy {
+            publish: true,
+            update_existing_comment: false,
+            ..Default::default()
+        };
+        assert!(
+            !plan_actions(
+                &off,
+                &dec(IssueVerdict::NeedsInfo, false, false, vec![]),
+                None
+            )
+            .update_existing_comment
+        );
     }
 }

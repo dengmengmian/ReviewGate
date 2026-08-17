@@ -34,7 +34,7 @@ ReviewGate 是**静态 LLM 质量闸口**，不执行代码。以下边界来自
 
 ## 3. run-to-run 方差
 - LLM 固有：同一改动多次运行命中的发现集合会有波动；borderline 置信度会在 WARN/BLOCK 间抖动。
-- **缓解**：dedup + 证伪 judge 收敛；`--samples N` 取并集 + 保留最高置信度，稳定 flaky 闸口判定。
+- **缓解**：dedup + 证伪 judge 收敛；`--samples N` 取并集，**同维度严重度/置信度取中位数**（偶数个取偏低者），避免「跑 N 次里有一次报高就算高」。多单元（大 PR）自动固定为 1。
 
 ## 4. 未支持语言的精确工具降级
 - tree-sitter 仅覆盖 rust/cpp/python/go/js/ts/java；其它语言（含仓颉等）**LLM 审查照常可用**，但
@@ -164,7 +164,7 @@ ReviewGate 是**静态 LLM 质量闸口**，不执行代码。以下边界来自
   只能用 `reviewgate issue stats --gated` 查。长期不看这个列表，等于这些单子没人管。
 
 ### 查重靠本地信号，语义漂移会漏
-- 三路候选：FTS 全文、错误签名、向量。向量用的是**本地哈希嵌入**（不调 API、零成本），
+- 三路候选：FTS 全文、错误签名、**本地哈希嵌入**（不是语义向量，不调 API、零成本），
   因此"换一套说法描述同一件事"这类语义漂移基本抓不到，跨语言（中文 issue vs 英文 issue）
   更是抓不到。查重是**降噪**，不是保证。
 - 固定语料 `issue_duplicate.jsonl` 上：真重复 **3/5 摆出来**，负样本 **零误报**。
@@ -191,10 +191,10 @@ ReviewGate 是**静态 LLM 质量闸口**，不执行代码。以下边界来自
   当作"判断是不是真 bug 的主要依据"不合理。用
   `scripts/eval-issue-groundtruth.py` 在你自己的仓库上量一次再决定。
 
-### 长跑模式不发布、不调模型
-- `issue watch` / `daemon` 只做**同步 + 本地 triage + 打印**：不发评论、不打标签、不关单子，
-  也不调用 LLM（LLM 只在 `issue review` 的用户向说明润色里用一次）。
-  **所有对外写操作只发生在 `reviewgate issue review --publish`**，且每项动作默认关闭。
+### 长跑默认不发布；`--publish` 要双闸
+- `issue watch` / `daemon` 默认只做同步 + 本地 triage + 打印。
+- 写回必须 `mode=publish` **且** `--publish`。打开后只处理从未审过或用户内容/用户评论变了的单子，不回填观察期存量。
+- `watch --llm` / `daemon --llm` 才建客户端；`issue review` 有 provider 就会兜底，可用 `--no-llm` 关掉。
 - **每轮限量**：`--max-issues-per-run`（默认 20）同时限制单轮同步与 triage 条数，
   避免首次接入大仓库时一口气打满平台 API 配额。没同步完时**游标不前进**，
   剩下的下一轮继续；已入库且未变更的会跳过，不占配额。

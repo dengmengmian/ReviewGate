@@ -60,4 +60,12 @@ cp integrations/claude-skill/SKILL.md ~/.claude/skills/reviewgate/SKILL.md
 - `start_line=0` 表示行号未定位，按 `existing_code`/`message` 在文件里定位。
 - 不要把 `filtered` 的低置信项当成必须处理的问题——那正是被过滤掉的「废话」。
 - 维度名仅供分类参考；真问题与否以 `message` + `evidence` 为准。
-- ReviewGate 只读，不会动用户代码。
+- ReviewGate **审查**默认只读，不会动用户代码（`--fix` 除外）。
+- **Issue 分诊**是另一条产品线，不是审查的附属：
+  ```bash
+  reviewgate issue review 123              # dry-run
+  reviewgate issue watch --max-iterations 1
+  ```
+  往平台写必须 `[issue_review] mode = "publish"` **且** `--publish`。
+  `watch`/`daemon` 同样双闸。不要在 GitHub Actions 空盘上跑 `watch --publish`（会回填存量）。
+  GitHub 可用官方 Issue Action：`integrations/github-action/issue`。其他托管平台是 preview。

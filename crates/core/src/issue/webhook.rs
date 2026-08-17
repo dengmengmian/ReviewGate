@@ -16,18 +16,27 @@ pub fn verify_github_signature(secret: &str, body: &[u8], header: &str) -> Resul
     let mut mac =
         HmacSha256::new_from_slice(secret.as_bytes()).map_err(|e| anyhow::anyhow!("{e}"))?;
     mac.update(body);
-    let expected = mac.finalize().into_bytes();
     let got = hex::decode(hex).map_err(|e| anyhow::anyhow!("bad signature hex: {e}"))?;
-    if expected.as_slice() != got.as_slice() {
-        bail!("webhook signature mismatch");
-    }
+    mac.verify_slice(&got)
+        .map_err(|_| anyhow::anyhow!("webhook signature mismatch"))?;
     Ok(())
 }
 
-/// GitLab token 头简单比对。
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.as_bytes().iter().zip(b.as_bytes()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+/// GitLab token 头：先比长度，再常量时间比对。
 pub fn verify_gitlab_token(secret: &str, header: Option<&str>) -> Result<()> {
     match header {
-        Some(h) if h == secret => Ok(()),
+        Some(h) if constant_time_eq(h, secret) => Ok(()),
         _ => bail!("gitlab token mismatch"),
     }
 }
@@ -88,14 +97,18 @@ pub fn parse_github_event(
         .map(super::comment::is_bot_comment)
         .unwrap_or(false);
 
+    let is_pr = v.pointer("/issue/pull_request").is_some() || v.get("pull_request").is_some();
     let event = event_header.to_ascii_lowercase();
-    let needs_full_review = match event.as_str() {
+    let mut needs_full_review = match event.as_str() {
         "issues" => matches!(action.as_str(), "opened" | "edited" | "reopened"),
         "issue_comment" => {
             matches!(action.as_str(), "created" | "edited") && !comment_bot && !is_bot_loop
         }
         _ => false,
     };
+    if is_pr {
+        needs_full_review = false;
+    }
 
     Ok(ParsedWebhook {
         delivery_id: if delivery_id.is_empty() {
@@ -112,8 +125,12 @@ pub fn parse_github_event(
     })
 }
 
-/// GitLab issue event 解析（简化）。
-pub fn parse_gitlab_event(body: &str, delivery_id: &str) -> Result<ParsedWebhook> {
+/// GitLab issue event 解析（简化）。只覆盖 Issue Hook，不解析 Note Hook。
+pub fn parse_gitlab_event(
+    body: &str,
+    delivery_id: &str,
+    bot_logins: &[&str],
+) -> Result<ParsedWebhook> {
     let v: Value = serde_json::from_str(body)?;
     let object_kind = v
         .get("object_kind")
@@ -131,7 +148,15 @@ pub fn parse_gitlab_event(body: &str, delivery_id: &str) -> Result<ParsedWebhook
         .unwrap_or("")
         .to_string();
     let iid = v.pointer("/object_attributes/iid").and_then(|x| x.as_u64());
-    let needs = object_kind == "issue" && matches!(action.as_str(), "open" | "reopen" | "update");
+    let username = v
+        .pointer("/user/username")
+        .and_then(|x| x.as_str())
+        .unwrap_or("");
+    let is_bot_loop =
+        object_kind == "issue" && bot_logins.iter().any(|b| username.eq_ignore_ascii_case(b));
+    let needs = object_kind == "issue"
+        && matches!(action.as_str(), "open" | "reopen" | "update")
+        && !is_bot_loop;
     Ok(ParsedWebhook {
         delivery_id: if delivery_id.is_empty() {
             format!("gl-{}", super::hash::content_hash(body, &object_kind))
@@ -143,8 +168,22 @@ pub fn parse_gitlab_event(body: &str, delivery_id: &str) -> Result<ParsedWebhook
         repo_id: path,
         issue_number: iid,
         needs_full_review: needs,
-        is_bot_loop: false,
+        is_bot_loop,
     })
+}
+
+/// drain 用：按 payload 重算要不要 triage。`closed` / PR 评论 / labeled 为 false。
+pub fn payload_needs_full_review(event_type: &str, payload: &str, bot_logins: &[&str]) -> bool {
+    let ev = event_type.to_ascii_lowercase();
+    if ev == "issue" || ev == "note" {
+        parse_gitlab_event(payload, "-", bot_logins)
+            .map(|p| p.needs_full_review)
+            .unwrap_or(false)
+    } else {
+        parse_github_event(event_type, "-", payload, bot_logins)
+            .map(|p| p.needs_full_review)
+            .unwrap_or(false)
+    }
 }
 
 #[cfg(test)]
@@ -190,5 +229,31 @@ mod tests {
         );
         let p = parse_github_event("issue_comment", "d2", &body, &["reviewgate[bot]"]).unwrap();
         assert!(p.is_bot_loop);
+    }
+
+    #[test]
+    fn pull_request_payload_is_not_full_review() {
+        let body = r#"{
+          "action":"opened",
+          "issue":{"number":9,"pull_request":{"url":"https://api/pulls/9"}},
+          "repository":{"full_name":"acme/app"},
+          "sender":{"login":"alice","type":"User"}
+        }"#;
+        let p = parse_github_event("issues", "d3", body, &["reviewgate[bot]"]).unwrap();
+        assert!(!p.needs_full_review);
+        assert!(!p.is_bot_loop);
+    }
+
+    #[test]
+    fn gitlab_bot_author_on_issue_hook_is_ignored() {
+        let body = r#"{
+          "object_kind":"issue",
+          "object_attributes":{"action":"open","iid":3},
+          "project":{"path_with_namespace":"g/p"},
+          "user":{"username":"reviewgate-bot"}
+        }"#;
+        let p = parse_gitlab_event(body, "g1", &["reviewgate-bot"]).unwrap();
+        assert!(p.is_bot_loop);
+        assert!(!p.needs_full_review);
     }
 }

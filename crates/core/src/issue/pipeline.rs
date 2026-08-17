@@ -26,6 +26,8 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IssueReviewConfig {
+    /// `[issue_review] enabled`。关掉后 CLI 拒绝 init/sync/review/watch/serve/daemon。
+    pub enabled: bool,
     pub vector_enabled: bool,
     pub candidate_limit: usize,
     pub min_similarity: f32,
@@ -36,11 +38,16 @@ pub struct IssueReviewConfig {
     pub repo_root: Option<PathBuf>,
     /// 评论 @mention。有结论时只抄送；转人工时会指派给 `on_needs_triage`。
     pub mentions: MentionConfig,
+    /// 同步游标回退量（如 `10m`）。防止 `since` 边界上刚更新的 Issue 被漏掉。
+    pub overlap: String,
+    /// `issue init` / `sync` 未显式 `--max` 时的上限。
+    pub max_history_issues: usize,
 }
 
 impl Default for IssueReviewConfig {
     fn default() -> Self {
         Self {
+            enabled: true,
             vector_enabled: true,
             candidate_limit: 20,
             min_similarity: 0.35,
@@ -49,6 +56,8 @@ impl Default for IssueReviewConfig {
             verify_search_tests: true,
             repo_root: None,
             mentions: MentionConfig::default(),
+            overlap: "5m".into(),
+            max_history_issues: 10_000,
         }
     }
 }
@@ -62,6 +71,8 @@ pub struct ReviewOutput {
     pub planned: PlannedActions,
     /// 技术验证快照（供 explain / 调试）。
     pub technical: Option<TechnicalVerification>,
+    /// 点名审查被跳过（如 payload 其实是 PR）。不是错误。
+    pub skipped: Option<String>,
 }
 
 /// 从已入库 / 内存数据执行 triage（同步；评论默认定性模板，LLM 说明见 `finalize_comment`）。
@@ -198,7 +209,24 @@ pub fn triage_stored_with_class(
         comments_hash: cmh,
         planned,
         technical,
+        skipped: None,
     })
+}
+
+/// 写入 comments_hash 的集合：去掉 bot / marker。sync 与 review 必须共用。
+pub fn filter_user_comments(comments: Vec<RawComment>) -> Vec<RawComment> {
+    comments
+        .into_iter()
+        .filter(|c| {
+            let is_bot_user = c
+                .user
+                .as_ref()
+                .and_then(|u| u.user_type.as_deref())
+                .map(|t| t.eq_ignore_ascii_case("bot"))
+                .unwrap_or(false);
+            !is_bot_user && !super::comment::is_bot_comment(&c.body)
+        })
+        .collect()
 }
 
 /// 用 LLM（若提供）重写面向用户的评论正文。
@@ -329,8 +357,13 @@ pub async fn sync_from_platform(
                 capped = true;
                 break;
             }
-            // 轻量：同步时拉评论写入 comments_hash；后续 review 再分析
-            let comments = platform.list_comments(raw.number).await.unwrap_or_default();
+            // 轻量：同步时拉评论写入 comments_hash；后续 review 再分析。
+            // 失败必须冒出来——空列表会写成错误 hash，查重/复审全乱。
+            let comments = platform
+                .list_comments(raw.number)
+                .await
+                .with_context(|| format!("list comments for #{}", raw.number))?;
+            let comments = filter_user_comments(comments);
             let emb: Option<&dyn Embedder> = if embed { Some(&embedder) } else { None };
             ingest_raw(store, raw, &comments, emb)?;
             synced.push(raw.number);
@@ -377,21 +410,28 @@ pub async fn review_issue_with_llm(
     llm: Option<&dyn LlmClient>,
 ) -> Result<ReviewOutput> {
     let raw = platform.get_issue(number).await?;
-    let comments = platform.list_comments(number).await.unwrap_or_default();
-    // 过滤 bot 自身评论，避免自循环参与分析
-    let user_comments: Vec<RawComment> = comments
-        .into_iter()
-        .filter(|c| {
-            let is_bot = c
-                .user
-                .as_ref()
-                .and_then(|u| u.user_type.as_deref())
-                .map(|t| t.eq_ignore_ascii_case("bot"))
-                .unwrap_or(false);
-            let is_rg = super::comment::is_bot_comment(&c.body);
-            !is_bot && !is_rg
-        })
-        .collect();
+    if raw.pull_request.is_some() {
+        return Ok(ReviewOutput {
+            decision: IssueReviewDecision {
+                issue_number: number,
+                ..Default::default()
+            },
+            normalized: NormalizedIssue::default(),
+            content_hash: String::new(),
+            comments_hash: String::new(),
+            planned: PlannedActions {
+                reasons_blocked: vec!["skip:pull_request".into()],
+                ..Default::default()
+            },
+            technical: None,
+            skipped: Some("pull_request".into()),
+        });
+    }
+    let comments = platform
+        .list_comments(number)
+        .await
+        .with_context(|| format!("list comments for #{number}"))?;
+    let user_comments = filter_user_comments(comments);
     let stored = ingest_raw(store, &raw, &user_comments, Some(embedder))?;
     let cmt_tuples: Vec<(u64, String, String)> = user_comments
         .iter()
@@ -475,22 +515,54 @@ pub async fn publish_decision(
     let mut created = false;
     let mut updated = false;
 
+    let mut skipped_truncated = false;
     if planned.post_or_update_comment {
         let body = &out.decision.suggested_comment;
-        let existing = platform.find_bot_comment(out.decision.issue_number).await?;
-        if let Some(id) = existing {
-            platform
-                .update_comment(out.decision.issue_number, &id, body)
-                .await?;
-            comment_id = id;
-            updated = true;
+        let number = out.decision.issue_number;
+        let local_id = store.latest_published_comment_id(number)?;
+        let lookup = platform.find_bot_comment(number).await?;
+        let update_id = if planned.update_existing_comment {
+            local_id.clone().or_else(|| match &lookup {
+                super::platform::BotCommentLookup::Found(id) => Some(id.clone()),
+                _ => None,
+            })
         } else {
-            comment_id = platform
-                .create_comment(out.decision.issue_number, body)
-                .await?;
-            created = true;
+            None
+        };
+        if let Some(id) = update_id {
+            match platform.update_comment(number, &id, body).await {
+                Ok(()) => {
+                    comment_id = id;
+                    updated = true;
+                }
+                Err(e) if format!("{e:#}").contains("404") => {
+                    if matches!(
+                        lookup,
+                        super::platform::BotCommentLookup::Absent { truncated: true }
+                    ) && local_id.is_none()
+                    {
+                        skipped_truncated = true;
+                    } else {
+                        comment_id = platform.create_comment(number, body).await?;
+                        created = true;
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        } else {
+            match lookup {
+                super::platform::BotCommentLookup::Absent { truncated: true } => {
+                    skipped_truncated = true;
+                }
+                _ => {
+                    comment_id = platform.create_comment(number, body).await?;
+                    created = true;
+                }
+            }
         }
-        store.set_published_comment(out.decision.issue_number, &out.content_hash, &comment_id)?;
+        if !comment_id.is_empty() {
+            store.set_published_comment(number, &out.content_hash, &comment_id)?;
+        }
     }
 
     if !planned.labels_to_add.is_empty() {
@@ -525,12 +597,18 @@ pub async fn publish_decision(
         &out.comments_hash,
         published_id,
     )?;
-    store.record_action_audit(&out.decision, planned, true, published_id)?;
+    let actually_wrote = created
+        || updated
+        || !planned.labels_to_add.is_empty()
+        || planned.close
+        || planned.assign_to.is_some();
+    store.record_action_audit(&out.decision, planned, actually_wrote, published_id)?;
     Ok(PublishResult {
         issue_number: out.decision.issue_number,
         comment_id,
         created,
         updated,
+        skipped_truncated,
     })
 }
 
@@ -566,6 +644,85 @@ pub fn format_unix_secs_rfc3339(secs: u64) -> String {
     let y = if m <= 2 { y + 1 } else { y };
 
     format!("{y:04}-{m:02}-{d:02}T{hour:02}:{min:02}:{sec:02}Z")
+}
+
+/// 解析 `YYYY-MM-DDTHH:MM:SSZ`（以及末尾 `+00:00`）。对不上返回 None。
+pub fn parse_unix_secs_rfc3339(s: &str) -> Option<u64> {
+    let s = s.trim();
+    let (date, rest) = s.split_once('T')?;
+    if date.len() != 10
+        || date.as_bytes().get(4) != Some(&b'-')
+        || date.as_bytes().get(7) != Some(&b'-')
+    {
+        return None;
+    }
+    let time = rest
+        .strip_suffix('Z')
+        .or_else(|| rest.strip_suffix("+00:00"))?;
+    if time.len() < 8 {
+        return None;
+    }
+    let y: i64 = date[0..4].parse().ok()?;
+    let month: u32 = date[5..7].parse().ok()?;
+    let day: u32 = date[8..10].parse().ok()?;
+    let hour: u64 = time[0..2].parse().ok()?;
+    let min: u64 = time[3..5].parse().ok()?;
+    let sec: u64 = time[6..8].parse().ok()?;
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) || hour > 23 || min > 59 || sec > 60 {
+        return None;
+    }
+    let days = days_from_civil(y, month, day)?;
+    days.checked_mul(86_400)?
+        .checked_add(hour * 3600 + min * 60 + sec)
+}
+
+/// Howard Hinnant `days_from_civil`：公历日期 → 1970-01-01 起的整天数。
+fn days_from_civil(mut y: i64, m: u32, d: u32) -> Option<u64> {
+    if m <= 2 {
+        y -= 1;
+    }
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = (y - era * 400) as u64;
+    let mp = if m > 2 { m - 3 } else { m + 9 };
+    let doy = (153 * mp as u64 + 2) / 5 + d as u64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era
+        .checked_mul(146_097)?
+        .checked_add(doe as i64)?
+        .checked_sub(719_468)?;
+    u64::try_from(days).ok()
+}
+
+/// `5m` / `30s` / `1h` / 纯秒数。
+pub fn parse_duration_secs(s: &str) -> anyhow::Result<u64> {
+    let s = s.trim();
+    if let Some(num) = s.strip_suffix('s') {
+        return Ok(num.parse()?);
+    }
+    if let Some(num) = s.strip_suffix('m') {
+        return Ok(num.parse::<u64>()? * 60);
+    }
+    if let Some(num) = s.strip_suffix('h') {
+        return Ok(num.parse::<u64>()? * 3600);
+    }
+    Ok(s.parse()?)
+}
+
+/// 把同步游标往回拨一段。解析不了的游标原样返回。
+pub fn rewind_sync_cursor(cursor: &str, overlap: std::time::Duration) -> String {
+    match parse_unix_secs_rfc3339(cursor) {
+        Some(secs) => format_unix_secs_rfc3339(secs.saturating_sub(overlap.as_secs())),
+        None => cursor.to_string(),
+    }
+}
+
+/// 给 `sync_from_platform` 用的 since：丢掉旧 epoch 游标，并把合法游标回拨 overlap。
+pub fn since_with_overlap(cursor: Option<&str>, overlap: std::time::Duration) -> Option<String> {
+    let s = cursor.map(str::trim).filter(|s| !s.is_empty())?;
+    if s.parse::<u64>().is_ok() {
+        return None;
+    }
+    Some(rewind_sync_cursor(s, overlap))
 }
 
 /// 渲染 dry-run 文本摘要。
@@ -865,6 +1022,243 @@ mod tests {
             "updated_at 变了就要重新入库"
         );
         assert_eq!(store.get_issue(1).unwrap().unwrap().title, "issue 1 edited");
+    }
+
+    #[test]
+    fn rfc3339_unix_secs_roundtrip() {
+        for secs in [0_u64, 1, 86_399, 86_400, 1_700_000_000, 1_720_972_800] {
+            let s = format_unix_secs_rfc3339(secs);
+            assert_eq!(parse_unix_secs_rfc3339(&s), Some(secs), "roundtrip {s}");
+        }
+        assert_eq!(parse_unix_secs_rfc3339("not-a-date"), None);
+        assert_eq!(parse_unix_secs_rfc3339("1718000000"), None);
+    }
+
+    #[test]
+    fn rewind_sync_cursor_subtracts_overlap() {
+        let back = rewind_sync_cursor("2024-06-15T12:00:00Z", std::time::Duration::from_secs(600));
+        assert_eq!(back, "2024-06-15T11:50:00Z");
+        assert_eq!(
+            rewind_sync_cursor("legacy-epoch", std::time::Duration::from_secs(60)),
+            "legacy-epoch"
+        );
+    }
+
+    #[test]
+    fn since_with_overlap_drops_legacy_epoch_cursors() {
+        assert_eq!(
+            since_with_overlap(Some("1718000000"), std::time::Duration::from_secs(300)),
+            None
+        );
+        assert_eq!(
+            since_with_overlap(
+                Some("2024-06-15T12:00:00Z"),
+                std::time::Duration::from_secs(300)
+            ),
+            Some("2024-06-15T11:55:00Z".into())
+        );
+    }
+
+    /// 拉评论失败必须冒出来：空列表会写成错误的 comments_hash，复审/查重全乱。
+    #[tokio::test]
+    async fn comment_fetch_failure_is_not_silent() {
+        let store = IssueStore::open_in_memory("acme/app").unwrap();
+        let platform = FixturePlatform::new();
+        platform.seed_issue(raw(1, "issue 1", "body"));
+        platform.fail_comments();
+        let err = sync_from_platform(&store, &platform, 10, None, false)
+            .await
+            .unwrap_err();
+        assert!(
+            format!("{err:#}").to_ascii_lowercase().contains("comment"),
+            "{err:#}"
+        );
+        assert_eq!(
+            store.count_issues().unwrap(),
+            0,
+            "must not ingest with a fake empty comment hash"
+        );
+    }
+
+    /// suggest 模式 planned 全空时，publish_decision 不能记 executed=true。
+    #[tokio::test]
+    async fn publish_with_no_planned_writes_is_not_executed() {
+        let store = IssueStore::open_in_memory("acme/app").unwrap();
+        let platform = FixturePlatform::new();
+        platform.seed_issue(raw(
+            1,
+            "Windows save crash access violation",
+            "## Actual\naccess violation\n## Steps\n1. open settings\n",
+        ));
+        let cfg = IssueReviewConfig::default();
+        assert!(!cfg.actions.publish);
+        let emb = LocalEmbedder;
+        let out = review_issue(&store, &platform, 1, &cfg, &emb)
+            .await
+            .unwrap();
+        assert!(
+            !out.planned.has_writes(),
+            "suggest mode must plan no writes: {:?}",
+            out.planned
+        );
+        let p = publish_decision(&store, &platform, &out).await.unwrap();
+        assert!(!p.created && !p.updated);
+        assert_eq!(
+            store.action_stats().unwrap().executed,
+            0,
+            "empty publish must not look executed"
+        );
+    }
+
+    /// 关掉「改同一条」就必须真的再发一条，而不是悄悄 update。
+    #[tokio::test]
+    async fn update_existing_comment_off_creates_a_new_comment() {
+        let store = IssueStore::open_in_memory("acme/app").unwrap();
+        let platform = FixturePlatform::new();
+        platform.seed_issue(raw(
+            2,
+            "Windows save crash access violation",
+            "## Actual\naccess violation\n## Steps\n1. click save\n",
+        ));
+        let cfg = IssueReviewConfig {
+            actions: crate::issue::ActionPolicy {
+                publish: true,
+                update_existing_comment: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let emb = LocalEmbedder;
+        let out = review_issue(&store, &platform, 2, &cfg, &emb)
+            .await
+            .unwrap();
+        assert!(!out.planned.update_existing_comment);
+        let p1 = publish_decision(&store, &platform, &out).await.unwrap();
+        assert!(p1.created);
+        let p2 = publish_decision(&store, &platform, &out).await.unwrap();
+        assert!(p2.created, "second publish must create, not update");
+        assert!(!p2.updated);
+        assert_eq!(platform.comment_count(2), 2);
+    }
+
+    #[tokio::test]
+    async fn review_issue_skips_pull_requests_without_ingest() {
+        let store = IssueStore::open_in_memory("acme/app").unwrap();
+        let platform = FixturePlatform::new();
+        let mut r = raw(9, "a pr", "body");
+        r.pull_request = Some(serde_json::json!({"url": "https://api/pulls/9"}));
+        platform.seed_issue(r);
+        let out = review_issue(
+            &store,
+            &platform,
+            9,
+            &IssueReviewConfig::default(),
+            &LocalEmbedder,
+        )
+        .await
+        .unwrap();
+        assert_eq!(out.skipped.as_deref(), Some("pull_request"));
+        assert_eq!(store.count_issues().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn truncated_bot_lookup_does_not_create_and_is_ok() {
+        let store = IssueStore::open_in_memory("acme/app").unwrap();
+        let platform = FixturePlatform::new();
+        platform.seed_issue(raw(
+            3,
+            "Windows save crash access violation",
+            "## Actual\naccess violation\n",
+        ));
+        let cfg = IssueReviewConfig {
+            actions: crate::issue::ActionPolicy {
+                publish: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let out = review_issue(&store, &platform, 3, &cfg, &LocalEmbedder)
+            .await
+            .unwrap();
+        platform.truncate_bot_lookup();
+        let p = publish_decision(&store, &platform, &out).await.unwrap();
+        assert!(p.skipped_truncated);
+        assert!(!p.created && !p.updated);
+        assert_eq!(platform.comment_count(3), 0);
+        assert_eq!(store.action_stats().unwrap().executed, 0);
+    }
+
+    #[tokio::test]
+    async fn local_comment_id_updates_even_when_lookup_truncated() {
+        let store = IssueStore::open_in_memory("acme/app").unwrap();
+        let platform = FixturePlatform::new();
+        platform.seed_issue(raw(
+            4,
+            "Windows save crash access violation",
+            "## Actual\naccess violation\n",
+        ));
+        let cfg = IssueReviewConfig {
+            actions: crate::issue::ActionPolicy {
+                publish: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let out = review_issue(&store, &platform, 4, &cfg, &LocalEmbedder)
+            .await
+            .unwrap();
+        let first = publish_decision(&store, &platform, &out).await.unwrap();
+        assert!(first.created);
+        platform.truncate_bot_lookup();
+        let second = publish_decision(&store, &platform, &out).await.unwrap();
+        assert!(second.updated, "local published_comment_id must win");
+        assert!(!second.skipped_truncated);
+        assert_eq!(platform.comment_count(4), 1);
+    }
+
+    #[tokio::test]
+    async fn due_set_ignores_bot_comments_after_publish() {
+        let store = IssueStore::open_in_memory("acme/app").unwrap();
+        let platform = FixturePlatform::new();
+        platform.seed_issue(raw(5, "crash on save", "access violation"));
+        let cfg = IssueReviewConfig {
+            actions: crate::issue::ActionPolicy {
+                publish: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let out = review_issue(&store, &platform, 5, &cfg, &LocalEmbedder)
+            .await
+            .unwrap();
+        publish_decision(&store, &platform, &out).await.unwrap();
+        // 再同步：平台现在有 bot 评论，过滤后哈希不应变。
+        sync_from_platform(&store, &platform, 10, None, false)
+            .await
+            .unwrap();
+        assert!(
+            store.issues_due_for_triage(10).unwrap().is_empty(),
+            "bot comment must not make the issue due"
+        );
+    }
+
+    #[tokio::test]
+    async fn due_set_includes_title_edits() {
+        let store = IssueStore::open_in_memory("acme/app").unwrap();
+        let platform = FixturePlatform::new();
+        platform.seed_issue(raw(6, "crash on save", "access violation"));
+        let cfg = IssueReviewConfig::default();
+        review_issue(&store, &platform, 6, &cfg, &LocalEmbedder)
+            .await
+            .unwrap();
+        assert!(store.issues_due_for_triage(10).unwrap().is_empty());
+        let mut edited = raw(6, "crash on save edited", "access violation");
+        edited.updated_at = "2024-06-02T00:00:00Z".into();
+        platform.seed_issue(edited);
+        sync_from_platform(&store, &platform, 10, None, false)
+            .await
+            .unwrap();
+        assert_eq!(store.issues_due_for_triage(10).unwrap(), vec![6]);
     }
 
     /// 分批 triage 的前提：能从库里挑出还没审过的。

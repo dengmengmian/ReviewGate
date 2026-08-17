@@ -271,7 +271,7 @@ reviewgate review --dimensions security,logic
 reviewgate review --no-judge
 reviewgate review --show-filtered
 reviewgate review --timeout 300          # per-dimension wall clock; use ≥300 for large PRs / reasoning models
-reviewgate review --samples 3
+reviewgate review --samples 3            # union of samples; same-dimension severity/confidence take the median. Multi-unit diffs pin this to 1
 reviewgate review --incremental           # only re-review files whose diff changed (opt-in)
 reviewgate review --fix                   # apply suggestions after per-finding y/N
 reviewgate review --fix-all               # apply all fixes without prompts (CI/scripts)
@@ -547,7 +547,7 @@ On a community repo the expensive part isn't writing code — it's working throu
 | What it does | Notes |
 |---|---|
 | Classify | defect / request / docs / question / security / advertisement, in English and Chinese |
-| Find duplicates | full-text, error-signature and semantic-vector recall; related issues are listed in the reply |
+| Find duplicates | full-text, error-signature and local hash-embedding recall (no network; paraphrases and cross-language matches are weak) |
 | Verify against code (optional) | reads your local checkout for actual evidence: matches the reported error to a source line, expands the enclosing function, finds prior fixes touching that file |
 | Write the reply | worded per type — a vulnerability report is never asked to "paste logs and retry on the latest version", a docs request is never asked for reproduction steps |
 | Take action | labels, assignee, closing ads — each one is opt-in |
@@ -570,7 +570,7 @@ reviewgate issue review 123 --repo owner/repo --verify --repo-root /path/to/repo
 reviewgate issue review 123 --repo owner/repo --publish
 ```
 
-Long-running: `reviewgate issue watch` polls for new issues; `reviewgate daemon --serve` runs the webhook receiver and the queue worker together. Both only **sync, triage locally, and print — they never write anything back to the platform**; comments, labels, and closing only happen through `issue review --publish`.
+Long-running: `reviewgate issue watch` polls; `reviewgate daemon --serve` receives webhooks. Both observe-only by default. Publishing requires `[issue_review] mode = "publish"` **and** `--publish` (or the GitHub Issue Action `publish: true`). Use one write entry per repo. Do not run `watch --publish` on a stateless Actions runner. GitLab / Gitee / AtomGit remain preview.
 
 How many issues each round works through is capped by `--max-issues-per-run` (default 20); the rest are picked up next round, so pointing it at a repository with a large backlog won't burn the platform's API quota in one go:
 

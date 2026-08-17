@@ -889,3 +889,171 @@ fn cli_daemon_serve_refuses_the_publicly_known_default_secret() {
         "错误要指出该配什么：{stderr}"
     );
 }
+
+fn write_min_config(dir: &std::path::Path, extra: &str) {
+    std::fs::write(
+        dir.join("reviewgate.toml"),
+        format!(
+            "provider = \"x\"\n\
+             [providers.x]\n\
+             protocol = \"openai\"\n\
+             base_url = \"http://127.0.0.1\"\n\
+             model = \"m\"\n\
+             {extra}"
+        ),
+    )
+    .unwrap();
+}
+
+#[test]
+fn issue_publish_in_suggest_mode_is_refused() {
+    let dir = temp_dir("rg-suggest-publish");
+    write_min_config(&dir, "[issue_review]\nmode = \"suggest\"\n");
+    let data = dir.join("issue-data");
+    let out = bin()
+        .args([
+            "issue",
+            "review",
+            "1",
+            "--fixture",
+            "--publish",
+            "--data-dir",
+        ])
+        .arg(&data)
+        .current_dir(&dir)
+        .output()
+        .expect("issue review --publish");
+    assert!(
+        !out.status.success(),
+        "suggest 模式加 --publish 必须失败，不能打印 published"
+    );
+    let err = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stderr),
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(
+        err.contains("mode") && err.contains("publish"),
+        "要说明是 mode 挡住的：{err}"
+    );
+    assert!(!err.contains("published:"), "不得报假成功：{err}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn issue_commands_respect_enabled_false() {
+    let dir = temp_dir("rg-issue-off");
+    write_min_config(&dir, "[issue_review]\nenabled = false\n");
+    let out = bin()
+        .args(["issue", "init", "--fixture", "--max", "1"])
+        .current_dir(&dir)
+        .output()
+        .expect("issue init");
+    assert!(!out.status.success(), "enabled=false 必须拒绝 issue 写路径");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("enabled"),
+        "错误要指出是 enabled 关掉的：{err}"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn issue_watch_publish_in_suggest_mode_is_refused() {
+    let dir = temp_dir("rg-watch-suggest");
+    write_min_config(&dir, "[issue_review]\nmode = \"suggest\"\n");
+    let data = dir.join("issue-data");
+    let out = bin()
+        .args([
+            "issue",
+            "watch",
+            "--fixture",
+            "--publish",
+            "--interval",
+            "1s",
+            "--max-iterations",
+            "1",
+            "--data-dir",
+        ])
+        .arg(&data)
+        .current_dir(&dir)
+        .output()
+        .expect("watch --publish suggest");
+    assert!(!out.status.success());
+    let err = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stderr),
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(err.contains("mode") && err.contains("publish"), "{err}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn issue_watch_default_does_not_publish() {
+    let dir = temp_dir("rg-watch-observe");
+    write_min_config(&dir, "[issue_review]\nmode = \"suggest\"\n");
+    let data = dir.join("issue-data");
+    let out = bin()
+        .args([
+            "issue",
+            "watch",
+            "--fixture",
+            "--interval",
+            "1s",
+            "--max-iterations",
+            "1",
+            "--data-dir",
+        ])
+        .arg(&data)
+        .current_dir(&dir)
+        .output()
+        .expect("watch observe");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!err.contains("published=created"), "{err}");
+    assert!(
+        err.contains("published=0") || err.contains("watch round"),
+        "{err}"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn issue_watch_dual_gate_publishes_once_then_skips() {
+    let dir = temp_dir("rg-watch-pub");
+    write_min_config(&dir, "[issue_review]\nmode = \"publish\"\n");
+    let data = dir.join("issue-data");
+    let out = bin()
+        .args([
+            "issue",
+            "watch",
+            "--fixture",
+            "--publish",
+            "--interval",
+            "1s",
+            "--max-iterations",
+            "2",
+            "--data-dir",
+        ])
+        .arg(&data)
+        .current_dir(&dir)
+        .output()
+        .expect("watch --publish");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("published=created"), "{err}");
+    assert!(
+        err.contains("skipped_unchanged") || err.contains("published=0"),
+        "{err}"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}

@@ -7,6 +7,8 @@ workflow="$ROOT/integrations/github-action/example-workflow.yml"
 config="$ROOT/reviewgate.toml.example"
 readmes=("$ROOT/README.md" "$ROOT/README.en.md")
 action="$ROOT/integrations/github-action/action.yml"
+issue_action="$ROOT/integrations/github-action/issue/action.yml"
+issue_workflow="$ROOT/integrations/github-action/example-issue-workflow.yml"
 install_sh="$ROOT/install.sh"
 install_ps1="$ROOT/install.ps1"
 cli_main="$ROOT/crates/cli/src/main.rs"
@@ -30,6 +32,16 @@ grep -q 'ARGS=(' "$action"
 grep -q 'reviewgate review "${ARGS\[@\]}"' "$action"
 if grep -q 'reviewgate review \$ARGS' "$action"; then
   echo "GitHub Action must execute ReviewGate with a bash array, not string-split ARGS" >&2
+  exit 1
+fi
+
+grep -q 'GITHUB_ACTION_PATH/../../../install.sh' "$issue_action"
+grep -q 'ARGS=(issue review' "$issue_action"
+grep -q 'reviewgate "${ARGS\[@\]}"' "$issue_action"
+grep -q 'issues:' "$issue_workflow"
+grep -q '!github.event.issue.pull_request' "$issue_workflow"
+if grep -q 'watch --publish' "$issue_workflow"; then
+  echo "example issue workflow must not recommend stateless watch --publish" >&2
   exit 1
 fi
 

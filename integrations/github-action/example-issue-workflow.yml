@@ -1,0 +1,26 @@
+# 放到仓库 .github/workflows/reviewgate-issue.yml
+# 教程只覆盖 GitHub。默认只观察；确认 mode=publish 后再把 publish 打开。
+name: ReviewGate Issue
+on:
+  issues:
+    types: [opened, edited, reopened]
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  triage:
+    if: ${{ !github.event.issue.pull_request }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dengmengmian/ReviewGate/integrations/github-action/issue@v0
+        env:
+          # 仅当 inputs.llm 为 true 时才会被 action 用来调模型
+          REVIEWGATE_API_KEY: ${{ secrets.REVIEWGATE_API_KEY }}
+        with:
+          publish: "false"
+          llm: "false"

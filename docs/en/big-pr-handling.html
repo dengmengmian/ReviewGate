@@ -105,7 +105,7 @@
 <thead><tr><th>Knob</th><th>Effect</th></tr></thead>
 <tbody>
 <tr><td><code>max_input_tokens</code> (provider config)</td><td>The input budget that decides when to split. Match it to diff density: too tight and units exhaust budget while fetching context (see the curl row). Small-context models can lower it; large models keep the 200k default.</td></tr>
-<tr><td><code>--samples N</code></td><td>Per-dimension sampling for single-unit PRs (union of runs, cost ×N); automatically pinned to 1 for multi-unit reviews.</td></tr>
+<tr><td><code>--samples N</code></td><td>Per-dimension sampling for single-unit PRs (union of runs; same-dimension severity/confidence take the median; cost ×N); automatically pinned to 1 for multi-unit reviews.</td></tr>
 <tr><td><code>--timeout S</code></td><td>Wall-clock cap per dimension; a timed-out dimension is skipped, the rest are kept, and the run counts as incomplete.</td></tr>
 <tr><td><code>--fail-on block|warn|never</code></td><td>Which verdict makes CI exit non-zero; unfinished reviews degrade to WARN.</td></tr>
 </tbody>

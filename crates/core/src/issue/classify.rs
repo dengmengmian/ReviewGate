@@ -418,6 +418,22 @@ Rules: a report describing something already broken is `bug`; a request for new 
 asking how something works is `question`; asking for docs/examples/wording changes is `documentation`; \
 `security` only for an actual vulnerability (memory leaks and bytecode instrumentation are NOT security).";
 
+/// 规则这一步要不要再问模型。
+///
+/// 没把握 = 未知类型、绝对置信度低于 [`LLM_FALLBACK_BELOW`]、或第一二名分差
+/// 低于 [`LLM_FALLBACK_MARGIN`]。广告/垃圾/辱骂由确定性规则短路，永远不问。
+pub fn needs_llm_fallback(class: &Classification, safety: &SafetyScores) -> bool {
+    let shortcut = safety.advertisement_score >= 0.75
+        || safety.spam_score >= 0.75
+        || safety.abuse_score >= 0.75;
+    if shortcut {
+        return false;
+    }
+    class.primary_type == IssueType::Unknown
+        || class.confidence < LLM_FALLBACK_BELOW
+        || class.margin < LLM_FALLBACK_MARGIN
+}
+
 /// 分类：规则优先，规则没把握时才问模型。
 ///
 /// **永远不会比纯规则更差**：没有模型、模型报错、返回值解析不出、返回了未知类型——
@@ -431,13 +447,7 @@ pub async fn classify_with_llm(
 ) -> Classification {
     let base = classify_heuristic(title, body, safety);
     let Some(llm) = llm else { return base };
-    // 安全短路过的（广告/spam/辱骂）与规则已有把握的都不问模型。
-    let shortcut = safety.advertisement_score >= 0.75
-        || safety.spam_score >= 0.75
-        || safety.abuse_score >= 0.75;
-    if shortcut
-        || (base.primary_type != IssueType::Unknown && base.confidence >= LLM_FALLBACK_BELOW)
-    {
+    if !needs_llm_fallback(&base, safety) {
         return base;
     }
 
@@ -782,12 +792,14 @@ pub fn classify_heuristic(title: &str, body: &str, safety: &SafetyScores) -> Cla
     });
     if let Some((t, conf, why)) = scores.first() {
         let margin = conf - scores.get(1).map(|s| s.1).unwrap_or(0.0);
-        Classification {
+        let mut class = Classification {
             primary_type: *t,
             confidence: conf.min(0.95),
             reasons: why.iter().map(|w| w.to_string()).collect(),
             margin,
-        }
+        };
+        apply_docs_policy(&mut class, title, body);
+        class
     } else {
         Classification {
             primary_type: IssueType::Unknown,
@@ -795,6 +807,43 @@ pub fn classify_heuristic(title: &str, body: &str, safety: &SafetyScores) -> Cla
             reasons: vec!["no_strong_signal".into()],
             margin: 0.0,
         }
+    }
+}
+
+fn title_has_error_keys(title: &str) -> bool {
+    let t = title.to_lowercase();
+    ERROR_KEYS.iter().any(|k| t.contains(k))
+}
+
+fn title_docs_asset(title: &str) -> bool {
+    let t = title.to_lowercase();
+    ["readme", "文档", "docs", "documentation"]
+        .iter()
+        .any(|k| t.contains(k))
+}
+
+/// 显式文档线索可改类型；和缺陷/需求冲突时只压置信度催 LLM，不抬关键词权重。
+fn apply_docs_policy(class: &mut Classification, title: &str, body: &str) {
+    if class.primary_type == IssueType::Security
+        || class.primary_type == IssueType::Spam
+        || class.primary_type == IssueType::Advertisement
+        || class.primary_type == IssueType::Abuse
+    {
+        return;
+    }
+    let explicit = matches!(conventional_prefix(title), Some(IssueType::Documentation))
+        || matches!(issue_form_type(body), Some(IssueType::Documentation))
+        || (title_docs_asset(title) && !title_has_error_keys(title));
+    if explicit && class.primary_type != IssueType::Documentation {
+        class.primary_type = IssueType::Documentation;
+        class.reasons.push("docs_explicit_override".into());
+        return;
+    }
+    if class.primary_type != IssueType::Documentation
+        && class.reasons.iter().any(|r| r == "docs_language")
+    {
+        class.confidence = class.confidence.min(LLM_FALLBACK_BELOW - 0.01);
+        class.reasons.push("docs_conflict_capped".into());
     }
 }
 
@@ -984,7 +1033,46 @@ mod tests {
         assert_eq!(*llm.calls.lock().unwrap(), 0);
     }
     use super::*;
-    use crate::issue::safety::score_safety;
+    use crate::issue::safety::{score_safety, SafetyScores};
+
+    /// 第一二名分差过小也是没把握：绝对分过了 0.5，但结论是掷硬币。
+    /// `LLM_FALLBACK_MARGIN` 之前定义了、watch --llm 的帮助也写了，代码从没读过。
+    #[test]
+    fn near_tie_is_unsure_even_when_confidence_is_high() {
+        let near = Classification {
+            primary_type: IssueType::Bug,
+            confidence: 0.72,
+            reasons: vec![],
+            margin: 0.08,
+        };
+        let safety = SafetyScores::default();
+        assert!(
+            needs_llm_fallback(&near, &safety),
+            "margin 0.08 < {LLM_FALLBACK_MARGIN} must ask the model"
+        );
+
+        let clear = Classification {
+            primary_type: IssueType::Bug,
+            confidence: 0.72,
+            reasons: vec![],
+            margin: 0.30,
+        };
+        assert!(!needs_llm_fallback(&clear, &safety));
+    }
+
+    #[test]
+    fn near_tie_squeezed_from_a_confident_heuristic_still_asks() {
+        let t = "[Bug] 保存时崩溃";
+        let b = "panic on save，必现";
+        let base = classify_heuristic(t, b, &score_safety(t, b));
+        assert!(
+            base.confidence >= LLM_FALLBACK_BELOW,
+            "前提：规则本身有把握，got {base:?}"
+        );
+        let mut squeezed = base.clone();
+        squeezed.margin = LLM_FALLBACK_MARGIN / 2.0;
+        assert!(needs_llm_fallback(&squeezed, &score_safety(t, b)));
+    }
 
     #[test]
     fn classifies_bug() {

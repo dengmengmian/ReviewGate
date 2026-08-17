@@ -106,7 +106,7 @@
 <h2>3. run-to-run 方差</h2>
 <ul>
 <li>LLM 固有：同一改动多次运行命中的发现集合会有波动；borderline 置信度会在 WARN/BLOCK 间抖动。</li>
-<li><strong>缓解</strong>：dedup + 证伪 judge 收敛；<code>--samples N</code> 取并集 + 保留最高置信度，稳定 flaky 闸口判定。</li>
+<li><strong>缓解</strong>：dedup + 证伪 judge 收敛；<code>--samples N</code> 取并集，<strong>同维度严重度/置信度取中位数</strong>（偶数个取偏低者），避免「跑 N 次里有一次报高就算高」。多单元（大 PR）自动固定为 1。</li>
 </ul>
 <h2>4. 未支持语言的精确工具降级</h2>
 <ul>

@@ -1,0 +1,69 @@
+name: "ReviewGate Issue"
+description: "Issue triage: classify, find duplicates, optionally comment"
+branding:
+  icon: "inbox"
+  color: "purple"
+
+inputs:
+  publish:
+    description: "Post/update the bot comment (also requires [issue_review] mode = publish)"
+    required: false
+    default: "false"
+  llm:
+    description: "Allow the configured model for classification fallback and narrative rewrite"
+    required: false
+    default: "false"
+  verify:
+    description: "Run Level-0 code verification against the checked-out repo"
+    required: false
+    default: "false"
+  config:
+    description: "reviewgate.toml path"
+    required: false
+    default: "reviewgate.toml"
+  version:
+    description: "ReviewGate version (default latest)"
+    required: false
+    default: "latest"
+  timeout:
+    description: "Unused placeholder kept for parity; issue review is not wall-clock gated here"
+    required: false
+    default: "0"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install ReviewGate
+      shell: bash
+      run: |
+        REVIEWGATE_VERSION="${{ inputs.version }}" sh "$GITHUB_ACTION_PATH/../../../install.sh"
+
+    - name: Run ReviewGate Issue triage
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        REVIEWGATE_CONFIG: ${{ inputs.config }}
+        LLM_ON: ${{ inputs.llm }}
+        REVIEWGATE_API_KEY: ${{ env.REVIEWGATE_API_KEY }}
+      run: |
+        NUMBER="${{ github.event.issue.number }}"
+        if [ -z "$NUMBER" ]; then
+          echo "no issue number in this event; nothing to triage"
+          exit 0
+        fi
+        ARGS=(issue review "$NUMBER" --no-llm --forge github)
+        if [ "${{ inputs.publish }}" = "true" ]; then
+          ARGS+=(--publish)
+        fi
+        if [ "${{ inputs.verify }}" = "true" ]; then
+          ARGS+=(--verify --repo-root "$GITHUB_WORKSPACE")
+        fi
+        if [ "$LLM_ON" = "true" ]; then
+          # drop the leading --no-llm
+          ARGS=(issue review "$NUMBER" --forge github)
+          if [ "${{ inputs.publish }}" = "true" ]; then ARGS+=(--publish); fi
+          if [ "${{ inputs.verify }}" = "true" ]; then ARGS+=(--verify --repo-root "$GITHUB_WORKSPACE"); fi
+        else
+          unset REVIEWGATE_API_KEY
+        fi
+        reviewgate "${ARGS[@]}"

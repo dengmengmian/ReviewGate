@@ -46,18 +46,22 @@ pub async fn run_webhook_server(cfg: ServeConfig, max_accepts: Option<u64>) -> R
     Ok(())
 }
 
+const MAX_WEBHOOK_BODY: usize = 1024 * 1024;
+
 async fn handle_connection(
     socket: &mut tokio::net::TcpStream,
     cfg: &ServeConfig,
     queue: &Arc<Mutex<EventQueue>>,
 ) -> Result<()> {
-    let mut buf = vec![0u8; 64 * 1024];
-    let n = socket.read(&mut buf).await?;
-    if n == 0 {
-        return Ok(());
-    }
-    let raw = &buf[..n];
-    let (headers, body) = split_http(raw)?;
+    let (headers, body) = match read_http_request(socket).await {
+        Ok(v) => v,
+        Err(e) if format!("{e:#}").starts_with("payload_too_large") => {
+            eprintln!("webhook 413: {e:#}");
+            write_response(socket, 413, "text/plain", b"payload too large").await?;
+            return Ok(());
+        }
+        Err(e) => return Err(e),
+    };
     let method = headers
         .lines()
         .next()
@@ -94,7 +98,7 @@ async fn handle_connection(
         None
     };
 
-    let body_str = String::from_utf8_lossy(body).to_string();
+    let body_str = String::from_utf8_lossy(&body).to_string();
 
     // GitHub path: /webhook or /webhook/github
     let is_gitlab = path.contains("gitlab")
@@ -109,10 +113,11 @@ async fn handle_connection(
             return Ok(());
         }
         let delivery = get_header("X-Gitlab-Event-UUID").unwrap_or_default();
-        parse_gitlab_event(&body_str, &delivery)?
+        let bots: Vec<&str> = cfg.bot_logins.iter().map(|s| s.as_str()).collect();
+        parse_gitlab_event(&body_str, &delivery, &bots)?
     } else {
         let sig = get_header("X-Hub-Signature-256").unwrap_or_default();
-        if let Err(e) = verify_github_signature(&cfg.webhook_secret, body, &sig) {
+        if let Err(e) = verify_github_signature(&cfg.webhook_secret, &body, &sig) {
             write_response(socket, 401, "text/plain", e.to_string().as_bytes()).await?;
             return Ok(());
         }
@@ -154,6 +159,66 @@ async fn handle_connection(
     Ok(())
 }
 
+async fn read_http_request(socket: &mut tokio::net::TcpStream) -> Result<(String, Vec<u8>)> {
+    let mut buf = Vec::new();
+    let mut tmp = [0u8; 8192];
+    loop {
+        let n = socket.read(&mut tmp).await?;
+        if n == 0 {
+            break;
+        }
+        buf.extend_from_slice(&tmp[..n]);
+        if let Ok((headers, body)) = split_http(&buf) {
+            let method = headers
+                .lines()
+                .next()
+                .unwrap_or("")
+                .split_whitespace()
+                .next()
+                .unwrap_or("");
+            if method == "GET" {
+                return Ok((headers, Vec::new()));
+            }
+            match content_length(&headers) {
+                Some(len) if len > MAX_WEBHOOK_BODY => {
+                    anyhow::bail!("payload_too_large:{len}");
+                }
+                Some(len) if body.len() >= len => {
+                    return Ok((headers, body[..len].to_vec()));
+                }
+                None => anyhow::bail!("payload_too_large:missing_content_length"),
+                _ => {}
+            }
+        }
+        if buf.len() > MAX_WEBHOOK_BODY + 16 * 1024 {
+            anyhow::bail!("payload_too_large:{}", buf.len());
+        }
+    }
+    let (headers, body) = split_http(&buf)?;
+    if let Some(len) = content_length(&headers) {
+        if len > MAX_WEBHOOK_BODY {
+            anyhow::bail!("payload_too_large:{len}");
+        }
+        if body.len() >= len {
+            return Ok((headers, body[..len].to_vec()));
+        }
+    }
+    anyhow::bail!("payload_too_large:incomplete")
+}
+
+fn content_length(headers: &str) -> Option<usize> {
+    for line in headers.lines() {
+        if let Some(v) = line
+            .split_once(':')
+            .filter(|(k, _)| k.eq_ignore_ascii_case("Content-Length"))
+            .map(|(_, v)| v.trim())
+        {
+            return v.parse().ok();
+        }
+    }
+    None
+}
+
 fn split_http(raw: &[u8]) -> Result<(String, &[u8])> {
     let sep = raw
         .windows(4)
@@ -188,6 +253,7 @@ async fn write_response(
         202 => "Accepted",
         401 => "Unauthorized",
         404 => "Not Found",
+        413 => "Payload Too Large",
         _ => "Error",
     };
     let head = format!(

@@ -314,4 +314,7 @@ pub struct PublishResult {
     pub comment_id: String,
     pub created: bool,
     pub updated: bool,
+    /// 评论太多、找不到已有 bot 评论且本地也没有 id：禁止 create，不是瞬时错误。
+    #[serde(default)]
+    pub skipped_truncated: bool,
 }

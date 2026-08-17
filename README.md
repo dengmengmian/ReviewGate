@@ -270,7 +270,7 @@ reviewgate review --dimensions security,logic
 reviewgate review --no-judge             # 更快，误报略多
 reviewgate review --show-filtered        # 展开被过滤的低置信项
 reviewgate review --timeout 300          # 单维度墙钟上限（秒）；大 PR / 推理模型建议 ≥300
-reviewgate review --samples 3            # 每维度多采样取并集
+reviewgate review --samples 3            # 每维度多采样取并集；同维严重度/置信度取中位数。大 PR 自动固定为 1
 reviewgate review --incremental          # 增量：只重审 diff 变化的文件，未变文件复用缓存（迭代 PR 省钱，opt-in）
 reviewgate review --fix                  # 逐条 y/N 确认后应用建议代码（作用于本次 review 覆盖的改动）
 reviewgate review --fix-all              # 不逐条确认，直接全部应用（可非交互，供 CI/脚本）
@@ -543,7 +543,7 @@ repos:
 | 它做什么 | 说明 |
 |---|---|
 | 分类定性 | 缺陷 / 需求 / 文档 / 提问 / 安全 / 广告，中英文都认 |
-| 查重 | 全文检索 + 错误签名 + 语义向量三路召回，相关 Issue 直接列在回复里 |
+| 查重 | 全文检索 + 错误签名 + 本地哈希嵌入三路召回（不出网，跨语言/换说法会漏） |
 | 代码验证（可选） | 拉本地仓库真的去找证据：报错文本对到源码行、展开所在函数、查文件的历史修复提交 |
 | 写回复 | 按类型分别措辞——安全报告不会被要求「贴日志、升级重试」，文档诉求不会被问「复现步骤」 |
 | 执行动作 | 打标签、指派处理人、关闭广告；每一项都要显式开启 |
@@ -566,7 +566,9 @@ reviewgate issue review 123 --repo owner/repo --verify --repo-root /path/to/repo
 reviewgate issue review 123 --repo owner/repo --publish
 ```
 
-长跑模式：`reviewgate issue watch` 轮询新单子；`reviewgate daemon --serve` 同时开 Webhook 接收和队列消费。两者**只同步 + 本地分诊 + 打印，不会往平台上写任何东西**——发评论/打标签/关单子只发生在 `issue review --publish`。
+长跑：`reviewgate issue watch` 轮询；`reviewgate daemon --serve` 收 webhook。默认只观察。要自动发评必须 `[issue_review] mode = "publish"` **且** `--publish`（或 GitHub Issue Action 的 `publish: true`）。同一仓库只选一个写入口，不要 `watch --publish` 和 Action 对着同一仓。
+
+GitHub 可用 [Issue Action](integrations/github-action/example-issue-workflow.yml)（默认不写）。GitLab / Gitee / AtomGit 是 preview（Gitee/AtomGit 无 webhook；GitLab 不解析评论 Note Hook）。不要在 Actions 空盘上跑 `watch --publish`。
 
 每轮消化的条数由 `--max-issues-per-run` 限制（默认 20），剩下的下一轮继续，首次接一个存量很多的仓库不会一口气打满平台 API 配额：
 
@@ -602,7 +604,7 @@ GitHub · GitLab · Gitee · AtomGit（`gitcode.com` 是 AtomGit 旧域名，同
 | 项 | 说明 |
 |---|---|
 | 只做分类，不定优先级 | 不判 Critical/High/Medium/Low——那套标准每个团队都不一样 |
-| 查重靠本地向量 | 不依赖外部 embedding 服务，跨语言和长文语义匹配能力有限 |
+| 查重靠本地哈希嵌入 | 不依赖外部 embedding 服务，跨语言和换说法描述同一件事会漏 |
 | 代码验证需要完整克隆 | `--depth 1` 的浅克隆查不到文件历史，深挖会退化 |
 | 回复的开头是摘录 | 取正文里第一句实质描述，不是语义摘要 |
 | 写操作全部默认关闭 | 打标签 / 指派 / 关闭都要显式开启，默认只发一条评论 |

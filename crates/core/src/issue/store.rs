@@ -316,6 +316,56 @@ impl IssueStore {
         Ok(out)
     }
 
+    /// 内容或用户评论相对上次审查变了、或从未审过。不把「没发过评论」当 due。
+    pub fn issues_due_for_triage(&self, limit: usize) -> Result<Vec<u64>> {
+        let nums = self.list_issue_numbers()?;
+        let mut due = Vec::new();
+        for n in nums {
+            if due.len() >= limit {
+                break;
+            }
+            let Some(issue) = self.get_issue(n)? else {
+                continue;
+            };
+            match self.latest_review_hashes(n)? {
+                None => due.push(n),
+                Some((ch, cmh)) if ch != issue.content_hash || cmh != issue.comments_hash => {
+                    due.push(n)
+                }
+                _ => {}
+            }
+        }
+        Ok(due)
+    }
+
+    fn latest_review_hashes(&self, issue_number: u64) -> Result<Option<(String, String)>> {
+        let mut stmt = self.conn.prepare(
+            r#"SELECT content_hash, comments_hash FROM issue_reviews
+               WHERE repo_id=?1 AND issue_number=?2
+               ORDER BY analyzed_at DESC LIMIT 1"#,
+        )?;
+        let row = stmt
+            .query_row(params![self.repo_id, issue_number as i64], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
+            .optional()?;
+        Ok(row)
+    }
+
+    pub fn latest_published_comment_id(&self, issue_number: u64) -> Result<Option<String>> {
+        let mut stmt = self.conn.prepare(
+            r#"SELECT published_comment_id FROM issue_reviews
+               WHERE repo_id=?1 AND issue_number=?2
+                 AND published_comment_id IS NOT NULL
+                 AND published_comment_id != ''
+               ORDER BY analyzed_at DESC LIMIT 1"#,
+        )?;
+        let row: Option<String> = stmt
+            .query_row(params![self.repo_id, issue_number as i64], |r| r.get(0))
+            .optional()?;
+        Ok(row)
+    }
+
     /// 还没 triage 过的 Issue 号，**旧的优先**，最多 `limit` 条。
     ///
     /// 长跑模式据此分批消化积压：一轮只处理一部分，剩下的留在库里，下一轮继续——
@@ -921,6 +971,7 @@ mod tests {
             reasons_blocked: vec![],
             needs_human_notice: false,
             assign_to: None,
+            update_existing_comment: true,
         };
         store
             .record_action_audit(&published, &plan_published, true, Some("c-1"))
@@ -940,6 +991,7 @@ mod tests {
             reasons_blocked: vec!["low_confidence:0.40<0.50".into()],
             needs_human_notice: false,
             assign_to: None,
+            update_existing_comment: true,
         };
         store
             .record_action_audit(&gated, &plan_gated, false, None)

@@ -24,7 +24,10 @@ pub mod verify;
 pub mod webhook;
 
 pub use action::{plan_actions, ActionPolicy, PlannedActions, SAFE_LABELS};
-pub use classify::{classify_heuristic, classify_with_llm, Classification, LLM_FALLBACK_BELOW};
+pub use classify::{
+    classify_heuristic, classify_with_llm, needs_llm_fallback, Classification, LLM_FALLBACK_BELOW,
+    LLM_FALLBACK_MARGIN,
+};
 pub use comment::{is_bot_comment, render_comment, render_comment_with_mentions};
 pub use embedding::{Embedder, FailingEmbedder, LocalEmbedder};
 pub use explain::{
@@ -40,14 +43,15 @@ pub use mentions::{format_mention_line, resolve_mentions, MentionConfig};
 pub use model::*;
 pub use normalize::normalize_issue;
 pub use pipeline::{
-    finalize_comment, format_review_text, format_unix_secs_rfc3339, ingest_raw, iso_now,
-    publish_decision, review_issue, review_issue_with_llm, sync_from_platform, triage_stored,
-    triage_stored_with_class, IssueReviewConfig, ReviewOutput,
+    filter_user_comments, finalize_comment, format_review_text, format_unix_secs_rfc3339,
+    ingest_raw, iso_now, parse_duration_secs, parse_unix_secs_rfc3339, publish_decision,
+    review_issue, review_issue_with_llm, rewind_sync_cursor, since_with_overlap,
+    sync_from_platform, triage_stored, triage_stored_with_class, IssueReviewConfig, ReviewOutput,
 };
 pub use platform::{
-    build_platform, map_v5_issue, AtomGitIssuePlatform, FixturePlatform, GitHubIssuePlatform,
-    GitLabIssuePlatform, GiteeIssuePlatform, GiteeStyleIssuePlatform, HttpDoer, IssueForge,
-    IssuePlatform, ReqwestDoer,
+    build_platform, map_v5_issue, AtomGitIssuePlatform, BotCommentLookup, FixturePlatform,
+    GitHubIssuePlatform, GitLabIssuePlatform, GiteeIssuePlatform, GiteeStyleIssuePlatform,
+    HttpDoer, IssueForge, IssuePlatform, ReqwestDoer,
 };
 pub use queue::{EventQueue, WebhookDelivery};
 pub use serve::{drain_queue_once, run_webhook_server, ServeConfig};
@@ -57,6 +61,6 @@ pub use verify::{
     DeepDigBlock, TechnicalVerification,
 };
 pub use webhook::{
-    parse_github_event, parse_gitlab_event, verify_github_signature, verify_gitlab_token,
-    ParsedWebhook,
+    parse_github_event, parse_gitlab_event, payload_needs_full_review, verify_github_signature,
+    verify_gitlab_token, ParsedWebhook,
 };

@@ -81,7 +81,7 @@
 <h2>3. Run-to-run variance</h2>
 <ul>
 <li>Inherent to LLMs: the set of findings fluctuates between runs; borderline confidences can flip between WARN and BLOCK.</li>
-<li>Mitigation: dedup + counter-evidence judging converge results; <code>--samples N</code> takes the union across samples and keeps the highest confidence.</li>
+<li>Mitigation: dedup + counter-evidence judging converge results; <code>--samples N</code> takes the union across samples, and same-dimension severity/confidence take the median (lower value on even counts). Multi-unit (large) diffs pin samples to 1.</li>
 </ul>
 
 <h2>4. Degraded precision tooling for unsupported languages</h2>

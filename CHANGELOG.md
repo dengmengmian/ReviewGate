@@ -6,6 +6,18 @@ Changes are listed in Chinese first, then English.
 
 ## [Unreleased]
 
+### Added
+- Issue 分诊长跑可发布：`watch` / `daemon --publish`，必须同时 `[issue_review] mode = "publish"`。GitHub 新增 Issue Action（默认不写、`--no-llm`）。due 集按用户正文/用户评论哈希复审；评论翻页 + `BotCommentLookup`；webhook 常量时间验签、1MiB/413。
+  Long-running Issue triage can publish: `watch` / `daemon --publish` requires `mode = "publish"`. New GitHub Issue Action (observe-only and `--no-llm` by default). Re-triage uses user content/comment hashes; comment pagination + `BotCommentLookup`; constant-time webhook auth and a 1MiB body cap.
+
+### Fixed
+- Issue 分诊若干「写了配置、代码没读」的开关现在生效：`[issue_review] enabled`、`sync.overlap`、`sync.max_history_issues`、`actions.update_existing_comment`、分类近平局的 `LLM_FALLBACK_MARGIN`。`mode=suggest` 下 `--publish` 直接拒绝，不再打印假的 `published` 或把审计记成已执行。Gitee/AtomGit 不再在适配器里滤掉 PR（否则翻页会提前停）；拉评论失败不再变成空列表。
+  Several Issue-triage settings that were documented but never read now actually work: `[issue_review] enabled`, `sync.overlap`, `sync.max_history_issues`, `actions.update_existing_comment`, and the near-tie `LLM_FALLBACK_MARGIN`. `--publish` in `mode=suggest` is refused instead of printing a fake `published` / recording `executed=true`. Gitee/AtomGit no longer filter pull requests in the adapter (that stopped pagination early); a failed comment fetch is no longer treated as “no comments”.
+
+### Changed
+- `--samples N` 的文档与实现对齐：并集召回，同维度取中位数；`reviewgate security` 走饱和轮数，不再用固定采样。
+  `--samples N` docs now match the code: union for recall, median within a dimension; `reviewgate security` uses saturating rounds, not fixed samples.
+
 ## [0.12.0] - 2026-08-06
 
 ### Changed

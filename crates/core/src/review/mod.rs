@@ -100,8 +100,8 @@ pub struct ReviewOptions {
     pub verbose: bool,
     /// 单维度 Agent 墙钟上限（并行，故约等于审查阶段总耗时上限）。超时则跳过该维度、保留其余。
     pub timeout: Option<std::time::Duration>,
-    /// 每个维度的采样次数（默认 1）。>1 时每维度并行跑多次、取**并集**，由 dedup 折叠重复、
-    /// judge 过滤——以成本换取对 flaky 漏报（如 SSRF）的召回稳定性。
+    /// 每个维度的采样次数（默认 1）。>1 时每维度并行跑多次、取**并集**，同维度
+    /// 严重度/置信度取中位数（偶数个取偏低者），再由 judge 过滤。多单元（大 PR）强制为 1。
     pub samples: usize,
     /// 是否允许 `run_check` 沙箱执行（opt-in，默认 false）。开启后 logic 维度可真正运行
     /// 边界用例验证细微算法（如 off-by-one），代价是执行模型生成的自包含片段（见 LIMITATIONS）。

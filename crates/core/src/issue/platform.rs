@@ -48,6 +48,20 @@ impl IssueForge {
     }
 }
 
+/// 翻页找 bot 评论的结果。禁止用裸 `Option`——截断和「确定没有」语义不同。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BotCommentLookup {
+    Found(String),
+    Absent { truncated: bool },
+}
+
+pub const COMMENT_PAGE_SIZE: u32 = 100;
+pub const COMMENT_PAGE_CAP: u32 = 10;
+
+fn comment_is_ours(c: &RawComment) -> bool {
+    is_bot_comment(&c.body) || c.body.contains(BOT_COMMENT_MARKER)
+}
+
 /// 窄接口：同步、发布、标签、关闭。
 #[async_trait]
 pub trait IssuePlatform: Send + Sync {
@@ -63,7 +77,7 @@ pub trait IssuePlatform: Send + Sync {
     /// 更新已有评论。`number` 是所属 Issue 号——GitLab / Gitee 的 note 端点是父资源作用域的，
     /// 光有评论 id 拼不出合法 URL；GitHub 用不到它。
     async fn update_comment(&self, number: u64, comment_id: &str, body: &str) -> Result<()>;
-    async fn find_bot_comment(&self, number: u64) -> Result<Option<String>>;
+    async fn find_bot_comment(&self, number: u64) -> Result<BotCommentLookup>;
     async fn add_labels(&self, number: u64, labels: &[String]) -> Result<()>;
     async fn close_issue(&self, number: u64, reason: &str) -> Result<()>;
     /// 指派处理人。默认未实现——没在真机验证过的写操作宁可报错，也不能假成功。
@@ -162,6 +176,27 @@ impl<H: HttpDoer> GitHubIssuePlatform<H> {
             ("Accept", "application/vnd.github+json".into()),
         ]
     }
+
+    async fn fetch_comment_page(
+        &self,
+        number: u64,
+        page: u32,
+        descending: bool,
+    ) -> Result<Vec<RawComment>> {
+        let dir = if descending { "desc" } else { "asc" };
+        let url = format!(
+            "{}/repos/{}/issues/{number}/comments?per_page={COMMENT_PAGE_SIZE}&page={page}&sort=created&direction={dir}",
+            self.api_base, self.repo
+        );
+        let (status, val) = self
+            .http
+            .request_json("GET", &url, &self.headers(), None)
+            .await?;
+        if !(200..300).contains(&status) {
+            bail!("list_comments status={status}");
+        }
+        serde_json::from_value(val).context("parse comments")
+    }
 }
 
 #[async_trait]
@@ -205,18 +240,22 @@ impl<H: HttpDoer> IssuePlatform for GitHubIssuePlatform<H> {
     }
 
     async fn list_comments(&self, number: u64) -> Result<Vec<RawComment>> {
-        let url = format!(
-            "{}/repos/{}/issues/{number}/comments?per_page=100",
-            self.api_base, self.repo
-        );
-        let (status, val) = self
-            .http
-            .request_json("GET", &url, &self.headers(), None)
-            .await?;
-        if !(200..300).contains(&status) {
-            bail!("list_comments status={status}");
+        let mut all = Vec::new();
+        for page in 1..=COMMENT_PAGE_CAP {
+            let batch = self.fetch_comment_page(number, page, false).await?;
+            let n = batch.len();
+            all.extend(batch);
+            if n < COMMENT_PAGE_SIZE as usize {
+                break;
+            }
+            if page == COMMENT_PAGE_CAP {
+                eprintln!(
+                    "  [issue] comments_truncated issue=#{number} pages={COMMENT_PAGE_CAP} (hash covers oldest {})",
+                    all.len()
+                );
+            }
         }
-        Ok(serde_json::from_value(val).context("parse comments")?)
+        Ok(all)
     }
 
     async fn create_comment(&self, number: u64, body: &str) -> Result<String> {
@@ -263,13 +302,18 @@ impl<H: HttpDoer> IssuePlatform for GitHubIssuePlatform<H> {
         Ok(())
     }
 
-    async fn find_bot_comment(&self, number: u64) -> Result<Option<String>> {
-        for c in self.list_comments(number).await? {
-            if is_bot_comment(&c.body) || c.body.contains(BOT_COMMENT_MARKER) {
-                return Ok(Some(c.id.to_string()));
+    async fn find_bot_comment(&self, number: u64) -> Result<BotCommentLookup> {
+        for page in 1..=COMMENT_PAGE_CAP {
+            let batch = self.fetch_comment_page(number, page, true).await?;
+            let n = batch.len();
+            if let Some(c) = batch.iter().find(|c| comment_is_ours(c)) {
+                return Ok(BotCommentLookup::Found(c.id.to_string()));
+            }
+            if n < COMMENT_PAGE_SIZE as usize {
+                return Ok(BotCommentLookup::Absent { truncated: false });
             }
         }
-        Ok(None)
+        Ok(BotCommentLookup::Absent { truncated: true })
     }
 
     async fn assign(&self, number: u64, login: &str) -> Result<()> {
@@ -367,6 +411,57 @@ impl<H: HttpDoer> GitLabIssuePlatform<H> {
 
     fn headers(&self) -> Vec<(&'static str, String)> {
         vec![("PRIVATE-TOKEN", self.token.clone())]
+    }
+
+    fn map_note(n: &Value) -> RawComment {
+        let id = n.get("id").and_then(|x| x.as_u64()).unwrap_or(0);
+        let body = n
+            .get("body")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let updated = n
+            .get("updated_at")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        let user = n
+            .pointer("/author/username")
+            .and_then(|x| x.as_str())
+            .map(|login| RawUser {
+                login: login.to_string(),
+                user_type: Some("User".into()),
+            });
+        RawComment {
+            id,
+            body,
+            updated_at: updated,
+            user,
+        }
+    }
+
+    async fn fetch_note_page(
+        &self,
+        number: u64,
+        page: u32,
+        descending: bool,
+    ) -> Result<Vec<RawComment>> {
+        let sort = if descending { "desc" } else { "asc" };
+        let url = format!(
+            "{}/projects/{}/issues/{number}/notes?per_page={COMMENT_PAGE_SIZE}&page={page}&sort={sort}&order_by=created_at",
+            self.api_base, self.project
+        );
+        let (status, val) = self
+            .http
+            .request_json("GET", &url, &self.headers(), None)
+            .await?;
+        if !(200..300).contains(&status) {
+            bail!("gitlab notes status={status}");
+        }
+        Ok(val
+            .as_array()
+            .map(|arr| arr.iter().map(Self::map_note).collect())
+            .unwrap_or_default())
     }
 
     fn map_issue(v: &Value) -> Option<RawIssue> {
@@ -473,47 +568,16 @@ impl<H: HttpDoer> IssuePlatform for GitLabIssuePlatform<H> {
     }
 
     async fn list_comments(&self, number: u64) -> Result<Vec<RawComment>> {
-        let url = format!(
-            "{}/projects/{}/issues/{number}/notes?per_page=100",
-            self.api_base, self.project
-        );
-        let (status, val) = self
-            .http
-            .request_json("GET", &url, &self.headers(), None)
-            .await?;
-        if !(200..300).contains(&status) {
-            bail!("gitlab notes status={status}");
-        }
-        let mut out = Vec::new();
-        if let Some(arr) = val.as_array() {
-            for n in arr {
-                let id = n.get("id").and_then(|x| x.as_u64()).unwrap_or(0);
-                let body = n
-                    .get("body")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let updated = n
-                    .get("updated_at")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let user = n
-                    .pointer("/author/username")
-                    .and_then(|x| x.as_str())
-                    .map(|login| RawUser {
-                        login: login.to_string(),
-                        user_type: Some("User".into()),
-                    });
-                out.push(RawComment {
-                    id,
-                    body,
-                    updated_at: updated,
-                    user,
-                });
+        let mut all = Vec::new();
+        for page in 1..=COMMENT_PAGE_CAP {
+            let batch = self.fetch_note_page(number, page, false).await?;
+            let n = batch.len();
+            all.extend(batch);
+            if n < COMMENT_PAGE_SIZE as usize {
+                break;
             }
         }
-        Ok(out)
+        Ok(all)
     }
 
     async fn create_comment(&self, number: u64, body: &str) -> Result<String> {
@@ -563,13 +627,18 @@ impl<H: HttpDoer> IssuePlatform for GitLabIssuePlatform<H> {
         Ok(())
     }
 
-    async fn find_bot_comment(&self, number: u64) -> Result<Option<String>> {
-        for c in self.list_comments(number).await? {
-            if is_bot_comment(&c.body) {
-                return Ok(Some(c.id.to_string()));
+    async fn find_bot_comment(&self, number: u64) -> Result<BotCommentLookup> {
+        for page in 1..=COMMENT_PAGE_CAP {
+            let batch = self.fetch_note_page(number, page, true).await?;
+            let n = batch.len();
+            if let Some(c) = batch.iter().find(|c| comment_is_ours(c)) {
+                return Ok(BotCommentLookup::Found(c.id.to_string()));
+            }
+            if n < COMMENT_PAGE_SIZE as usize {
+                return Ok(BotCommentLookup::Absent { truncated: false });
             }
         }
-        Ok(None)
+        Ok(BotCommentLookup::Absent { truncated: true })
     }
 
     /// GitLab 的 assignee 只认数值 user id，得先按 username 查一次。
@@ -735,6 +804,29 @@ impl<H: HttpDoer> GiteeStyleIssuePlatform<H> {
         }
     }
 
+    async fn fetch_v5_comment_page(
+        &self,
+        number: u64,
+        page: u32,
+        descending: bool,
+    ) -> Result<Vec<RawComment>> {
+        let dir = if descending { "desc" } else { "asc" };
+        let path = format!(
+            "/repos/{}/issues/{number}/comments?per_page={COMMENT_PAGE_SIZE}&page={page}&sort=created&direction={dir}",
+            self.repo
+        );
+        let url = self.url(&path);
+        let (status, val) = self
+            .http
+            .request_json("GET", &url, &self.headers(), None)
+            .await?;
+        if !(200..300).contains(&status) {
+            bail!("v5 list_comments status={status}");
+        }
+        let arr = val.as_array().cloned().unwrap_or_default();
+        Ok(arr.iter().filter_map(map_v5_comment).collect())
+    }
+
     fn url(&self, path_and_query: &str) -> String {
         let base = format!(
             "{}{}",
@@ -870,7 +962,6 @@ pub fn map_v5_issue(v: &Value) -> Option<RawIssue> {
             .get("closed_at")
             .and_then(|x| x.as_str())
             .map(|s| s.to_string()),
-        // v5 仓库 issues 列表一般不含 PR；有 pull_request 字段则排除
         pull_request: v.get("pull_request").cloned(),
     })
 }
@@ -965,28 +1056,22 @@ impl<H: HttpDoer> IssuePlatform for GiteeStyleIssuePlatform<H> {
             bail!("v5 list_issues status={status} body={val}");
         }
         let arr = val.as_array().cloned().unwrap_or_default();
-        Ok(arr
-            .iter()
-            .filter_map(map_v5_issue)
-            .filter(|i| i.pull_request.is_none())
-            .collect())
+        // 原样返回，**不在这里滤 PR**：调用方靠页长判断还有没有下一页。
+        // 滤掉会让一页 PR 多的结果被误读成「到底了」（GitHub 已经修过同一坑）。
+        Ok(arr.iter().filter_map(map_v5_issue).collect())
     }
 
     async fn list_comments(&self, number: u64) -> Result<Vec<RawComment>> {
-        let path = format!(
-            "/repos/{}/issues/{number}/comments?per_page=100&page=1",
-            self.repo
-        );
-        let url = self.url(&path);
-        let (status, val) = self
-            .http
-            .request_json("GET", &url, &self.headers(), None)
-            .await?;
-        if !(200..300).contains(&status) {
-            bail!("v5 list_comments status={status}");
+        let mut all = Vec::new();
+        for page in 1..=COMMENT_PAGE_CAP {
+            let batch = self.fetch_v5_comment_page(number, page, false).await?;
+            let n = batch.len();
+            all.extend(batch);
+            if n < COMMENT_PAGE_SIZE as usize {
+                break;
+            }
         }
-        let arr = val.as_array().cloned().unwrap_or_default();
-        Ok(arr.iter().filter_map(map_v5_comment).collect())
+        Ok(all)
     }
 
     async fn create_comment(&self, number: u64, body: &str) -> Result<String> {
@@ -1032,17 +1117,23 @@ impl<H: HttpDoer> IssuePlatform for GiteeStyleIssuePlatform<H> {
         Ok(())
     }
 
-    async fn find_bot_comment(&self, number: u64) -> Result<Option<String>> {
-        // 取最新一条 ReviewGate 评论 id（列表可能新在前或后，两边扫）
-        let comments = self.list_comments(number).await?;
-        let mut found: Option<(u64, String)> = None;
-        for c in comments {
-            let body = c.body.replace('\u{feff}', "");
-            if is_bot_comment(&body) || body.contains("ReviewGate Issue Review") {
-                found = Some((c.id, c.id.to_string()));
+    async fn find_bot_comment(&self, number: u64) -> Result<BotCommentLookup> {
+        for page in 1..=COMMENT_PAGE_CAP {
+            let batch = self.fetch_v5_comment_page(number, page, true).await?;
+            let n = batch.len();
+            if let Some(c) = batch.iter().find(|c| {
+                let body = c.body.replace('\u{feff}', "");
+                is_bot_comment(&body)
+                    || body.contains(BOT_COMMENT_MARKER)
+                    || body.contains("ReviewGate Issue Review")
+            }) {
+                return Ok(BotCommentLookup::Found(c.id.to_string()));
+            }
+            if n < COMMENT_PAGE_SIZE as usize {
+                return Ok(BotCommentLookup::Absent { truncated: false });
             }
         }
-        Ok(found.map(|(_, id)| id))
+        Ok(BotCommentLookup::Absent { truncated: true })
     }
 
     async fn add_labels(&self, number: u64, labels: &[String]) -> Result<()> {
@@ -1131,6 +1222,8 @@ pub struct FixturePlatform {
     labels: Mutex<HashMap<u64, Vec<String>>>,
     closed: Mutex<HashMap<u64, bool>>,
     next_comment_id: Mutex<u64>,
+    fail_comments: Mutex<bool>,
+    bot_lookup_truncated: Mutex<bool>,
 }
 
 impl FixturePlatform {
@@ -1142,7 +1235,19 @@ impl FixturePlatform {
             labels: Mutex::new(HashMap::new()),
             closed: Mutex::new(HashMap::new()),
             next_comment_id: Mutex::new(1000),
+            fail_comments: Mutex::new(false),
+            bot_lookup_truncated: Mutex::new(false),
         }
+    }
+
+    /// 让下一次 `list_comments` 失败——测「评论拉失败不能变成空列表」。
+    pub fn fail_comments(&self) {
+        *self.fail_comments.lock().unwrap() = true;
+    }
+
+    /// 模拟「评论翻页被截断且没看见 bot」——测 fail-closed 禁止 create。
+    pub fn truncate_bot_lookup(&self) {
+        *self.bot_lookup_truncated.lock().unwrap() = true;
     }
 
     pub fn seed_issue(&self, issue: RawIssue) {
@@ -1217,6 +1322,9 @@ impl IssuePlatform for FixturePlatform {
     }
 
     async fn list_comments(&self, number: u64) -> Result<Vec<RawComment>> {
+        if *self.fail_comments.lock().unwrap() {
+            bail!("fixture comments unavailable");
+        }
         Ok(self.comments_for(number))
     }
 
@@ -1256,13 +1364,16 @@ impl IssuePlatform for FixturePlatform {
         bail!("comment {comment_id} not found");
     }
 
-    async fn find_bot_comment(&self, number: u64) -> Result<Option<String>> {
+    async fn find_bot_comment(&self, number: u64) -> Result<BotCommentLookup> {
+        if *self.bot_lookup_truncated.lock().unwrap() {
+            return Ok(BotCommentLookup::Absent { truncated: true });
+        }
         for c in self.comments_for(number) {
             if is_bot_comment(&c.body) {
-                return Ok(Some(c.id.to_string()));
+                return Ok(BotCommentLookup::Found(c.id.to_string()));
             }
         }
-        Ok(None)
+        Ok(BotCommentLookup::Absent { truncated: false })
     }
 
     async fn add_labels(&self, number: u64, labels: &[String]) -> Result<()> {
@@ -1333,7 +1444,10 @@ mod tests {
         let body1 = format!("{BOT_COMMENT_MARKER}\n\nfirst");
         let id1 = p.create_comment(7, &body1).await.unwrap();
         assert_eq!(p.comment_count(7), 1);
-        let found = p.find_bot_comment(7).await.unwrap().unwrap();
+        let found = match p.find_bot_comment(7).await.unwrap() {
+            BotCommentLookup::Found(id) => id,
+            other => panic!("expected Found, got {other:?}"),
+        };
         assert_eq!(found, id1);
         let body2 = format!("{BOT_COMMENT_MARKER}\n\nsecond");
         p.update_comment(7, &found, &body2).await.unwrap();
@@ -1632,5 +1746,28 @@ mod tests {
         assert!(p.close_issue(1, "r").await.is_err());
         assert!(p.assign(1, "u").await.is_err());
         assert!(p.update_comment(1, "9", "x").await.is_err());
+    }
+
+    /// 回归：GitHub 已经修过「适配器里滤 PR → 页变短 → 翻页提前停」。
+    /// Gitee/AtomGit 同一条过滤还在，必须原样返回页里的 PR，让调用方看真实页长。
+    #[tokio::test]
+    async fn gitee_list_does_not_drop_pull_requests() {
+        let reply = serde_json::json!([
+            {"number": 1, "title": "issue", "state": "open"},
+            {"number": 2, "title": "pr", "state": "open", "pull_request": {"url": "x"}}
+        ]);
+        let p = GiteeStyleIssuePlatform::new_gitee(
+            "https://gitee.com/api/v5",
+            "o/r",
+            "tok",
+            Rec::new(reply),
+        );
+        let page = p.list_issues_page(1, 50, None).await.unwrap();
+        assert_eq!(
+            page.len(),
+            2,
+            "filtering PRs here shrinks the page and stops pagination: {page:?}"
+        );
+        assert!(page[1].pull_request.is_some());
     }
 }

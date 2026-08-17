@@ -1769,6 +1769,7 @@ mod tests {
             reasons_blocked: vec![],
             needs_human_notice: false,
             assign_to: None,
+            update_existing_comment: true,
         };
         let out = ReviewOutput {
             decision,
@@ -1781,6 +1782,7 @@ mod tests {
             comments_hash: String::new(),
             planned,
             technical: None,
+            skipped: None,
         };
         let s = render_issue_review(&out, false, false);
 
@@ -1818,8 +1820,10 @@ mod tests {
                 reasons_blocked: vec![],
                 needs_human_notice: false,
                 assign_to: None,
+                update_existing_comment: true,
             },
             technical: None,
+            skipped: None,
         };
         assert!(!render_issue_review(&out, false, false).contains("error_language"));
         assert!(render_issue_review(&out, true, false).contains("error_language"));
@@ -1851,6 +1855,7 @@ mod tests {
             reasons_blocked: vec!["low_confidence:0.40<0.50".into()],
             needs_human_notice: true,
             assign_to: Some("alice".into()),
+            update_existing_comment: true,
         };
         let out = ReviewOutput {
             decision,
@@ -1859,6 +1864,7 @@ mod tests {
             comments_hash: String::new(),
             planned,
             technical: None,
+            skipped: None,
         };
         let js = render_issue_review_json(&out, false).expect("json");
         let v: serde_json::Value = serde_json::from_str(&js).expect("parseable");

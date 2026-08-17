@@ -10,8 +10,8 @@
 
 ## 先记住一件事：什么情况下它会写东西
 
-**只有 `reviewgate issue review --publish` 会往平台上写。** 其余命令——`init`、`sync`、
-`review`（不带 `--publish`）、`watch`、`daemon`——只读平台、只写本地 SQLite。
+**默认不往平台写。** `init` / `sync` / 不带 `--publish` 的命令只读平台、只写本地 SQLite。
+写回必须 `[issue_review] mode = "publish"` **且** `--publish`（Action 则是 `publish: true`）。
 
 在此之上还有三道闸：
 
@@ -21,7 +21,7 @@
 | 置信度阈值 | `actions.min_confidence` | 0.5，低于就不下结论、改转人工 |
 | 关广告与关任意 Issue 分开 | `close_spam` vs `close_issue` | 都关 |
 
-想先看效果而不冒任何风险：跑 `watch`，它永远不写。
+想先看效果而不冒任何风险：跑不带 `--publish` 的 `watch`。
 
 ---
 
@@ -30,11 +30,11 @@
 | 形态 | 命令 | 适合 | 代价 |
 | --- | --- | --- | --- |
 | **手动逐条** | `issue review <N> --publish` | 刚接入、想人工把关每一条 | 得有人盯着 |
-| **轮询** | `issue watch` | 中低流量仓库；不想开公网端口 | 有延迟（默认 5 分钟）；只读，不发布 |
-| **Webhook + 队列** | `daemon --serve` | 高流量、要求实时 | 要暴露端口、配 secret |
+| **轮询** | `issue watch` | 中低流量、自托管有持久 `issues.db` | 默认 5 分钟延迟 |
+| **Webhook + 队列** | `daemon --serve` | 高流量、要实时 | 要暴露端口、配 secret |
+| **GitHub Action** | `integrations/github-action/issue` | GitHub 仓、事件驱动 | 无持久库；只审当条，不要 `watch --publish` |
 
-`watch` 与 `daemon` 都**不发布**，它们负责把新 Issue 同步进本地索引并跑出结论存档；
-要真正回复仍然是 `issue review --publish`。这么设计是为了让"分析"和"写回"两件事能分开审计。
+`watch` / `daemon` 加 `--publish` 才会写回。同一仓库只选一个写入口。Webhook 超 1MiB 会 413，靠自托管 poll 补。GitLab Note Hook 未解析。
 
 ---
 
@@ -128,8 +128,8 @@ mode = "suggest"            # suggest | publish（publish 仍需 CLI 显式 --pu
 
 [issue_review.sync]
 interval = "5m"
-overlap = "10m"             # 游标回退量，防止边界事件漏掉
-max_history_issues = 2000
+overlap = "10m"             # 游标回退量，防止 since 边界上刚更新的 Issue 被漏掉
+max_history_issues = 2000   # issue init/sync 未传 --max 时的上限
 
 [issue_review.actions]
 comment = true              # 发/更新回复

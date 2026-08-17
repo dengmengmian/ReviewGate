@@ -148,9 +148,9 @@ struct IssueSyncArgs {
     /// Local data directory (default: .reviewgate/issue)
     #[arg(long)]
     data_dir: Option<PathBuf>,
-    /// Max issues to pull
-    #[arg(long, default_value = "10000")]
-    max: usize,
+    /// Max issues to pull (default: `[issue_review.sync] max_history_issues`)
+    #[arg(long)]
+    max: Option<usize>,
     /// API base (platform default if empty)
     #[arg(long, default_value = "")]
     api_base: String,
@@ -207,6 +207,9 @@ struct IssueReviewCliArgs {
     /// Output format
     #[arg(long, value_enum, default_value = "text")]
     format: OutputFormat,
+    /// Do not call the model (no classification fallback, no narrative rewrite).
+    #[arg(long, default_value_t = false)]
+    no_llm: bool,
 }
 
 #[derive(Parser)]
@@ -252,6 +255,12 @@ struct IssueWatchArgs {
     verify: bool,
     #[arg(long)]
     repo_root: Option<PathBuf>,
+    /// Post/update the bot comment when `[issue_review] mode = "publish"`.
+    #[arg(long, default_value_t = false)]
+    publish: bool,
+    /// Re-triage stored issues even if content/comment hashes are unchanged (eval only).
+    #[arg(long, default_value_t = false)]
+    force_retriage: bool,
 }
 
 #[derive(Parser)]
@@ -303,6 +312,15 @@ struct DaemonArgs {
     max_issues_per_run: usize,
     #[arg(long)]
     fixture: bool,
+    /// Post/update the bot comment when `[issue_review] mode = "publish"`.
+    #[arg(long, default_value_t = false)]
+    publish: bool,
+    /// Same as `issue watch --llm`.
+    #[arg(long, default_value_t = false)]
+    llm: bool,
+    /// Re-triage stored issues even if content/comment hashes are unchanged (eval only).
+    #[arg(long, default_value_t = false)]
+    force_retriage: bool,
 }
 
 /// `reviewgate init` flags.
@@ -559,7 +577,7 @@ struct ReviewArgs {
     /// Per-dimension wall-clock timeout (seconds, 0=unlimited). On timeout, skip that dimension and keep the rest; useful as a CI fallback.
     #[arg(long, default_value = "0")]
     timeout: u64,
-    /// Samples per dimension (default 1). >1 unions the results to stabilize recall of flaky misses (e.g. SSRF), at N× cost.
+    /// Samples per dimension (default 1). >1 unions findings; same-dimension severity/confidence take the median. Multi-unit diffs pin this to 1.
     #[arg(long, default_value = "1")]
     samples: usize,
     /// Judge concurrency limit, to avoid provider rate limits when there are many candidates.
@@ -709,23 +727,41 @@ async fn run(cli: Cli) -> anyhow::Result<i32> {
             FindingsCmd::Resolve { id, note } => findings_resolve(&id, note).await.map(|()| 0),
         },
         Command::Issue { cmd } => match cmd {
-            IssueCmd::Init(args) => issue_sync(&args, true).await.map(|()| 0),
-            IssueCmd::Sync(args) => issue_sync(&args, false).await.map(|()| 0),
-            IssueCmd::Review(args) => issue_review_cmd(&args).await.map(|()| 0),
+            IssueCmd::Init(args) => {
+                require_issue_review_enabled()?;
+                issue_sync(&args, true).await.map(|()| 0)
+            }
+            IssueCmd::Sync(args) => {
+                require_issue_review_enabled()?;
+                issue_sync(&args, false).await.map(|()| 0)
+            }
+            IssueCmd::Review(args) => {
+                require_issue_review_enabled()?;
+                issue_review_cmd(&args).await.map(|()| 0)
+            }
             IssueCmd::Inspect {
                 number,
                 data_dir,
                 repo,
             } => issue_inspect(number, data_dir.as_deref(), repo.as_deref()).map(|()| 0),
-            IssueCmd::Watch(args) => issue_watch(&args).await.map(|()| 0),
+            IssueCmd::Watch(args) => {
+                require_issue_review_enabled()?;
+                issue_watch(&args).await.map(|()| 0)
+            }
             IssueCmd::Stats {
                 data_dir,
                 repo,
                 gated,
             } => issue_stats(data_dir.as_deref(), repo.as_deref(), gated).map(|()| 0),
         },
-        Command::Serve(args) => issue_serve(&args).await.map(|()| 0),
-        Command::Daemon(args) => issue_daemon(&args).await.map(|()| 0),
+        Command::Serve(args) => {
+            require_issue_review_enabled()?;
+            issue_serve(&args).await.map(|()| 0)
+        }
+        Command::Daemon(args) => {
+            require_issue_review_enabled()?;
+            issue_daemon(&args).await.map(|()| 0)
+        }
     }
 }
 
@@ -1741,10 +1777,81 @@ fn parse_github_slug(url: &str) -> Option<String> {
     None
 }
 
+fn refuse_publish_unless_mode_allows(
+    cfg: &reviewgate_core::issue::IssueReviewConfig,
+) -> anyhow::Result<()> {
+    if !cfg.actions.publish {
+        anyhow::bail!(
+            "--publish requires [issue_review] mode = \"publish\" (current mode is suggest; nothing was posted)"
+        );
+    }
+    Ok(())
+}
+
+async fn maybe_publish(
+    store: &reviewgate_core::issue::IssueStore,
+    platform: &dyn reviewgate_core::issue::IssuePlatform,
+    out: &reviewgate_core::issue::ReviewOutput,
+    want_publish: bool,
+) -> anyhow::Result<Option<reviewgate_core::issue::PublishResult>> {
+    if out.skipped.is_some() {
+        return Ok(None);
+    }
+    if !want_publish || !out.planned.has_writes() {
+        return Ok(None);
+    }
+    Ok(Some(
+        reviewgate_core::issue::publish_decision(store, platform, out).await?,
+    ))
+}
+
+fn pick_issue_numbers(
+    store: &reviewgate_core::issue::IssueStore,
+    budget: usize,
+    force_retriage: bool,
+) -> anyhow::Result<Vec<u64>> {
+    if force_retriage {
+        let mut nums = store.list_issue_numbers()?;
+        nums.truncate(budget);
+        Ok(nums)
+    } else {
+        store.issues_due_for_triage(budget)
+    }
+}
+
+fn require_issue_review_enabled() -> anyhow::Result<()> {
+    match reviewgate_core::config::Config::load() {
+        Ok(c) if !c.issue_review.enabled => anyhow::bail!(
+            "[issue_review] enabled = false; set it to true to run issue init/sync/review/watch/serve/daemon"
+        ),
+        _ => Ok(()),
+    }
+}
+
+fn issue_sync_overlap() -> std::time::Duration {
+    let raw = reviewgate_core::config::Config::load()
+        .ok()
+        .map(|c| c.issue_review.sync.overlap)
+        .unwrap_or_else(|| "5m".into());
+    let secs = reviewgate_core::issue::parse_duration_secs(&raw).unwrap_or(300);
+    std::time::Duration::from_secs(secs)
+}
+
+fn issue_max_history() -> usize {
+    reviewgate_core::config::Config::load()
+        .ok()
+        .map(|c| c.issue_review.sync.max_history_issues)
+        .filter(|&n| n > 0)
+        .unwrap_or(10_000)
+}
+
 fn issue_review_cfg_from_file() -> reviewgate_core::issue::IssueReviewConfig {
     use reviewgate_core::issue::{ActionPolicy, IssueReviewConfig, MentionConfig};
     let mut cfg = IssueReviewConfig::default();
     if let Ok(file) = reviewgate_core::config::Config::load() {
+        cfg.enabled = file.issue_review.enabled;
+        cfg.overlap = file.issue_review.sync.overlap.clone();
+        cfg.max_history_issues = file.issue_review.sync.max_history_issues;
         cfg.vector_enabled = file.issue_review.vector.enabled;
         cfg.candidate_limit = file.issue_review.duplicate.candidate_limit;
         cfg.min_similarity = file.issue_review.duplicate.min_similarity;
@@ -1901,11 +2008,12 @@ async fn issue_sync(args: &IssueSyncArgs, is_init: bool) -> anyhow::Result<()> {
     let data_dir = issue_data_dir(args.data_dir.as_ref());
     let store = IssueStore::open(&data_dir, &repo)?;
     let forge = resolve_forge(&args.forge)?;
+    let max = args.max.unwrap_or_else(issue_max_history);
 
     let synced = if args.fixture {
         let platform = FixturePlatform::new();
         seed_demo_fixture(&platform)?;
-        sync_from_platform(&store, &platform, args.max, None, true).await?
+        sync_from_platform(&store, &platform, max, None, true).await?
     } else {
         let platform = build_live_platform(forge, &args.api_base, &repo)?;
         let since = if is_init {
@@ -1920,8 +2028,9 @@ async fn issue_sync(args: &IssueSyncArgs, is_init: bool) -> anyhow::Result<()> {
                 );
             }
         }
-        let since_arg = since.as_deref().filter(|s| s.parse::<u64>().is_err());
-        sync_from_platform(&store, platform.as_ref(), args.max, since_arg, true).await?
+        let since_arg =
+            reviewgate_core::issue::since_with_overlap(since.as_deref(), issue_sync_overlap());
+        sync_from_platform(&store, platform.as_ref(), max, since_arg.as_deref(), true).await?
     };
 
     println!(
@@ -1953,15 +2062,22 @@ async fn issue_review_cmd(args: &IssueReviewCliArgs) -> anyhow::Result<()> {
     let data_dir = issue_data_dir(args.data_dir.as_ref());
     let store = IssueStore::open(&data_dir, &repo)?;
     let mut cfg = issue_review_cfg_from_file();
+    if args.publish {
+        refuse_publish_unless_mode_allows(&cfg)?;
+    }
     cfg.verify_enabled = args.verify && !args.triage_only;
     cfg.repo_root = args.repo_root.clone().or_else(|| resolve_repo_root(None));
     let emb = LocalEmbedder;
     let forge = resolve_forge(&args.forge)?;
     // 有配置时用 LLM 写面向用户的说明（证据仍来自本地检索）
-    let llm_box = reviewgate_core::config::Config::load()
-        .ok()
-        .and_then(|c| c.active_provider_resolved().ok())
-        .and_then(|p| build_client(&p).ok());
+    let llm_box = if args.no_llm {
+        None
+    } else {
+        reviewgate_core::config::Config::load()
+            .ok()
+            .and_then(|c| c.active_provider_resolved().ok())
+            .and_then(|p| build_client(&p).ok())
+    };
     let llm = llm_box.as_deref();
     if llm.is_some() {
         eprintln!("issue explain: using configured LLM for user-facing narrative");
@@ -2189,6 +2305,9 @@ async fn issue_watch(args: &IssueWatchArgs) -> anyhow::Result<()> {
     let data_dir = issue_data_dir(args.data_dir.as_ref());
     let store = IssueStore::open(&data_dir, &repo)?;
     let mut cfg = issue_review_cfg_from_file();
+    if args.publish {
+        refuse_publish_unless_mode_allows(&cfg)?;
+    }
     cfg.verify_enabled = args.verify;
     cfg.repo_root = args.repo_root.clone().or_else(|| resolve_repo_root(None));
     let emb = LocalEmbedder;
@@ -2207,6 +2326,14 @@ async fn issue_watch(args: &IssueWatchArgs) -> anyhow::Result<()> {
         None
     };
 
+    let fixture_platform = if args.fixture {
+        let p = FixturePlatform::new();
+        seed_demo_fixture(&p)?;
+        Some(p)
+    } else {
+        None
+    };
+
     let mut iter = 0u64;
     loop {
         iter += 1;
@@ -2215,68 +2342,103 @@ async fn issue_watch(args: &IssueWatchArgs) -> anyhow::Result<()> {
             forge.as_str()
         );
         let budget = args.max_issues_per_run.max(1);
-        if args.fixture {
-            let platform = FixturePlatform::new();
-            seed_demo_fixture(&platform)?;
-            let synced = sync_from_platform(&store, &platform, budget, None, true).await?;
-            eprintln!("synced {} fixture issues", synced.len());
-            for num in store.untriaged_issues(budget)? {
-                let out = review_issue_with_llm(&store, &platform, num, &cfg, &emb, llm.as_deref())
-                    .await?;
-                eprintln!(
-                    "  #{} → {} ({:.0}%) tech={}",
-                    num,
-                    out.decision.verdict.as_str(),
-                    out.decision.confidence * 100.0,
-                    out.decision.technical_verdict.as_str()
-                );
+        let mut synced_n = 0usize;
+        let mut triaged = 0usize;
+        let mut skipped_unchanged = 0usize;
+        let mut published_n = 0usize;
+        let mut publish_failed = 0usize;
+        let mut gated = 0usize;
+
+        let live;
+        let platform: &dyn reviewgate_core::issue::IssuePlatform = if let Some(p) =
+            fixture_platform.as_ref()
+        {
+            if !args.no_sync {
+                let synced = sync_from_platform(&store, p, budget, None, true).await?;
+                synced_n = synced.len();
+                eprintln!("synced {synced_n} fixture issues");
             }
+            p
         } else {
-            let platform = build_live_platform(forge, &args.api_base, &repo)?;
+            live = build_live_platform(forge, &args.api_base, &repo)?;
             if args.no_sync {
                 eprintln!("--no-sync: 跳过同步，只分诊已入库的");
             } else {
                 let since = store.get_sync_cursor()?;
-                let since_arg = since.as_deref().filter(|s| s.parse::<u64>().is_err());
+                let since_arg = reviewgate_core::issue::since_with_overlap(
+                    since.as_deref(),
+                    issue_sync_overlap(),
+                );
                 let synced =
-                    sync_from_platform(&store, platform.as_ref(), budget, since_arg, true).await?;
-                eprintln!("synced {} issues", synced.len());
+                    sync_from_platform(&store, live.as_ref(), budget, since_arg.as_deref(), true)
+                        .await?;
+                synced_n = synced.len();
+                eprintln!("synced {synced_n} issues");
             }
             if let Ok(Some(c)) = store.get_sync_cursor() {
                 eprintln!("sync cursor (ISO8601): {c}");
             }
-            // 从库里挑没审过的，而不是只审本轮新同步的——上一轮没消化完的积压
-            // 会在这里接着排队，不会被漏掉。
-            for num in store.untriaged_issues(budget)? {
-                match review_issue_with_llm(
-                    &store,
-                    platform.as_ref(),
-                    num,
-                    &cfg,
-                    &emb,
-                    llm.as_deref(),
-                )
-                .await
-                {
-                    Ok(out) => {
-                        eprintln!(
-                            "  #{} → {} ({:.0}%) type={} dup={} tech={}",
-                            num,
-                            out.decision.verdict.as_str(),
-                            out.decision.confidence * 100.0,
-                            out.decision.primary_type.as_str(),
-                            out.decision.duplicate_status.as_str(),
-                            out.decision.technical_verdict.as_str()
-                        );
+            live.as_ref()
+        };
+
+        let due = pick_issue_numbers(&store, budget, args.force_retriage)?;
+        let candidates = if args.force_retriage {
+            due
+        } else {
+            let all = store.list_issue_numbers()?;
+            skipped_unchanged = all.len().saturating_sub(due.len());
+            due
+        };
+        for num in candidates {
+            match review_issue_with_llm(&store, platform, num, &cfg, &emb, llm.as_deref()).await {
+                Ok(out) => {
+                    if out.skipped.is_some() {
+                        continue;
                     }
-                    Err(e) => {
-                        eprintln!("  #{num} review failed: {e:#}");
+                    triaged += 1;
+                    if out.decision.confidence < cfg.actions.min_confidence {
+                        gated += 1;
                     }
+                    let pub_note = match maybe_publish(&store, platform, &out, args.publish).await {
+                        Ok(Some(p)) if p.skipped_truncated => {
+                            publish_failed += 1;
+                            String::new()
+                        }
+                        Ok(Some(p)) if p.created => {
+                            published_n += 1;
+                            " published=created".into()
+                        }
+                        Ok(Some(p)) if p.updated => {
+                            published_n += 1;
+                            " published=updated".into()
+                        }
+                        Ok(_) => String::new(),
+                        Err(e) => {
+                            publish_failed += 1;
+                            eprintln!("  #{num} publish failed: {e:#}");
+                            String::new()
+                        }
+                    };
+                    eprintln!(
+                        "  #{} → {} ({:.0}%) type={} dup={} tech={}{pub_note}",
+                        num,
+                        out.decision.verdict.as_str(),
+                        out.decision.confidence * 100.0,
+                        out.decision.primary_type.as_str(),
+                        out.decision.duplicate_status.as_str(),
+                        out.decision.technical_verdict.as_str()
+                    );
                 }
+                Err(e) => eprintln!("  #{num} review failed: {e:#}"),
             }
         }
-        // 还有积压就说清楚，别让人以为一轮就消化干净了。
-        let backlog = store.untriaged_issues(budget + 1)?.len();
+        if skipped_unchanged > 0 {
+            eprintln!("  skipped_unchanged={skipped_unchanged}");
+        }
+        eprintln!(
+            "watch round: synced={synced_n} triaged={triaged} skipped_unchanged={skipped_unchanged} published={published_n} publish_failed={publish_failed} gated={gated}"
+        );
+        let backlog = store.issues_due_for_triage(budget + 1)?.len();
         if backlog > 0 {
             eprintln!(
                 "  {backlog}{} issue(s) still waiting; they are picked up next round (--max-issues-per-run={budget}).",
@@ -2307,15 +2469,20 @@ async fn issue_serve(args: &ServeArgs) -> anyhow::Result<()> {
         listen: args.listen.clone(),
         webhook_secret: secret,
         queue_path: queue,
-        bot_logins: vec!["reviewgate[bot]".into(), "reviewgate-bot".into()],
+        bot_logins: vec![
+            "reviewgate[bot]".into(),
+            "reviewgate-bot".into(),
+            "github-actions[bot]".into(),
+        ],
     };
     run_webhook_server(cfg, None).await
 }
 
 async fn issue_daemon(args: &DaemonArgs) -> anyhow::Result<()> {
     use reviewgate_core::issue::{
-        drain_queue_once, resolve_repo_root, review_issue, run_webhook_server, sync_from_platform,
-        EventQueue, FixturePlatform, IssueStore, LocalEmbedder, ServeConfig,
+        drain_queue_once, payload_needs_full_review, resolve_repo_root, review_issue_with_llm,
+        run_webhook_server, sync_from_platform, EventQueue, FixturePlatform, IssueStore,
+        LocalEmbedder, ServeConfig,
     };
 
     let data_dir = issue_data_dir(args.data_dir.as_ref());
@@ -2326,6 +2493,9 @@ async fn issue_daemon(args: &DaemonArgs) -> anyhow::Result<()> {
     };
     let store = IssueStore::open(&data_dir, &repo)?;
     let mut cfg = issue_review_cfg_from_file();
+    if args.publish {
+        refuse_publish_unless_mode_allows(&cfg)?;
+    }
     cfg.verify_enabled = args.verify;
     cfg.repo_root = resolve_repo_root(None);
     let emb = LocalEmbedder;
@@ -2333,6 +2503,26 @@ async fn issue_daemon(args: &DaemonArgs) -> anyhow::Result<()> {
     let interval = parse_interval_secs(&args.interval)?;
     let queue_path = data_dir.join("webhook.db");
     let queue = EventQueue::open(&queue_path)?;
+    let llm: Option<Box<dyn reviewgate_core::llm::LlmClient>> = if args.llm {
+        reviewgate_core::config::Config::load()
+            .ok()
+            .and_then(|c| c.active_provider_resolved().ok())
+            .and_then(|p| reviewgate_core::llm::build_client(&p).ok())
+    } else {
+        None
+    };
+    let fixture_platform = if args.fixture {
+        let p = FixturePlatform::new();
+        seed_demo_fixture(&p)?;
+        Some(p)
+    } else {
+        None
+    };
+    let bot_logins = vec![
+        "reviewgate[bot]".to_string(),
+        "reviewgate-bot".to_string(),
+        "github-actions[bot]".to_string(),
+    ];
 
     if args.serve {
         // 与 `reviewgate serve` 保持同一契约：缺 secret 就报错退出。
@@ -2351,7 +2541,7 @@ async fn issue_daemon(args: &DaemonArgs) -> anyhow::Result<()> {
             listen: args.listen.clone(),
             webhook_secret: secret,
             queue_path: queue_path.clone(),
-            bot_logins: vec!["reviewgate[bot]".into(), "reviewgate-bot".into()],
+            bot_logins: bot_logins.clone(),
         };
         tokio::spawn(async move {
             if let Err(e) = run_webhook_server(scfg, None).await {
@@ -2373,8 +2563,15 @@ async fn issue_daemon(args: &DaemonArgs) -> anyhow::Result<()> {
             let emb = &emb;
             let repo = repo.clone();
             let api_base = args.api_base.clone();
-            let fixture = args.fixture;
+            let want_publish = args.publish;
+            let bots = bot_logins.clone();
+            let fixture_platform = fixture_platform.as_ref();
+            let llm_ref = llm.as_deref();
             async move {
+                let bots: Vec<&str> = bots.iter().map(|s| s.as_str()).collect();
+                if !payload_needs_full_review(&d.event_type, &d.payload, &bots) {
+                    return Ok(());
+                }
                 let Some(num) = d.issue_number else {
                     return Ok(());
                 };
@@ -2384,13 +2581,16 @@ async fn issue_daemon(args: &DaemonArgs) -> anyhow::Result<()> {
                         d.event_type, d.action, num, d.delivery_id
                     );
                 }
-                if fixture {
-                    let platform = FixturePlatform::new();
-                    seed_demo_fixture(&platform)?;
-                    let _ = review_issue(store, &platform, num, cfg, emb).await?;
+                if let Some(platform) = fixture_platform {
+                    let out =
+                        review_issue_with_llm(store, platform, num, cfg, emb, llm_ref).await?;
+                    let _ = maybe_publish(store, platform, &out, want_publish).await?;
                 } else {
                     let platform = build_live_platform(forge, &api_base, &repo)?;
-                    let _ = review_issue(store, platform.as_ref(), num, cfg, emb).await?;
+                    let out =
+                        review_issue_with_llm(store, platform.as_ref(), num, cfg, emb, llm_ref)
+                            .await?;
+                    let _ = maybe_publish(store, platform.as_ref(), &out, want_publish).await?;
                 }
                 Ok(())
             }
@@ -2400,29 +2600,49 @@ async fn issue_daemon(args: &DaemonArgs) -> anyhow::Result<()> {
             eprintln!("  processed {nq} queue deliveries");
         }
 
-        // 2) poll sync + triage（与 watch 同一把刹车：一轮最多消化这么多，剩下的下轮继续）
+        // 2) poll sync + triage
         let budget = args.max_issues_per_run.max(1);
-        if args.fixture {
-            let platform = FixturePlatform::new();
-            seed_demo_fixture(&platform)?;
-            sync_from_platform(&store, &platform, budget, None, true).await?;
-            for num in store.untriaged_issues(budget)? {
-                let out = review_issue(&store, &platform, num, &cfg, &emb).await?;
-                eprintln!("  poll #{} → {}", num, out.decision.verdict.as_str());
-            }
+        let live;
+        let platform: &dyn reviewgate_core::issue::IssuePlatform = if let Some(p) =
+            fixture_platform.as_ref()
+        {
+            sync_from_platform(&store, p, budget, None, true).await?;
+            p
         } else {
-            let platform = build_live_platform(forge, &args.api_base, &repo)?;
+            live = build_live_platform(forge, &args.api_base, &repo)?;
             let since = store.get_sync_cursor()?;
-            let since_arg = since.as_deref().filter(|s| s.parse::<u64>().is_err());
-            sync_from_platform(&store, platform.as_ref(), budget, since_arg, true).await?;
-            for num in store.untriaged_issues(budget)? {
-                match review_issue(&store, platform.as_ref(), num, &cfg, &emb).await {
-                    Ok(out) => eprintln!("  poll #{} → {}", num, out.decision.verdict.as_str()),
-                    Err(e) => eprintln!("  poll #{num} failed: {e:#}"),
+            let since_arg =
+                reviewgate_core::issue::since_with_overlap(since.as_deref(), issue_sync_overlap());
+            sync_from_platform(&store, live.as_ref(), budget, since_arg.as_deref(), true).await?;
+            live.as_ref()
+        };
+        for num in pick_issue_numbers(&store, budget, args.force_retriage)? {
+            match review_issue_with_llm(&store, platform, num, &cfg, &emb, llm.as_deref()).await {
+                Ok(out) => {
+                    if out.skipped.is_some() {
+                        continue;
+                    }
+                    match maybe_publish(&store, platform, &out, args.publish).await {
+                        Ok(Some(p)) if p.created => {
+                            eprintln!(
+                                "  poll #{num} → {} published=created",
+                                out.decision.verdict.as_str()
+                            )
+                        }
+                        Ok(Some(p)) if p.updated => {
+                            eprintln!(
+                                "  poll #{num} → {} published=updated",
+                                out.decision.verdict.as_str()
+                            )
+                        }
+                        Ok(_) => eprintln!("  poll #{} → {}", num, out.decision.verdict.as_str()),
+                        Err(e) => eprintln!("  poll #{num} publish failed: {e:#}"),
+                    }
                 }
+                Err(e) => eprintln!("  poll #{num} failed: {e:#}"),
             }
         }
-        let backlog = store.untriaged_issues(budget + 1)?.len();
+        let backlog = store.issues_due_for_triage(budget + 1)?.len();
         if backlog > 0 {
             eprintln!("  {backlog} issue(s) still waiting; picked up next round.");
         }
