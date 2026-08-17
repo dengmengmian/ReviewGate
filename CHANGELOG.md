@@ -29,6 +29,8 @@ Changes are listed in Chinese first, then English.
   Several Issue-triage settings that were documented but never read now actually work: `[issue_review] enabled`, `sync.overlap`, `sync.max_history_issues`, `actions.update_existing_comment`, and the near-tie `LLM_FALLBACK_MARGIN`. `--publish` in `mode=suggest` is refused instead of printing a fake `published` / recording `executed=true`. Gitee/AtomGit no longer filter pull requests in the adapter (that stopped pagination early); a failed comment fetch is no longer treated as “no comments”.
 
 ### Changed
+- CLI 按产品拆开：`review_cmd.rs` 管审查闸口，`issue_cmd.rs` 管分诊；`main.rs` 只留总表、分发和 init/demo/llm/upgrade。行为不变。
+  CLI is split by product: `review_cmd.rs` owns the review gate, `issue_cmd.rs` owns issue triage; `main.rs` keeps the command table, dispatch, and init/demo/llm/upgrade. No behaviour change.
 - `--samples N` 的文档与实现对齐：并集召回，同维度取中位数；`reviewgate security` 走饱和轮数，不再用固定采样。
   `--samples N` docs now match the code: union for recall, median within a dimension; `reviewgate security` uses saturating rounds, not fixed samples.
 
