@@ -51,44 +51,68 @@ pub async fn post_json_with_retry_until(
     body: &serde_json::Value,
     deadline: Option<Instant>,
 ) -> Result<String> {
+    let (status, text) =
+        send_json_with_retry_until(http, "POST", endpoint, headers, Some(body), deadline).await?;
+    if (200..300).contains(&status) {
+        return Ok(text);
+    }
+    anyhow::bail!("LLM returned {status}: {text}")
+}
+
+/// 任意方法的 JSON 请求：连接失败 / 读 body 失败 / 5xx / 429 / 408 重试，其它 4xx 立刻返回状态。
+///
+/// LLM 与 Issue 平台共用这一套，避免平台路径「一次 TLS 闪断就整条 review failed」。
+/// 重试耗尽后：若拿过 HTTP 响应，返回最后一次 `(status, body)`；若从未连通，返回 Err。
+pub async fn send_json_with_retry_until(
+    http: &reqwest::Client,
+    method: &str,
+    endpoint: &str,
+    headers: &[(&str, String)],
+    body: Option<&serde_json::Value>,
+    deadline: Option<Instant>,
+) -> Result<(u16, String)> {
     let mut last_err: Option<anyhow::Error> = None;
+    let mut last_status: Option<(u16, String)> = None;
     for attempt in 0..MAX_ATTEMPTS {
         if deadline_exceeded(deadline) {
             return Err(deadline_err(last_err));
         }
-        let mut req = http.post(endpoint).json(body);
+        let mut req = match method {
+            "GET" => http.get(endpoint),
+            "POST" => http.post(endpoint),
+            "PATCH" => http.patch(endpoint),
+            "PUT" => http.put(endpoint),
+            other => anyhow::bail!("unsupported method {other}"),
+        };
         for (k, v) in headers {
             req = req.header(*k, v);
+        }
+        if let Some(b) = body {
+            req = req.json(b);
         }
         if let Some(rem) = remaining(deadline) {
             req = req.timeout(rem.min(REQUEST_TIMEOUT));
         }
-        // Retry-After（若服务端给了）覆盖默认退避——读 body 会消费 resp，故先取出。
         let mut retry_after: Option<Duration> = None;
         match req.send().await {
             Ok(resp) => {
                 let status = resp.status();
                 retry_after = parse_retry_after(&resp);
-                // 读 body 可能失败（响应慢到超时 / 连接被重置）。绝不能 unwrap_or_default 吞成空串——
-                // 那会把瞬时错误伪装成「成功但空响应」，既不重试、又让上层报出误导的「解析失败」。
                 match resp.text().await {
                     Ok(text) => {
-                        if status.is_success() {
-                            return Ok(text);
+                        let code = status.as_u16();
+                        if status.is_success() || !is_retryable_status(status) {
+                            return Ok((code, text));
                         }
-                        if is_retryable_status(status) {
-                            last_err = Some(anyhow::anyhow!("LLM returned {status}: {text}"));
-                        } else {
-                            anyhow::bail!("LLM returned {status}: {text}"); // 其它 4xx：不重试
-                        }
+                        last_status = Some((code, text.clone()));
+                        last_err = Some(anyhow::anyhow!("request returned {status}: {text}"));
                     }
                     Err(e) => {
-                        // body 读取失败属瞬时错误 → 记录并重试，而非返回空响应。
-                        last_err = Some(anyhow::anyhow!("failed to read LLM response body: {e}"));
+                        last_err = Some(anyhow::anyhow!("failed to read response body: {e}"));
                     }
                 }
             }
-            Err(e) => last_err = Some(anyhow::anyhow!("failed to send LLM request: {e}")),
+            Err(e) => last_err = Some(anyhow::anyhow!("failed to send request: {e}")),
         }
         if attempt + 1 < MAX_ATTEMPTS {
             let wait = retry_after.unwrap_or_else(|| backoff_with_jitter(attempt));
@@ -101,7 +125,10 @@ pub async fn post_json_with_retry_until(
             tokio::time::sleep(wait).await;
         }
     }
-    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("LLM request failed")))
+    if let Some(pair) = last_status {
+        return Ok(pair);
+    }
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("request failed")))
 }
 
 fn deadline_exceeded(deadline: Option<Instant>) -> bool {
@@ -340,6 +367,50 @@ mod tests {
             .unwrap();
         assert_eq!(out, "ok");
         h.abort();
+    }
+
+    #[tokio::test]
+    async fn send_json_get_retries_503_and_succeeds() {
+        let q = Arc::new(Mutex::new(vec![
+            (503, r#"{"error":"overload"}"#),
+            (200, r#"{"ok":true}"#),
+        ]));
+        let (url, h) = mock_server(q).await;
+        let client = reqwest::Client::new();
+        let (status, body) = send_json_with_retry_until(&client, "GET", &url, &[], None, None)
+            .await
+            .unwrap();
+        assert_eq!(status, 200);
+        assert_eq!(body, r#"{"ok":true}"#);
+        h.abort();
+    }
+
+    #[tokio::test]
+    async fn send_json_deadline_skips_retry_backoff() {
+        let q = Arc::new(Mutex::new(vec![
+            (503, r#"{"error":"overload"}"#),
+            (503, r#"{"error":"overload"}"#),
+            (503, r#"{"error":"overload"}"#),
+        ]));
+        let (url, h) = mock_server(q).await;
+        let client = reqwest::Client::new();
+        let deadline = Instant::now() + Duration::from_millis(80);
+        let t0 = Instant::now();
+        let err = send_json_with_retry_until(&client, "GET", &url, &[], None, Some(deadline))
+            .await
+            .unwrap_err()
+            .to_string();
+        let elapsed = t0.elapsed();
+        h.abort();
+        assert!(
+            elapsed < Duration::from_millis(800),
+            "deadline must abort before default retry sleep; elapsed {elapsed:?}"
+        );
+        assert!(
+            err.to_ascii_lowercase().contains("deadline")
+                || err.to_ascii_lowercase().contains("timeout"),
+            "error should mention the budget: {err}"
+        );
     }
 
     #[tokio::test]

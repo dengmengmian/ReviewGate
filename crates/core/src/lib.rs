@@ -1,9 +1,10 @@
-//! ReviewGate core engine.
+//! ReviewGate core：两个产品共用一个引擎。
 //!
-//! 给 AI 生成的代码加一道合并前质检：优先暴露高风险问题，折叠低置信噪音。
+//! - **审查**（`review` / `security`）：合并前质量闸口，PASS/WARN/BLOCK。
+//! - **Issue 分诊**（`issue`）：分类、查重、可选验证，默认不往平台写。
 //!
-//! 所有智能都在这个 crate 里：LLM 客户端、Agent 循环、多维并行、行号重定位、
-//! 证伪 Judge、闸口逻辑。CLI / Claude Skill / GitHub Action 都是它的薄包装。
+//! 编排分开（`review`/`security`/`issue`），共享 LLM 客户端、HTTP 重试和配置。
+//! CLI / Claude Skill / GitHub Action 是薄包装。
 
 pub mod agent;
 pub mod apply;

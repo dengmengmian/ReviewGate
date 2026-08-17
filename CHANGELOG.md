@@ -13,6 +13,10 @@ Changes are listed in Chinese first, then English.
   Issue eval scripts are runnable without a live repo: `eval-issue-triage.sh --help` (`--force-retriage` / `--llm` / `--no-sync`, refuses `--publish`); `eval-issue-groundtruth.py --self-test` needs no checkout or token.
 
 ### Fixed
+- Issue 平台 HTTP 与 LLM 共用同一套重试/截止：连接失败、读 body 失败、5xx/429/408 会退避，不再一次 TLS 闪断就整条 `review failed`。
+  Issue-platform HTTP now shares the LLM retry/deadline path: connect/body-read failures and 5xx/429/408 back off instead of failing the whole review on a single TLS blip.
+- 分诊时 `get_issue` / `list_comments` 失败若本地已有正文，用入库副本审完，并在 `reasons` 写上 `platform_stale:…`；没有本地副本仍报错。评论拉失败不会把 `comments_hash` 写成空列表。
+  If `get_issue` / `list_comments` fail during triage but the issue is already stored, review finishes from the local copy and records `platform_stale:…`. No local copy still errors. A failed comment fetch no longer rewrites `comments_hash` to the empty-list value.
 - `--max-cost` 在没配 `price_per_mtok_*` 时不再静默放行：跑前直接拒绝，并说明缺单价。
   `--max-cost` no longer silently proceeds when the provider has no `price_per_mtok_*`; the run is refused and the missing prices are named.
 - 标准 `review` 也会跑确定性密钥预检（不再只在 `reviewgate security` / deep profile 里跑）。硬编码密钥不依赖模型方差。

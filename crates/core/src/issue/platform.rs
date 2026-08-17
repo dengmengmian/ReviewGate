@@ -120,23 +120,23 @@ impl HttpDoer for ReqwestDoer {
         headers: &[(&str, String)],
         body: Option<Value>,
     ) -> Result<(u16, Value)> {
-        let mut req = match method {
-            "GET" => self.client.get(url),
-            "POST" => self.client.post(url),
-            "PATCH" => self.client.patch(url),
-            "PUT" => self.client.put(url),
-            other => bail!("unsupported method {other}"),
-        };
-        for (k, v) in headers {
-            req = req.header(*k, v);
+        let mut hdrs: Vec<(&str, String)> = headers.to_vec();
+        if !hdrs
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("user-agent"))
+        {
+            hdrs.push(("User-Agent", "ReviewGate-IssueReview".into()));
         }
-        req = req.header("User-Agent", "ReviewGate-IssueReview");
-        if let Some(b) = body {
-            req = req.json(&b);
-        }
-        let resp = req.send().await.context("http send")?;
-        let status = resp.status().as_u16();
-        let text = resp.text().await.unwrap_or_default();
+        let (status, text) = crate::llm::http::send_json_with_retry_until(
+            &self.client,
+            method,
+            url,
+            &hdrs,
+            body.as_ref(),
+            None,
+        )
+        .await
+        .context("http send")?;
         let val = if text.is_empty() {
             Value::Null
         } else {
@@ -1223,6 +1223,7 @@ pub struct FixturePlatform {
     closed: Mutex<HashMap<u64, bool>>,
     next_comment_id: Mutex<u64>,
     fail_comments: Mutex<bool>,
+    fail_get: Mutex<bool>,
     bot_lookup_truncated: Mutex<bool>,
 }
 
@@ -1236,6 +1237,7 @@ impl FixturePlatform {
             closed: Mutex::new(HashMap::new()),
             next_comment_id: Mutex::new(1000),
             fail_comments: Mutex::new(false),
+            fail_get: Mutex::new(false),
             bot_lookup_truncated: Mutex::new(false),
         }
     }
@@ -1243,6 +1245,11 @@ impl FixturePlatform {
     /// 让下一次 `list_comments` 失败——测「评论拉失败不能变成空列表」。
     pub fn fail_comments(&self) {
         *self.fail_comments.lock().unwrap() = true;
+    }
+
+    /// 让 `get_issue` 失败——测「平台挂了但本地已有正文时仍能分诊」。
+    pub fn fail_get(&self) {
+        *self.fail_get.lock().unwrap() = true;
     }
 
     /// 模拟「评论翻页被截断且没看见 bot」——测 fail-closed 禁止 create。
@@ -1297,6 +1304,9 @@ impl IssuePlatform for FixturePlatform {
     }
 
     async fn get_issue(&self, number: u64) -> Result<RawIssue> {
+        if *self.fail_get.lock().unwrap() {
+            bail!("fixture get_issue unavailable");
+        }
         self.issues
             .lock()
             .unwrap()

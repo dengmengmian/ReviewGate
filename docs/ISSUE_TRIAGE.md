@@ -178,6 +178,7 @@ reviewgate issue inspect 123            # 单条的存档判定
 | `init` 拉到的条数远少于 `--max` | 平台限流，或已到末页 | 看日志有没有 `(capped)`；有就再跑一次接着拉 |
 | 大量 `unknown` / 40% | 分类信号不足（见 LIMITATIONS #11） | 正常行为：会走转人工，不会发错结论 |
 | `tech=UNVERIFIED` | 没给 `--repo-root`，或版本对不上 | 指到对应版本的 checkout |
+| reasons 里有 `platform_stale:` | 拉平台失败，用了本地已入库正文 | 网络/代理闪断时的预期行为；没有本地副本仍会报错跳过 |
 | Webhook 返回 401 | secret 不一致 | 两侧用同一个值；GitLab 是定值比对不是 HMAC |
 | 复审时又发了一条新评论 | `update_existing_comment` 被关了 | 打开它 |
 | 什么都没发生 | 动作开关默认全关 | 逐项打开需要的，并确认过了 `min_confidence` |

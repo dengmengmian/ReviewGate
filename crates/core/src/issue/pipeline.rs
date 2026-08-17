@@ -409,8 +409,9 @@ pub async fn review_issue_with_llm(
     embedder: &dyn Embedder,
     llm: Option<&dyn LlmClient>,
 ) -> Result<ReviewOutput> {
-    let raw = platform.get_issue(number).await?;
-    if raw.pull_request.is_some() {
+    let (stored, cmt_tuples, stale) =
+        load_issue_for_review(store, platform, number, embedder).await?;
+    let Some(stored) = stored else {
         return Ok(ReviewOutput {
             decision: IssueReviewDecision {
                 issue_number: number,
@@ -426,17 +427,7 @@ pub async fn review_issue_with_llm(
             technical: None,
             skipped: Some("pull_request".into()),
         });
-    }
-    let comments = platform
-        .list_comments(number)
-        .await
-        .with_context(|| format!("list comments for #{number}"))?;
-    let user_comments = filter_user_comments(comments);
-    let stored = ingest_raw(store, &raw, &user_comments, Some(embedder))?;
-    let cmt_tuples: Vec<(u64, String, String)> = user_comments
-        .iter()
-        .map(|c| (c.id, c.updated_at.clone(), c.body.clone()))
-        .collect();
+    };
     // 分类先行：规则没把握时问一次模型。它是整条链路的地基——
     // primary_type 决定话术、裁决、要不要跑验证、@ 谁。
     let class = classify_with_llm(
@@ -448,6 +439,13 @@ pub async fn review_issue_with_llm(
     .await;
     let mut out =
         triage_stored_with_class(store, &stored, &cmt_tuples, cfg, embedder, Some(class))?;
+    if !stale.is_empty() {
+        for s in &stale {
+            eprintln!("  [issue] #{number} {s}");
+        }
+        out.decision.reasons.extend(stale);
+        store.save_review(&out.decision, &out.content_hash, &out.comments_hash, None)?;
+    }
     // 有 LLM 时重写用户向正文；无则保留确定性人话。
     //
     // **发不出去就不润色**：`suggest` 模式（默认）与 `watch` 长跑下这条评论根本不会
@@ -460,6 +458,69 @@ pub async fn review_issue_with_llm(
         store.save_review(&out.decision, &out.content_hash, &out.comments_hash, None)?;
     }
     Ok(out)
+}
+
+fn clip_platform_err(e: &anyhow::Error) -> String {
+    e.to_string()
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .take(160)
+        .collect()
+}
+
+/// 平台优先；get/comments 失败且本地已有正文时，用入库副本审完，并在 reasons 标明 stale。
+/// `stored = None` 表示这是 PR，调用方应 skip。
+async fn load_issue_for_review(
+    store: &IssueStore,
+    platform: &dyn IssuePlatform,
+    number: u64,
+    embedder: &dyn Embedder,
+) -> Result<(Option<StoredIssue>, Vec<(u64, String, String)>, Vec<String>)> {
+    let mut stale = Vec::new();
+    let raw = match platform.get_issue(number).await {
+        Ok(r) => Some(r),
+        Err(e) => {
+            if store.get_issue(number)?.is_some() {
+                stale.push(format!(
+                    "platform_stale:get_issue:{}",
+                    clip_platform_err(&e)
+                ));
+                None
+            } else {
+                return Err(e).context(format!("get_issue #{number} and no local copy"));
+            }
+        }
+    };
+    if let Some(raw) = raw {
+        if raw.pull_request.is_some() {
+            return Ok((None, Vec::new(), Vec::new()));
+        }
+        match platform.list_comments(number).await {
+            Ok(comments) => {
+                let user_comments = filter_user_comments(comments);
+                let stored = ingest_raw(store, &raw, &user_comments, Some(embedder))?;
+                let tuples = user_comments
+                    .iter()
+                    .map(|c| (c.id, c.updated_at.clone(), c.body.clone()))
+                    .collect();
+                return Ok((Some(stored), tuples, stale));
+            }
+            Err(e) => {
+                stale.push(format!("platform_stale:comments:{}", clip_platform_err(&e)));
+                let prev_hash = store.get_issue(number)?.map(|s| s.comments_hash);
+                let mut stored = ingest_raw(store, &raw, &[], Some(embedder))?;
+                if let Some(h) = prev_hash.filter(|h| !h.is_empty()) {
+                    stored.comments_hash = h;
+                    store.upsert_issue(&stored)?;
+                }
+                return Ok((Some(stored), Vec::new(), stale));
+            }
+        }
+    }
+    let stored = store
+        .get_issue(number)?
+        .ok_or_else(|| anyhow::anyhow!("get_issue #{number} failed and no local copy"))?;
+    Ok((Some(stored), Vec::new(), stale))
 }
 
 /// 参数都是彼此独立的门禁维度，聚成结构体只会多一层间接、看不出少传了哪个。
@@ -1077,6 +1138,106 @@ mod tests {
             store.count_issues().unwrap(),
             0,
             "must not ingest with a fake empty comment hash"
+        );
+    }
+
+    #[tokio::test]
+    async fn review_falls_back_to_store_when_get_issue_fails() {
+        let store = IssueStore::open_in_memory("acme/app").unwrap();
+        let platform = FixturePlatform::new();
+        let issue = raw(
+            7,
+            "Windows save crash access violation",
+            "## Actual\naccess violation\n## Steps\n1. click save\n",
+        );
+        ingest_raw(&store, &issue, &[], Some(&LocalEmbedder)).unwrap();
+        platform.fail_get();
+        let out = review_issue(
+            &store,
+            &platform,
+            7,
+            &IssueReviewConfig::default(),
+            &LocalEmbedder,
+        )
+        .await
+        .expect("stored copy must be enough to finish triage");
+        assert!(out.skipped.is_none());
+        assert!(
+            out.decision
+                .reasons
+                .iter()
+                .any(|r| r.starts_with("platform_stale:get_issue")),
+            "must disclose stale platform: {:?}",
+            out.decision.reasons
+        );
+        assert!(!out.decision.verdict.as_str().is_empty());
+    }
+
+    #[tokio::test]
+    async fn review_keeps_comment_hash_when_comments_fail() {
+        let store = IssueStore::open_in_memory("acme/app").unwrap();
+        let platform = FixturePlatform::new();
+        let issue = raw(
+            8,
+            "Windows save crash access violation",
+            "## Actual\nboom\n",
+        );
+        platform.seed_issue(issue.clone());
+        let comments = vec![RawComment {
+            id: 11,
+            body: "still crashing after reboot".into(),
+            updated_at: "2024-01-03T00:00:00Z".into(),
+            user: Some(RawUser {
+                login: "bob".into(),
+                user_type: Some("User".into()),
+            }),
+        }];
+        let stored = ingest_raw(&store, &issue, &comments, Some(&LocalEmbedder)).unwrap();
+        let before = stored.comments_hash.clone();
+        assert!(!before.is_empty());
+        platform.fail_comments();
+        let out = review_issue(
+            &store,
+            &platform,
+            8,
+            &IssueReviewConfig::default(),
+            &LocalEmbedder,
+        )
+        .await
+        .expect("comment fetch failure must not abort if the issue is already stored");
+        assert!(
+            out.decision
+                .reasons
+                .iter()
+                .any(|r| r.starts_with("platform_stale:comments")),
+            "{:?}",
+            out.decision.reasons
+        );
+        assert_eq!(out.comments_hash, before);
+        assert_eq!(
+            store.get_issue(8).unwrap().unwrap().comments_hash,
+            before,
+            "must not rewrite comments_hash to the empty-list value"
+        );
+    }
+
+    #[tokio::test]
+    async fn review_still_errors_when_get_fails_and_store_is_empty() {
+        let store = IssueStore::open_in_memory("acme/app").unwrap();
+        let platform = FixturePlatform::new();
+        platform.fail_get();
+        let err = review_issue(
+            &store,
+            &platform,
+            9,
+            &IssueReviewConfig::default(),
+            &LocalEmbedder,
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("get_issue") || format!("{err:#}").contains("unavailable"),
+            "{err:#}"
         );
     }
 
