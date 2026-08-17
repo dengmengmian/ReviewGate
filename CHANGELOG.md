@@ -6,6 +6,8 @@ Changes are listed in Chinese first, then English.
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-08-17
+
 ### Added
 - Issue 分诊长跑可发布：`watch` / `daemon --publish`，必须同时 `[issue_review] mode = "publish"`。GitHub 新增 Issue Action（默认不写、`--no-llm`）。due 集按用户正文/用户评论哈希复审；评论翻页 + `BotCommentLookup`；webhook 常量时间验签、1MiB/413。
   Long-running Issue triage can publish: `watch` / `daemon --publish` requires `mode = "publish"`. New GitHub Issue Action (observe-only and `--no-llm` by default). Re-triage uses user content/comment hashes; comment pagination + `BotCommentLookup`; constant-time webhook auth and a 1MiB body cap.
